@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Depth Parallax Filter</title>
-    <meta name="description" content="A fully responsive, full-screen parallax effect using AI depth estimation. Features intuitive zoom and pan controls for an immersive experience.">
+    <meta name="description" content="Apply an interactive parallax effect to any image with intuitive zoom and pan controls. The canvas dynamically covers the viewport for a fully immersive experience.">
     <meta name="page:icon" content="fas fa-layer-group">
     <meta name="page:color" content="#38bdf8">
 
@@ -48,9 +48,6 @@
             position: absolute;
         }
         #main-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
             transition: opacity 0.3s ease-in-out;
         }
         .loader-spinner {
@@ -232,7 +229,7 @@
 
             <div id="view-container" class="lg:col-span-8 xl:col-span-9 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
                 <div id="canvas-container" class="flex-grow relative w-full h-full min-h-[400px] lg:min-h-0 bg-gray-100 overflow-hidden">
-                    <canvas id="main-canvas" class="opacity-0"></canvas>
+                    <canvas id="main-canvas" class="absolute inset-0 w-full h-full opacity-0"></canvas>
                     <div id="canvas-placeholder" class="absolute inset-0 flex flex-col justify-center items-center text-center p-4">
                          <i class="fas fa-image text-5xl text-gray-300 mb-4"></i>
                          <h3 class="text-xl font-medium text-gray-500">Parallax Viewport</h3>
@@ -279,25 +276,26 @@
         const INTENSITY_VALUE = document.getElementById('intensity-value');
         const APPLY_SETTINGS_BTN = document.getElementById('apply-settings-btn');
         
-        const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2670&auto=format&fit=crop';
+        const DEFAULT_IMAGE_URL = 'https://cdn.modrinth.com/data/Q1vvjJYV/images/6196a455f84be3071fd99b4dc182694be0e30343.jpeg';
 
         let depth_estimator = null;
         let isProcessing = false;
-        let animationFrameId;
+        let animationFrameId = null;
         
         let currentOriginalImage = null;
         let currentDepthMap = null;
         let imageLayers = [];
-        let imageGeometry = { x: 0, y: 0, width: 0, height: 0 };
         
         let parallaxMouse = { x: 0, y: 0 };
         let targetParallaxMouse = { x: 0, y: 0 };
         const LERP_FACTOR = 0.08;
         
-        let scale = 1.0;
+        let viewTransform = { scale: 1, offsetX: 0, offsetY: 0 };
         let panOffset = { x: 0, y: 0 };
         let isDragging = false;
         let dragStart = { x: 0, y: 0 };
+        let startPanOffset = { x: 0, y: 0 };
+
 
         function showLoader(text, showProgress = false) {
             LOADER_TEXT.textContent = text;
@@ -333,15 +331,15 @@
             const numLayers = imageLayers.length;
             
             ctx.save();
-            ctx.translate(panOffset.x, panOffset.y);
-            ctx.scale(scale, scale);
+            ctx.translate(viewTransform.offsetX + panOffset.x, viewTransform.offsetY + panOffset.y);
+            ctx.scale(viewTransform.scale, viewTransform.scale);
 
             imageLayers.forEach((layer, i) => {
                 const depthFactor = (i / (numLayers - 1)) || 0;
                 const parallaxOffsetX = parallaxMouse.x * intensity * depthFactor;
                 const parallaxOffsetY = parallaxMouse.y * intensity * depthFactor;
                 
-                ctx.drawImage(layer, imageGeometry.x + parallaxOffsetX, imageGeometry.y + parallaxOffsetY, imageGeometry.width, imageGeometry.height);
+                ctx.drawImage(layer, parallaxOffsetX, parallaxOffsetY, currentOriginalImage.width, currentOriginalImage.height);
             });
             ctx.restore();
         }
@@ -380,7 +378,10 @@
             
             isProcessing = true;
             toggleControls(false);
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
             MAIN_CANVAS.style.opacity = '0';
 
             try {
@@ -430,35 +431,29 @@
             GENERATE_BTN.querySelector('span').textContent = enabled ? 'Generate' : 'Working...';
         }
 
-        function updateCanvasAndImageGeometry() {
+        function resetView() {
             if (!currentOriginalImage) return;
 
+            const canvas = MAIN_CANVAS;
+            const image = currentOriginalImage;
+
             const containerRect = CANVAS_CONTAINER.getBoundingClientRect();
-            
-            MAIN_CANVAS.width = containerRect.width;
-            MAIN_CANVAS.height = containerRect.height;
-            MAIN_CANVAS.style.width = `${containerRect.width}px`;
-            MAIN_CANVAS.style.height = `${containerRect.height}px`;
+            canvas.width = containerRect.width;
+            canvas.height = containerRect.height;
 
-            const imageAspect = currentOriginalImage.width / currentOriginalImage.height;
-            const containerAspect = containerRect.width / containerRect.height;
+            const canvasAspect = canvas.width / canvas.height;
+            const imageAspect = image.width / image.height;
 
-            let drawnWidth, drawnHeight;
-
-            if (imageAspect > containerAspect) {
-                drawnHeight = containerRect.height;
-                drawnWidth = drawnHeight * imageAspect;
+            if (imageAspect > canvasAspect) {
+                viewTransform.scale = canvas.height / image.height;
+                viewTransform.offsetX = (canvas.width - image.width * viewTransform.scale) / 2;
+                viewTransform.offsetY = 0;
             } else {
-                drawnWidth = containerRect.width;
-                drawnHeight = drawnWidth / imageAspect;
+                viewTransform.scale = canvas.width / image.width;
+                viewTransform.offsetX = 0;
+                viewTransform.offsetY = (canvas.height - image.height * viewTransform.scale) / 2;
             }
-
-            imageGeometry = {
-                width: drawnWidth,
-                height: drawnHeight,
-                x: (containerRect.width - drawnWidth) / 2,
-                y: (containerRect.height - drawnHeight) / 2
-            };
+            panOffset = { x: 0, y: 0 };
         }
 
         async function createLayers() {
@@ -466,9 +461,6 @@
 
             return new Promise(resolve => {
                 setTimeout(() => { 
-                    scale = 1.0;
-                    panOffset = { x: 0, y: 0 };
-
                     const numLayers = parseInt(LAYERS_SLIDER.value);
                     const invertDepth = INVERT_DEPTH_TOGGLE.checked;
                     const { width, height } = currentOriginalImage;
@@ -519,12 +511,10 @@
                         imageLayers[i].getContext('2d').putImageData(layerImageData[i], 0, 0);
                     }
                     
-                    updateCanvasAndImageGeometry();
+                    resetView();
                     MAIN_CANVAS.style.opacity = '1';
 
-                    if(!animationFrameId) {
-                       animate();
-                    }
+                    animate();
                     resolve();
                 }, 10);
             });
@@ -535,6 +525,10 @@
 
             isProcessing = true;
             toggleControls(false);
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
             showLoader('Applying New Settings...');
             updateStatus('Re-slicing image with new parameters...');
 
@@ -571,8 +565,10 @@
 
             VIEW_CONTAINER.addEventListener('mousedown', e => {
                 isDragging = true;
-                dragStart.x = e.clientX - panOffset.x;
-                dragStart.y = e.clientY - panOffset.y;
+                dragStart.x = e.clientX;
+                dragStart.y = e.clientY;
+                startPanOffset.x = panOffset.x;
+                startPanOffset.y = panOffset.y;
             });
 
             VIEW_CONTAINER.addEventListener('mouseup', () => {
@@ -587,8 +583,8 @@
 
             VIEW_CONTAINER.addEventListener('mousemove', e => {
                 if (isDragging) {
-                    panOffset.x = e.clientX - dragStart.x;
-                    panOffset.y = e.clientY - dragStart.y;
+                    panOffset.x = startPanOffset.x + (e.clientX - dragStart.x);
+                    panOffset.y = startPanOffset.y + (e.clientY - dragStart.y);
                 } else {
                     const rect = VIEW_CONTAINER.getBoundingClientRect();
                     targetParallaxMouse.x = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
@@ -600,30 +596,31 @@
                 e.preventDefault();
                 if (!currentOriginalImage) return;
 
-                const zoomSpeed = 1.15;
-                const oldScale = scale;
+                const zoomFactor = 1.15;
+                const oldScale = viewTransform.scale;
                 
+                let newScale;
                 if (e.deltaY < 0) {
-                    scale *= zoomSpeed;
+                    newScale = oldScale * zoomFactor;
                 } else {
-                    scale /= zoomSpeed;
+                    newScale = oldScale / zoomFactor;
                 }
-                scale = Math.max(0.5, Math.min(scale, 20));
-                
-                const rect = VIEW_CONTAINER.getBoundingClientRect();
+                viewTransform.scale = Math.max(0.2, Math.min(newScale, 20));
+
+                const rect = MAIN_CANVAS.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
+                
+                const worldMouseX = (mouseX - (viewTransform.offsetX + panOffset.x)) / oldScale;
+                const worldMouseY = (mouseY - (viewTransform.offsetY + panOffset.y)) / oldScale;
 
-                const mousePointX = (mouseX - panOffset.x) / oldScale;
-                const mousePointY = (mouseY - panOffset.y) / oldScale;
-
-                panOffset.x = mouseX - mousePointX * scale;
-                panOffset.y = mouseY - mousePointY * scale;
+                viewTransform.offsetX = mouseX - worldMouseX * viewTransform.scale - panOffset.x;
+                viewTransform.offsetY = mouseY - worldMouseY * viewTransform.scale - panOffset.y;
             });
 
             window.addEventListener('resize', () => {
                 if (currentOriginalImage && !isProcessing) {
-                   handleSettingsChange();
+                   resetView();
                 }
             });
         }
