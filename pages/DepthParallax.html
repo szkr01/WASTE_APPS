@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Depth Parallax Filter</title>
-    <meta name="description" content="Apply an interactive parallax effect to any image using AI-powered depth estimation. Split images into inclusive layers for a stunning and realistic 3D-like effect, all in your browser.">
+    <meta name="description" content="A fully responsive, full-screen parallax effect using AI depth estimation. Features intuitive zoom and pan controls for an immersive experience.">
     <meta name="page:icon" content="fas fa-layer-group">
     <meta name="page:color" content="#38bdf8">
 
@@ -48,7 +48,9 @@
             position: absolute;
         }
         #main-canvas {
-            flex-shrink: 0;
+            position: absolute;
+            top: 0;
+            left: 0;
             transition: opacity 0.3s ease-in-out;
         }
         .loader-spinner {
@@ -121,13 +123,11 @@
         input[type=range]:hover::-moz-range-thumb {
             transform: scale(1.1);
         }
-        input[type=range]:focus::-webkit-slider-thumb {
-            outline: 2px solid #38bdf8;
-            outline-offset: 2px;
+        #view-container {
+            cursor: grab;
         }
-        input[type=range]:focus::-moz-range-thumb {
-            outline: 2px solid #38bdf8;
-            outline-offset: 2px;
+        #view-container:active {
+            cursor: grabbing;
         }
     </style>
 </head>
@@ -231,8 +231,8 @@
             </aside>
 
             <div id="view-container" class="lg:col-span-8 xl:col-span-9 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                <div id="canvas-container" class="flex-grow relative w-full h-full min-h-[400px] lg:min-h-0 flex items-center justify-center bg-gray-100 overflow-hidden">
-                    <canvas id="main-canvas" class="absolute opacity-0"></canvas>
+                <div id="canvas-container" class="flex-grow relative w-full h-full min-h-[400px] lg:min-h-0 bg-gray-100 overflow-hidden">
+                    <canvas id="main-canvas" class="opacity-0"></canvas>
                     <div id="canvas-placeholder" class="absolute inset-0 flex flex-col justify-center items-center text-center p-4">
                          <i class="fas fa-image text-5xl text-gray-300 mb-4"></i>
                          <h3 class="text-xl font-medium text-gray-500">Parallax Viewport</h3>
@@ -240,7 +240,7 @@
                     </div>
                 </div>
                 <div class="p-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 text-center">
-                    <i class="fas fa-mouse-pointer"></i> <b>Interact:</b> Move your mouse over the image to trigger the parallax effect.
+                    <i class="fas fa-mouse-pointer"></i> <b>Interact:</b> Move mouse for <b>Parallax</b> | Scroll to <b>Zoom</b> | Drag to <b>Pan</b>
                 </div>
             </div>
 
@@ -279,7 +279,7 @@
         const INTENSITY_VALUE = document.getElementById('intensity-value');
         const APPLY_SETTINGS_BTN = document.getElementById('apply-settings-btn');
         
-        const DEFAULT_IMAGE_URL = 'https://pbs.twimg.com/media/FI5vo7QVcAA7Q23?format=jpg&name=4096x4096';
+        const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2670&auto=format&fit=crop';
 
         let depth_estimator = null;
         let isProcessing = false;
@@ -288,10 +288,16 @@
         let currentOriginalImage = null;
         let currentDepthMap = null;
         let imageLayers = [];
+        let imageGeometry = { x: 0, y: 0, width: 0, height: 0 };
         
-        let mouse = { x: 0, y: 0 };
-        let targetMouse = { x: 0, y: 0 };
+        let parallaxMouse = { x: 0, y: 0 };
+        let targetParallaxMouse = { x: 0, y: 0 };
         const LERP_FACTOR = 0.08;
+        
+        let scale = 1.0;
+        let panOffset = { x: 0, y: 0 };
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
 
         function showLoader(text, showProgress = false) {
             LOADER_TEXT.textContent = text;
@@ -314,26 +320,30 @@
         }
         
         function animate() {
+            animationFrameId = requestAnimationFrame(animate);
             if (!imageLayers.length) return;
 
-            mouse.x += (targetMouse.x - mouse.x) * LERP_FACTOR;
-            mouse.y += (targetMouse.y - mouse.y) * LERP_FACTOR;
+            parallaxMouse.x += (targetParallaxMouse.x - parallaxMouse.x) * LERP_FACTOR;
+            parallaxMouse.y += (targetParallaxMouse.y - parallaxMouse.y) * LERP_FACTOR;
             
             const ctx = MAIN_CANVAS.getContext('2d');
             ctx.clearRect(0, 0, MAIN_CANVAS.width, MAIN_CANVAS.height);
             
             const intensity = parseInt(INTENSITY_SLIDER.value);
             const numLayers = imageLayers.length;
+            
+            ctx.save();
+            ctx.translate(panOffset.x, panOffset.y);
+            ctx.scale(scale, scale);
 
             imageLayers.forEach((layer, i) => {
                 const depthFactor = (i / (numLayers - 1)) || 0;
-                const offsetX = mouse.x * intensity * depthFactor;
-                const offsetY = mouse.y * intensity * depthFactor;
+                const parallaxOffsetX = parallaxMouse.x * intensity * depthFactor;
+                const parallaxOffsetY = parallaxMouse.y * intensity * depthFactor;
                 
-                ctx.drawImage(layer, offsetX, offsetY, MAIN_CANVAS.width, MAIN_CANVAS.height);
+                ctx.drawImage(layer, imageGeometry.x + parallaxOffsetX, imageGeometry.y + parallaxOffsetY, imageGeometry.width, imageGeometry.height);
             });
-
-            animationFrameId = requestAnimationFrame(animate);
+            ctx.restore();
         }
         
         async function loadModel() {
@@ -342,7 +352,7 @@
                 updateStatus('Downloading AI model. This happens once and may take a moment.');
                 env.allowLocalModels = false;
                 
-                depth_estimator = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
+                depth_estimator = await pipeline('depth-estimation', 'Xenova/depth-anything-small-hf', {
                     progress_callback: (progress) => {
                         const percentage = (progress.progress || 0).toFixed(2);
                         LOADER_PROGRESS.style.width = `${percentage}%`;
@@ -420,21 +430,35 @@
             GENERATE_BTN.querySelector('span').textContent = enabled ? 'Generate' : 'Working...';
         }
 
-        function resizeAndPositionCanvas() {
+        function updateCanvasAndImageGeometry() {
             if (!currentOriginalImage) return;
 
-            const { width, height } = currentOriginalImage;
             const containerRect = CANVAS_CONTAINER.getBoundingClientRect();
-            const imageAspect = width / height;
+            
+            MAIN_CANVAS.width = containerRect.width;
+            MAIN_CANVAS.height = containerRect.height;
+            MAIN_CANVAS.style.width = `${containerRect.width}px`;
+            MAIN_CANVAS.style.height = `${containerRect.height}px`;
 
-            const newHeight = containerRect.height;
-            const newWidth = newHeight * imageAspect;
+            const imageAspect = currentOriginalImage.width / currentOriginalImage.height;
+            const containerAspect = containerRect.width / containerRect.height;
 
-            MAIN_CANVAS.height = newHeight;
-            MAIN_CANVAS.width = newWidth;
+            let drawnWidth, drawnHeight;
 
-            MAIN_CANVAS.style.height = `${newHeight}px`;
-            MAIN_CANVAS.style.width = `${newWidth}px`;
+            if (imageAspect > containerAspect) {
+                drawnHeight = containerRect.height;
+                drawnWidth = drawnHeight * imageAspect;
+            } else {
+                drawnWidth = containerRect.width;
+                drawnHeight = drawnWidth / imageAspect;
+            }
+
+            imageGeometry = {
+                width: drawnWidth,
+                height: drawnHeight,
+                x: (containerRect.width - drawnWidth) / 2,
+                y: (containerRect.height - drawnHeight) / 2
+            };
         }
 
         async function createLayers() {
@@ -442,6 +466,9 @@
 
             return new Promise(resolve => {
                 setTimeout(() => { 
+                    scale = 1.0;
+                    panOffset = { x: 0, y: 0 };
+
                     const numLayers = parseInt(LAYERS_SLIDER.value);
                     const invertDepth = INVERT_DEPTH_TOGGLE.checked;
                     const { width, height } = currentOriginalImage;
@@ -492,12 +519,12 @@
                         imageLayers[i].getContext('2d').putImageData(layerImageData[i], 0, 0);
                     }
                     
-                    resizeAndPositionCanvas();
-                    
+                    updateCanvasAndImageGeometry();
                     MAIN_CANVAS.style.opacity = '1';
 
-                    if(animationFrameId) cancelAnimationFrame(animationFrameId);
-                    animate();
+                    if(!animationFrameId) {
+                       animate();
+                    }
                     resolve();
                 }, 10);
             });
@@ -542,15 +569,56 @@
                 }
             });
 
-            VIEW_CONTAINER.addEventListener('mousemove', e => {
-                const rect = VIEW_CONTAINER.getBoundingClientRect();
-                targetMouse.x = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
-                targetMouse.y = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+            VIEW_CONTAINER.addEventListener('mousedown', e => {
+                isDragging = true;
+                dragStart.x = e.clientX - panOffset.x;
+                dragStart.y = e.clientY - panOffset.y;
             });
 
+            VIEW_CONTAINER.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+            
             VIEW_CONTAINER.addEventListener('mouseleave', () => {
-                targetMouse.x = 0;
-                targetMouse.y = 0;
+                isDragging = false;
+                targetParallaxMouse.x = 0;
+                targetParallaxMouse.y = 0;
+            });
+
+            VIEW_CONTAINER.addEventListener('mousemove', e => {
+                if (isDragging) {
+                    panOffset.x = e.clientX - dragStart.x;
+                    panOffset.y = e.clientY - dragStart.y;
+                } else {
+                    const rect = VIEW_CONTAINER.getBoundingClientRect();
+                    targetParallaxMouse.x = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+                    targetParallaxMouse.y = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+                }
+            });
+
+            VIEW_CONTAINER.addEventListener('wheel', e => {
+                e.preventDefault();
+                if (!currentOriginalImage) return;
+
+                const zoomSpeed = 1.15;
+                const oldScale = scale;
+                
+                if (e.deltaY < 0) {
+                    scale *= zoomSpeed;
+                } else {
+                    scale /= zoomSpeed;
+                }
+                scale = Math.max(0.5, Math.min(scale, 20));
+                
+                const rect = VIEW_CONTAINER.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const mousePointX = (mouseX - panOffset.x) / oldScale;
+                const mousePointY = (mouseY - panOffset.y) / oldScale;
+
+                panOffset.x = mouseX - mousePointX * scale;
+                panOffset.y = mouseY - mousePointY * scale;
             });
 
             window.addEventListener('resize', () => {
