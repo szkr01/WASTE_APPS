@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- SEO & Page Metadata -->
+    <title>Squat Assist - AIフォームコーチ</title>
+    <meta name="description" content="AIがあなたのスクワットフォームをリアルタイムで分析し、カウントするインタラクティブなトレーニングアプリです。モーションスムージング機能で滑らかな骨格追跡を実現。">
+    <meta name="page:icon" content="fas fa-dumbbell">
+    <meta name="page:color" content="#38bdf8">
+
+    <!-- Scripts and Styles -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .gradient-text {
+            background: linear-gradient(45deg, #38bdf8, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .status-dot {
+            width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+            transition: background-color 0.3s ease;
+        }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+        }
+        .count-flash { transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-5xl mx-auto p-4 md:p-8">
+        <main class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            
+            <div class="md:col-span-1 bg-white rounded-2xl shadow-lg p-6 md:p-8 flex flex-col justify-between order-2 md:order-1 h-full">
+                <div>
+                    <header class="mb-8 text-center md:text-left">
+                        <h1 class="text-3xl font-bold text-gray-900 flex items-center justify-center md:justify-start gap-3">
+                            <i class="fa-solid fa-dumbbell gradient-text"></i>
+                            <span class="gradient-text">Squat Assist</span>
+                        </h1>
+                        <p class="text-gray-500 mt-2">AIフォームコーチ</p>
+                    </header>
+
+                    <div class="space-y-6">
+                        <div class="bg-gray-100 rounded-xl p-4 text-center">
+                            <p class="text-sm font-medium text-gray-500 mb-1">スクワット回数</p>
+                            <p id="squat-count" class="text-6xl font-bold text-sky-500 count-flash">0</p>
+                        </div>
+                        <div class="bg-gray-100 rounded-xl p-4">
+                            <p class="text-sm font-medium text-gray-500 mb-1 text-center">フォームフィードバック</p>
+                            <p id="feedback-text" class="text-lg font-semibold text-gray-700 h-14 flex items-center justify-center text-center">準備中です</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8">
+                    <button id="start-button" class="w-full bg-sky-500 text-white font-bold py-4 px-6 rounded-xl shadow-md hover:bg-sky-600 focus:outline-none focus:ring-4 focus:ring-sky-300 transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2" disabled>
+                        <i class="fa-solid fa-play"></i>
+                        <span>準備中...</span>
+                    </button>
+                    <div id="status" class="text-center mt-4 text-gray-500 text-sm flex items-center justify-center gap-2">
+                        <span id="status-dot" class="status-dot bg-yellow-400 pulse"></span>
+                        <span id="status-text">初期化中...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="md:col-span-2 bg-white rounded-2xl shadow-lg p-4 flex items-center justify-center order-1 md:order-2 relative aspect-w-4 aspect-h-3 md:aspect-w-16 md:aspect-h-9">
+                <div id="loading-spinner" class="absolute text-center">
+                    <i class="fa-solid fa-spinner fa-spin text-4xl text-sky-500"></i>
+                    <p class="mt-4 text-gray-600">カメラとAIモデルを準備しています...</p>
+                </div>
+                <canvas id="skeleton-canvas" class="hidden w-full h-full rounded-lg"></canvas>
+                <video id="camera-feed" style="display: none;"></video>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('camera-feed');
+        const canvasElement = document.getElementById('skeleton-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const startButton = document.getElementById('start-button');
+        const countElement = document.getElementById('squat-count');
+        const feedbackElement = document.getElementById('feedback-text');
+        const statusText = document.getElementById('status-text');
+        const statusDot = document.getElementById('status-dot');
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+        let detector;
+        let animationFrameId;
+        let isRunning = false;
+        
+        let squatCount = 0;
+        let squatState = 'up';
+        let isBackBent = false;
+
+        let smoothedKeypoints = null;
+        const SMOOTHING_FACTOR = 0.3; 
+        
+        const SQUAT_DOWN_THRESHOLD = 110; 
+        const SQUAT_UP_THRESHOLD = 160;   
+
+        const KEYPOINT_COLOR = '#38bdf8'; 
+        const SKELETON_COLOR = '#3b82f6'; 
+        const ERROR_COLOR = '#ef4444';    
+        const LINE_WIDTH = 4;
+
+        async function init() {
+            try {
+                statusText.textContent = 'tfjsバックエンドを初期化中...';
+                await tf.setBackend('webgl');
+                
+                statusText.textContent = 'カメラを起動中...';
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 },
+                    audio: false 
+                });
+                videoElement.srcObject = stream;
+                await new Promise(resolve => videoElement.onloadedmetadata = () => resolve(videoElement.play()));
+
+                statusText.textContent = 'AIモデルを読込中...';
+                const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+                detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
+
+                loadingSpinner.style.display = 'none';
+                canvasElement.classList.remove('hidden');
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                
+                statusText.textContent = '準備完了';
+                statusDot.classList.remove('bg-yellow-400', 'pulse');
+                statusDot.classList.add('bg-green-500');
+                feedbackElement.textContent = 'ボタンを押して開始';
+                startButton.disabled = false;
+                startButton.innerHTML = '<i class="fa-solid fa-play"></i><span>トレーニング開始</span>';
+
+            } catch (error) {
+                console.error("初期化エラー:", error);
+                statusText.textContent = 'エラーが発生しました';
+                feedbackElement.innerHTML = 'カメラへのアクセスを許可するか、<br>ページを再読み込みしてください。';
+                statusDot.classList.remove('bg-yellow-400', 'pulse');
+                statusDot.classList.add('bg-red-500');
+                loadingSpinner.style.display = 'none';
+                startButton.disabled = true;
+                startButton.innerHTML = '<i class="fa-solid fa-exclamation-triangle"></i><span>エラー</span>';
+                startButton.classList.replace('bg-sky-500', 'bg-red-500');
+            }
+        }
+        
+        function startDetection() {
+            if (isRunning || !detector) return;
+            isRunning = true;
+            squatCount = 0;
+            squatState = 'up';
+            countElement.textContent = '0';
+            startButton.innerHTML = '<i class="fa-solid fa-stop"></i><span>トレーニング終了</span>';
+            startButton.classList.replace('bg-sky-500', 'bg-red-500');
+            startButton.classList.replace('hover:bg-sky-600', 'hover:bg-red-600');
+            feedbackElement.textContent = 'カメラの前に立ってください';
+            detectPose();
+        }
+
+        function stopDetection() {
+            if (!isRunning) return;
+            isRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            smoothedKeypoints = null; 
+            startButton.innerHTML = '<i class="fa-solid fa-play"></i><span>トレーニング開始</span>';
+            startButton.classList.replace('bg-red-500', 'bg-sky-500');
+            startButton.classList.replace('hover:bg-red-600', 'hover:bg-sky-600');
+            feedbackElement.textContent = 'お疲れ様でした！';
+            
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        }
+
+        startButton.addEventListener('click', () => {
+            if (isRunning) {
+                stopDetection();
+            } else if (detector) {
+                startDetection();
+            }
+        });
+
+        function smoothKeypoints(currentKeypoints) {
+            if (!smoothedKeypoints) {
+                smoothedKeypoints = currentKeypoints.map(kp => ({ ...kp }));
+                return smoothedKeypoints;
+            }
+
+            const newSmoothedKeypoints = currentKeypoints.map((kp, i) => {
+                const prevKp = smoothedKeypoints[i];
+                const smoothedX = SMOOTHING_FACTOR * kp.x + (1 - SMOOTHING_FACTOR) * prevKp.x;
+                const smoothedY = SMOOTHING_FACTOR * kp.y + (1 - SMOOTHING_FACTOR) * prevKp.y;
+                return { ...kp, x: smoothedX, y: smoothedY };
+            });
+
+            smoothedKeypoints = newSmoothedKeypoints;
+            return newSmoothedKeypoints;
+        }
+
+        async function detectPose() {
+            if (!isRunning) return;
+
+            const poses = await detector.estimatePoses(videoElement);
+            
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.scale(-1, 1);
+            canvasCtx.translate(-canvasElement.width, 0);
+
+            if (poses && poses.length > 0) {
+                const keypoints = smoothKeypoints(poses[0].keypoints);
+                processPose(keypoints);
+                drawSkeleton(keypoints);
+            } else {
+                feedbackElement.textContent = '人物を検出できません';
+                smoothedKeypoints = null;
+            }
+            
+            canvasCtx.restore();
+            animationFrameId = requestAnimationFrame(detectPose);
+        }
+
+        function processPose(keypoints) {
+            const keypointMap = new Map(keypoints.map(k => [k.name, k]));
+            
+            const points = ['left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle', 'left_shoulder', 'right_shoulder']
+                .map(name => keypointMap.get(name));
+
+            if (points.some(p => !p || p.score < 0.5)) {
+                feedbackElement.textContent = '体全体を映してください';
+                return;
+            }
+            
+            const [leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle, leftShoulder, rightShoulder] = points;
+            
+            const leftKneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+            const rightKneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+            const avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
+
+            const midShoulder = { x: (leftShoulder.x + rightShoulder.x) / 2, y: (leftShoulder.y + rightShoulder.y) / 2 };
+            const midHip = { x: (leftHip.x + rightHip.x) / 2, y: (leftHip.y + rightHip.y) / 2 };
+            const torsoAngleRad = Math.atan2(midHip.y - midShoulder.y, midHip.x - midShoulder.x);
+            const torsoAngleDeg = Math.abs(torsoAngleRad * 180 / Math.PI);
+
+            isBackBent = (torsoAngleDeg < 40); 
+
+            if (isBackBent) {
+                feedbackElement.textContent = "背中をまっすぐに！";
+            } else if (squatState === 'up' && avgKneeAngle < SQUAT_DOWN_THRESHOLD) {
+                squatState = 'down';
+            } else if (squatState === 'down' && avgKneeAngle > SQUAT_UP_THRESHOLD) {
+                squatState = 'up';
+                squatCount++;
+                countElement.textContent = squatCount;
+                countElement.classList.add('text-green-500', 'scale-125');
+                setTimeout(() => {
+                    countElement.classList.remove('text-green-500', 'scale-125');
+                    countElement.classList.add('text-sky-500');
+                }, 300);
+            }
+
+            if (!isBackBent) {
+                if(squatState === 'down') {
+                    if (leftHip.y > leftKnee.y && rightHip.y > rightKnee.y) {
+                        feedbackElement.textContent = "素晴らしい深さ！";
+                    } else {
+                        feedbackElement.textContent = "もっと深く！";
+                    }
+                } else {
+                    feedbackElement.textContent = "立ち上がって";
+                }
+            }
+        }
+
+        function drawSkeleton(keypoints) {
+            const adjacentPairs = poseDetection.util.getAdjacentPairs(poseDetection.SupportedModels.MoveNet);
+            
+            adjacentPairs.forEach(([i, j]) => {
+                const kp1 = keypoints[i];
+                const kp2 = keypoints[j];
+                
+                if (kp1.score > 0.3 && kp2.score > 0.3) {
+                    const isTorso = (kp1.name.includes('shoulder') || kp1.name.includes('hip')) && 
+                                    (kp2.name.includes('shoulder') || kp2.name.includes('hip'));
+
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(kp1.x, kp1.y);
+                    canvasCtx.lineTo(kp2.x, kp2.y);
+                    canvasCtx.lineWidth = LINE_WIDTH;
+                    canvasCtx.strokeStyle = (isTorso && isBackBent) ? ERROR_COLOR : SKELETON_COLOR;
+                    canvasCtx.stroke();
+                }
+            });
+
+            keypoints.forEach(keypoint => {
+                if (keypoint.score > 0.3) {
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(keypoint.x, keypoint.y, LINE_WIDTH + 1, 0, 2 * Math.PI);
+                    canvasCtx.fillStyle = KEYPOINT_COLOR;
+                    canvasCtx.fill();
+                }
+            });
+        }
+        
+        function calculateAngle(a, b, c) {
+            const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let angle = Math.abs(rad * 180.0 / Math.PI);
+            return angle > 180.0 ? 360 - angle : angle;
+        }
+
+        init();
+    </script>
+</body>
+</html>
