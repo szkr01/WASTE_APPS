@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LuminousFX - 画像シェーダーエディタ</title>
+    <meta name="description" content="指定した画像にブルーム、ブラー、ピクセル化などの様々なWebGLフラグメントシェーダーをリアルタイムで適用できるインタラクティブなツールです。">
+    <meta name="page:icon" content="fas fa-wand-magic-sparkles">
+    <meta name="page:color" content="#38bdf8">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background: linear-gradient(-45deg, #f0f9ff, #f8fafc, #f5f5f5, #f0f9ff);
+            background-size: 400% 400%;
+            animation: gradientBG 25s ease infinite;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.9;
+            transition: opacity .2s;
+        }
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #38bdf8;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #38bdf8;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        
+        .control-group-enter {
+            opacity: 0;
+            transform: translateY(10px);
+            max-height: 0;
+        }
+        .control-group-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+            max-height: 100px;
+            transition: opacity 300ms ease-out, transform 300ms ease-out, max-height 300ms ease-out;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #334155;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 10;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.8rem;
+            font-weight: 300;
+        }
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #334155 transparent transparent transparent;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+        #gl-canvas {
+            cursor: grab;
+        }
+        #gl-canvas:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body class="text-slate-700 antialiased">
+
+    <div class="flex h-screen w-screen overflow-hidden">
+        
+        <aside class="w-[380px] h-screen bg-white/80 backdrop-blur-sm shadow-2xl flex flex-col z-10 border-r border-slate-200/50">
+            <header class="p-6 border-b border-slate-200/80">
+                <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-3">
+                    <i class="fas fa-wand-magic-sparkles text-sky-500"></i>
+                    <span>LuminousFX</span>
+                </h1>
+                <p class="text-sm text-slate-500 mt-1">リアルタイム画像シェーダーエディタ</p>
+            </header>
+
+            <div class="flex-grow overflow-y-auto custom-scrollbar p-6 space-y-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-600 mb-3">1. 画像を選択</h2>
+                    <label for="image-upload" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-4 rounded-lg cursor-pointer transition-all duration-300 flex items-center justify-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                        <i class="fas fa-upload"></i>
+                        <span>ファイルを選択</span>
+                    </label>
+                    <input type="file" id="image-upload" class="hidden" accept="image/*">
+                    <p class="text-xs text-slate-400 mt-2 text-center">または、画像を画面にドラッグ＆ドロップ</p>
+                </div>
+
+                <div id="effects-panel" class="hidden">
+                    <h2 class="text-lg font-semibold text-slate-600 mb-3">2. エフェクトを選択</h2>
+                    <div id="effects-list" class="grid grid-cols-2 gap-2">
+                    </div>
+                </div>
+
+                <div id="controls-panel" class="hidden">
+                    <div class="flex justify-between items-center mb-3">
+                      <h2 class="text-lg font-semibold text-slate-600">3. パラメータを調整</h2>
+                      <div class="flex items-center gap-2">
+                        <button id="reset-view-btn" class="text-xs text-slate-500 hover:text-sky-500 transition-colors tooltip">
+                            <i class="fas fa-expand mr-1"></i>表示リセット
+                            <span class="tooltiptext">ズームと位置をリセットします。</span>
+                        </button>
+                        <button id="reset-controls-btn" class="text-xs text-slate-500 hover:text-sky-500 transition-colors tooltip">
+                            <i class="fas fa-undo mr-1"></i>設定リセット
+                            <span class="tooltiptext">現在のエフェクトのパラメータをリセットします。</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div id="controls-container" class="space-y-4 bg-slate-100/50 p-4 rounded-lg border border-slate-200/80">
+                    </div>
+                </div>
+            </div>
+
+            <footer class="p-6 border-t border-slate-200/80">
+                <button id="download-btn" disabled class="w-full bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                    <i class="fas fa-download"></i>
+                    <span>画像をダウンロード</span>
+                </button>
+            </footer>
+        </aside>
+
+        <main id="canvas-drop-area" class="flex-grow flex items-center justify-center p-0 bg-slate-50/50 relative overflow-hidden">
+            <div id="placeholder" class="text-center text-slate-400 select-none pointer-events-none transition-opacity duration-500">
+                <div class="border-2 border-dashed border-slate-300 rounded-2xl p-12 flex flex-col items-center justify-center">
+                    <i class="fas fa-image text-6xl mb-4 text-slate-300"></i>
+                    <h3 class="text-2xl font-medium text-slate-500">ここに画像をドロップ</h3>
+                    <p class="mt-2">または左のパネルからファイルを選択してください</p>
+                    <p class="mt-4 text-sm text-slate-400">ホイールでズーム、ドラッグで移動</p>
+                </div>
+            </div>
+            <canvas id="gl-canvas" class="max-w-none max-h-none absolute top-0 left-0 w-full h-full bg-transparent transition-opacity duration-500 opacity-0"></canvas>
+            <div id="loading-spinner" class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                <i class="fas fa-spinner fa-spin text-sky-500 text-4xl"></i>
+            </div>
+        </main>
+
+    </div>
+
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        
+        uniform float u_zoom;
+        uniform vec2 u_offset;
+        uniform float u_aspectRatio;
+        
+        varying vec2 v_texCoord;
+
+        void main() {
+            vec2 pos = a_position;
+            pos.x *= u_aspectRatio;
+            
+            gl_Position = vec4((pos * u_zoom) + u_offset, 0.0, 1.0);
+            v_texCoord = a_texCoord;
+        }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+
+        #define KUWAHARA_MAX_RADIUS 8
+        #define BLUR_MAX_RADIUS 8
+
+        uniform sampler2D u_image;
+        uniform vec2 u_resolution;
+        uniform int u_effectType;
+
+        uniform float u_pixelSize;
+        uniform float u_vignetteAmount;
+        uniform float u_vignetteFalloff;
+        uniform float u_chromaticAberration;
+        uniform float u_blurRadius;
+        uniform float u_bloomThreshold;
+        uniform float u_bloomIntensity;
+        uniform int u_kuwaharaRadius;
+
+        varying vec2 v_texCoord;
+
+        vec4 boxBlur(sampler2D image, vec2 uv, vec2 resolution, float radius) {
+            vec4 color = vec4(0.0);
+            vec2 texelSize = 1.0 / resolution;
+            float total = 0.0;
+            
+            for (int x = -BLUR_MAX_RADIUS; x <= BLUR_MAX_RADIUS; x++) {
+                for (int y = -BLUR_MAX_RADIUS; y <= BLUR_MAX_RADIUS; y++) {
+                    if (abs(float(x)) <= radius && abs(float(y)) <= radius) {
+                        vec2 offset = vec2(float(x), float(y)) * texelSize;
+                        color += texture2D(image, uv + offset);
+                        total += 1.0;
+                    }
+                }
+            }
+            if (total > 0.0) {
+                return color / total;
+            }
+            return texture2D(image, uv);
+        }
+
+        void main() {
+            vec2 uv = v_texCoord;
+            vec4 originalColor = texture2D(u_image, uv);
+            vec4 finalColor = originalColor;
+
+            if (u_effectType == 0) {
+            } else if (u_effectType == 1) {
+                float luma = dot(originalColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+                finalColor = vec4(vec3(luma), originalColor.a);
+            } else if (u_effectType == 2) {
+                finalColor = vec4(1.0 - originalColor.rgb, originalColor.a);
+            } else if (u_effectType == 3) {
+                vec2 pixelatedUV = floor(uv * u_resolution / u_pixelSize) * u_pixelSize / u_resolution + u_pixelSize / u_resolution * 0.5;
+                finalColor = texture2D(u_image, pixelatedUV);
+            } else if (u_effectType == 4) {
+                float dist = distance(uv, vec2(0.5));
+                float vignette = smoothstep(u_vignetteFalloff, u_vignetteFalloff - 0.4, dist * u_vignetteAmount);
+                finalColor.rgb *= vignette;
+            } else if (u_effectType == 5) {
+                vec2 pixelSize = 1.0 / u_resolution;
+                float r = texture2D(u_image, uv - u_chromaticAberration * pixelSize).r;
+                float g = texture2D(u_image, uv).g;
+                float b = texture2D(u_image, uv + u_chromaticAberration * pixelSize).b;
+                finalColor = vec4(r, g, b, originalColor.a);
+            } else if (u_effectType == 6) {
+                if(u_blurRadius > 0.0){
+                    finalColor = boxBlur(u_image, uv, u_resolution, u_blurRadius);
+                }
+            } else if (u_effectType == 7) {
+                vec4 blurredColor = boxBlur(u_image, uv, u_resolution, 5.0);
+                float brightness = dot(blurredColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+                vec4 bloomColor = blurredColor * smoothstep(u_bloomThreshold, u_bloomThreshold + 0.2, brightness) * u_bloomIntensity;
+                finalColor = originalColor + bloomColor;
+            } else if (u_effectType == 8) {
+                vec2 texelSize = 1.0 / u_resolution;
+                vec3 means[4];
+                vec3 squares[4];
+                float counts[4];
+
+                for(int i = 0; i < 4; i++){
+                    means[i] = vec3(0.0);
+                    squares[i] = vec3(0.0);
+                    counts[i] = 0.0;
+                }
+                
+                float kuwaharaRadiusF = float(u_kuwaharaRadius);
+                for (int i = -KUWAHARA_MAX_RADIUS; i <= KUWAHARA_MAX_RADIUS; i++) {
+                    for (int j = -KUWAHARA_MAX_RADIUS; j <= KUWAHARA_MAX_RADIUS; j++) {
+                        if (abs(float(i)) <= kuwaharaRadiusF && abs(float(j)) <= kuwaharaRadiusF) {
+                            vec3 color = texture2D(u_image, uv + vec2(float(i), float(j)) * texelSize).rgb;
+                            if (i <= 0 && j <= 0) { means[0] += color; squares[0] += color * color; counts[0]++; }
+                            if (i >= 0 && j <= 0) { means[1] += color; squares[1] += color * color; counts[1]++; }
+                            if (i <= 0 && j >= 0) { means[2] += color; squares[2] += color * color; counts[2]++; }
+                            if (i >= 0 && j >= 0) { means[3] += color; squares[3] += color * color; counts[3]++; }
+                        }
+                    }
+                }
+                
+                float min_variance = 1e10;
+                vec3 final_rgb = originalColor.rgb;
+
+                for (int i = 0; i < 4; i++) {
+                    if(counts[i] > 0.0) {
+                        means[i] /= counts[i];
+                        squares[i] /= counts[i];
+                        vec3 variance_vec = squares[i] - means[i] * means[i];
+                        float variance = dot(variance_vec, vec3(1.0));
+                        if (variance < min_variance) {
+                            min_variance = variance;
+                            final_rgb = means[i];
+                        }
+                    }
+                }
+                finalColor.rgb = final_rgb;
+            }
+
+            gl_FragColor = finalColor;
+        }
+    </script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const imageUpload = document.getElementById('image-upload');
+            const placeholder = document.getElementById('placeholder');
+            const canvasDropArea = document.getElementById('canvas-drop-area');
+            const downloadBtn = document.getElementById('download-btn');
+            const effectsPanel = document.getElementById('effects-panel');
+            const controlsPanel = document.getElementById('controls-panel');
+            const effectsList = document.getElementById('effects-list');
+            const controlsContainer = document.getElementById('controls-container');
+            const resetControlsBtn = document.getElementById('reset-controls-btn');
+            const resetViewBtn = document.getElementById('reset-view-btn');
+            const loadingSpinner = document.getElementById('loading-spinner');
+
+            const canvas = document.getElementById('gl-canvas');
+            const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+
+            if (!gl) {
+                alert('WebGLはこのブラウザでサポートされていません。');
+                return;
+            }
+
+            let glProgram;
+            let positionBuffer, texCoordBuffer;
+            let imageTexture = null;
+            let uniforms = {};
+            let currentEffectId = 0;
+            let renderLoopId;
+            let imageLoaded = false;
+            let currentImage = new Image();
+
+            let view = {
+                zoom: 1.0,
+                offset: { x: 0.0, y: 0.0 }
+            };
+            let isDragging = false;
+            let lastMousePos = { x: 0, y: 0 };
+            
+            const effects = [
+                { id: 0, name: "オリジナル", icon: "fa-image", tooltip: "元の画像を表示します。" },
+                { id: 1, name: "グレースケール", icon: "fa-palette", tooltip: "画像を白黒に変換します。" },
+                { id: 2, name: "色反転", icon: "fa-circle-half-stroke", tooltip: "画像の色を反転させます。" },
+                { id: 3, name: "ピクセル化", icon: "fa-th", tooltip: "画像をモザイク状にします。", controls: [
+                    { uniform: 'u_pixelSize', name: 'ピクセルサイズ', type: 'range', min: 2, max: 80, value: 12, step: 1 }
+                ]},
+                { id: 4, name: "ビネット", icon: "fa-bullseye", tooltip: "画像の四隅を暗くして中心を強調します。", controls: [
+                    { uniform: 'u_vignetteAmount', name: '強さ', type: 'range', min: 0, max: 2, value: 1.0, step: 0.1 },
+                    { uniform: 'u_vignetteFalloff', name: '範囲', type: 'range', min: 0.1, max: 1.5, value: 0.8, step: 0.05 }
+                ]},
+                { id: 5, name: "色収差", icon: "fa-braille", tooltip: "RGBチャンネルをずらして虹色のにじみを作ります。", controls: [
+                    { uniform: 'u_chromaticAberration', name: 'ずれ', type: 'range', min: 0, max: 20, value: 1, step: 0.5 }
+                ]},
+                { id: 6, name: "ブラー", icon: "fa-eye-slash", tooltip: "画像をぼかします。処理が重くなる場合があります。", controls: [
+                    { uniform: 'u_blurRadius', name: '半径', type: 'range', min: 0, max: 4, value: 1, step: 0.1 }
+                ]},
+                { id: 7, name: "ブルーム", icon: "fa-sun", tooltip: "画像の明るい部分を輝かせます。", controls: [
+                    { uniform: 'u_bloomThreshold', name: 'しきい値', type: 'range', min: 0, max: 1, value: 0.7, step: 0.05 },
+                    { uniform: 'u_bloomIntensity', name: '強度', type: 'range', min: 0, max: 5, value: 1.5, step: 0.1 }
+                ]},
+                { id: 8, name: "クワハラ", icon: "fa-swatchbook", tooltip: "絵画のようなエッジ保持ブラーを適用します。", controls: [
+                    { uniform: 'u_kuwaharaRadius', name: '半径', type: 'range', min: 1, max: 16, value: 3, step: 1, isInt: true }
+                ]}
+            ];
+
+            function resetTransform() {
+                view.zoom = 1.0;
+                view.offset = { x: 0.0, y: 0.0 };
+            }
+
+            function setupWebGL() {
+                const vertexShaderSource = document.getElementById('vertex-shader').text;
+                const fragmentShaderSource = document.getElementById('fragment-shader').text;
+                
+                const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+                const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+                
+                if (!vertexShader || !fragmentShader) return;
+                glProgram = createProgram(gl, vertexShader, fragmentShader);
+                if (!glProgram) return;
+
+                positionBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+
+                texCoordBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]), gl.STATIC_DRAW);
+                
+                gl.useProgram(glProgram);
+                cacheUniformLocations();
+            }
+
+            function cacheUniformLocations() {
+                uniforms.u_resolution = gl.getUniformLocation(glProgram, 'u_resolution');
+                uniforms.u_image = gl.getUniformLocation(glProgram, 'u_image');
+                uniforms.u_effectType = gl.getUniformLocation(glProgram, 'u_effectType');
+                uniforms.u_zoom = gl.getUniformLocation(glProgram, 'u_zoom');
+                uniforms.u_offset = gl.getUniformLocation(glProgram, 'u_offset');
+                uniforms.u_aspectRatio = gl.getUniformLocation(glProgram, 'u_aspectRatio');
+
+                effects.forEach(effect => {
+                    if (effect.controls) {
+                        effect.controls.forEach(control => {
+                            uniforms[control.uniform] = gl.getUniformLocation(glProgram, control.uniform);
+                        });
+                    }
+                });
+            }
+
+            function createShader(gl, type, source) {
+                const shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error(`シェーダーのコンパイルエラー: ${gl.getShaderInfoLog(shader)}`);
+                    gl.deleteShader(shader);
+                    return null;
+                }
+                return shader;
+            }
+
+            function createProgram(gl, vertexShader, fragmentShader) {
+                const program = gl.createProgram();
+                gl.attachShader(program, vertexShader);
+                gl.attachShader(program, fragmentShader);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error(`プログラムのリンクエラー: ${gl.getProgramInfoLog(program)}`);
+                    gl.deleteProgram(program);
+                    return null;
+                }
+                return program;
+            }
+
+            function loadImage(src) {
+                loadingSpinner.classList.remove('hidden');
+                canvas.classList.add('opacity-0');
+                stopRenderLoop();
+
+                currentImage.onload = () => {
+                    imageLoaded = true;
+                    placeholder.classList.add('opacity-0');
+                    downloadBtn.disabled = false;
+                    effectsPanel.classList.remove('hidden');
+                    resetTransform();
+                    
+                    if (imageTexture) gl.deleteTexture(imageTexture);
+                    imageTexture = createTexture(gl, currentImage);
+                    
+                    loadingSpinner.classList.add('hidden');
+                    canvas.classList.remove('opacity-0');
+                    selectEffect(0, true);
+                    startRenderLoop();
+                };
+                currentImage.src = src;
+            }
+
+            function createTexture(gl, image) {
+                const texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                return texture;
+            }
+
+            function render() {
+                if (!imageLoaded || !glProgram) return;
+
+                const parent = canvas.parentElement;
+                canvas.width = parent.clientWidth;
+                canvas.height = parent.clientHeight;
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+                gl.clearColor(0.98, 0.99, 1.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+
+                gl.useProgram(glProgram);
+
+                const positionAttributeLocation = gl.getAttribLocation(glProgram, 'a_position');
+                gl.enableVertexAttribArray(positionAttributeLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+                const texCoordAttributeLocation = gl.getAttribLocation(glProgram, 'a_texCoord');
+                gl.enableVertexAttribArray(texCoordAttributeLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                gl.vertexAttribPointer(texCoordAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+                
+                const canvasAspect = gl.canvas.width / gl.canvas.height;
+                const imageAspect = currentImage.width / currentImage.height;
+                const aspectRatio = imageAspect / canvasAspect;
+
+                gl.uniform1f(uniforms.u_aspectRatio, aspectRatio);
+                gl.uniform1f(uniforms.u_zoom, view.zoom);
+                gl.uniform2f(uniforms.u_offset, view.offset.x, view.offset.y);
+                gl.uniform2f(uniforms.u_resolution, currentImage.width, currentImage.height);
+                gl.uniform1i(uniforms.u_effectType, currentEffectId);
+
+                const effect = effects.find(e => e.id === currentEffectId);
+                if (effect && effect.controls) {
+                    effect.controls.forEach(control => {
+                        const input = document.getElementById(`control-${control.uniform}`);
+                        if(input && uniforms[control.uniform]) {
+                           if(control.isInt) {
+                                gl.uniform1i(uniforms[control.uniform], parseInt(input.value));
+                           } else {
+                                gl.uniform1f(uniforms[control.uniform], parseFloat(input.value));
+                           }
+                        }
+                    });
+                }
+                
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+                gl.uniform1i(uniforms.u_image, 0);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+            
+            function startRenderLoop() { if (!renderLoopId) renderLoopId = requestAnimationFrame(renderLoop); }
+            function stopRenderLoop() { if (renderLoopId) { cancelAnimationFrame(renderLoopId); renderLoopId = null; } }
+            function renderLoop() { render(); renderLoopId = requestAnimationFrame(renderLoop); }
+
+            function handleFileSelect(e) {
+                e.preventDefault(); e.stopPropagation();
+                const files = e.target.files || (e.dataTransfer && e.dataTransfer.files);
+                if (files && files.length > 0) {
+                    const file = files[0];
+                    if (file.type.startsWith('image/')) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => loadImage(e.target.result);
+                        reader.readAsDataURL(file);
+                    } else { alert('画像ファイルを選択してください。'); }
+                }
+            }
+
+            function setupUI() {
+                effects.forEach(effect => {
+                    const button = document.createElement('button');
+                    button.dataset.effectId = effect.id;
+                    button.className = `effect-btn p-3 rounded-lg text-left transition-all duration-200 border-2 border-transparent hover:border-sky-200 hover:bg-sky-50 tooltip`;
+                    button.innerHTML = `<i class="fas ${effect.icon} w-5 text-center text-sky-500"></i><span class="ml-2 font-medium text-sm text-slate-700">${effect.name}</span><span class="tooltiptext">${effect.tooltip}</span>`;
+                    button.onclick = () => selectEffect(effect.id);
+                    effectsList.appendChild(button);
+                });
+                
+                imageUpload.addEventListener('change', handleFileSelect);
+                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => canvasDropArea.addEventListener(eName, e => { e.preventDefault(); e.stopPropagation(); }, false));
+                canvasDropArea.addEventListener('dragenter', () => canvasDropArea.classList.add('bg-sky-50'));
+                ['dragleave', 'drop'].forEach(eName => canvasDropArea.addEventListener(eName, () => canvasDropArea.classList.remove('bg-sky-50')));
+                canvasDropArea.addEventListener('drop', handleFileSelect);
+
+                downloadBtn.addEventListener('click', () => {
+                    if (!imageLoaded) return;
+                    stopRenderLoop(); 
+                    
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = currentImage.width;
+                    tempCanvas.height = currentImage.height;
+                    const tempGl = tempCanvas.getContext('webgl', { preserveDrawingBuffer: true });
+                    
+                    if(!tempGl) { alert("ダウンロード用Canvasの作成に失敗しました。"); startRenderLoop(); return; }
+
+                    const vsSource = document.getElementById('vertex-shader').text;
+                    const fsSource = document.getElementById('fragment-shader').text;
+                    const program = createProgram(tempGl, createShader(tempGl, tempGl.VERTEX_SHADER, vsSource), createShader(tempGl, tempGl.FRAGMENT_SHADER, fsSource));
+                    if (!program) { startRenderLoop(); return; }
+                    
+                    tempGl.useProgram(program);
+                    
+                    const posBuffer = tempGl.createBuffer(); tempGl.bindBuffer(tempGl.ARRAY_BUFFER, posBuffer); tempGl.bufferData(tempGl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), tempGl.STATIC_DRAW);
+                    const texBuffer = tempGl.createBuffer(); tempGl.bindBuffer(tempGl.ARRAY_BUFFER, texBuffer); tempGl.bufferData(tempGl.ARRAY_BUFFER, new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]), tempGl.STATIC_DRAW);
+                    
+                    const posLoc = tempGl.getAttribLocation(program, 'a_position'); tempGl.enableVertexAttribArray(posLoc); tempGl.vertexAttribPointer(posLoc, 2, tempGl.FLOAT, false, 0, 0);
+                    const texLoc = tempGl.getAttribLocation(program, 'a_texCoord'); tempGl.enableVertexAttribArray(texLoc); tempGl.vertexAttribPointer(texLoc, 2, tempGl.FLOAT, false, 0, 0);
+                    
+                    tempGl.uniform2f(tempGl.getUniformLocation(program, 'u_resolution'), tempCanvas.width, tempCanvas.height);
+                    tempGl.uniform1i(tempGl.getUniformLocation(program, 'u_effectType'), currentEffectId);
+                    tempGl.uniform1f(tempGl.getUniformLocation(program, 'u_aspectRatio'), 1.0);
+                    tempGl.uniform1f(tempGl.getUniformLocation(program, 'u_zoom'), 1.0);
+                    tempGl.uniform2f(tempGl.getUniformLocation(program, 'u_offset'), 0.0, 0.0);
+                    
+                    const effect = effects.find(e => e.id === currentEffectId);
+                     if (effect && effect.controls) {
+                        effect.controls.forEach(control => {
+                            const input = document.getElementById(`control-${control.uniform}`);
+                            if(input) {
+                                const loc = tempGl.getUniformLocation(program, control.uniform);
+                                if(control.isInt) tempGl.uniform1i(loc, parseInt(input.value));
+                                else tempGl.uniform1f(loc, parseFloat(input.value));
+                            }
+                        });
+                    }
+                    
+                    const downloadTexture = createTexture(tempGl, currentImage);
+                    tempGl.activeTexture(tempGl.TEXTURE0); tempGl.bindTexture(tempGl.TEXTURE_2D, downloadTexture); tempGl.uniform1i(tempGl.getUniformLocation(program, 'u_image'), 0);
+                    
+                    tempGl.viewport(0, 0, tempCanvas.width, tempCanvas.height);
+                    tempGl.drawArrays(tempGl.TRIANGLES, 0, 6);
+
+                    const link = document.createElement('a');
+                    const effectName = effects.find(e => e.id === currentEffectId).name;
+                    link.download = `LuminousFX-${effectName}.png`;
+                    link.href = tempCanvas.toDataURL('image/png');
+                    link.click();
+                    
+                    startRenderLoop(); 
+                });
+                
+                resetControlsBtn.addEventListener('click', () => {
+                   const effect = effects.find(e => e.id === currentEffectId);
+                   if (effect && effect.controls) {
+                       effect.controls.forEach(control => {
+                           const input = document.getElementById(`control-${control.uniform}`);
+                           const output = document.getElementById(`output-${control.uniform}`);
+                           if(input) input.value = control.value;
+                           if(output) output.textContent = control.isInt ? control.value : parseFloat(control.value).toFixed(2);
+                       });
+                   }
+                });
+                resetViewBtn.addEventListener('click', resetTransform);
+
+                canvas.addEventListener('mousedown', e => { isDragging = true; lastMousePos = { x: e.clientX, y: e.clientY }; });
+                canvas.addEventListener('mouseup', () => { isDragging = false; });
+                canvas.addEventListener('mouseleave', () => { isDragging = false; });
+                canvas.addEventListener('mousemove', e => {
+                    if (!isDragging || !imageLoaded) return;
+                    const dx = e.clientX - lastMousePos.x;
+                    const dy = e.clientY - lastMousePos.y;
+                    const canvasAspect = canvas.width / canvas.height;
+                    const imageAspect = currentImage.width / currentImage.height;
+                    const aspect = imageAspect / canvasAspect;
+
+                    view.offset.x += (dx / canvas.width) * 2 / aspect;
+                    view.offset.y -= (dy / canvas.height) * 2;
+                    lastMousePos = { x: e.clientX, y: e.clientY };
+                });
+
+                canvas.addEventListener('wheel', e => {
+                    if (!imageLoaded) return;
+                    e.preventDefault();
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+                    
+                    const clipX = (mouseX / canvas.width) * 2 - 1;
+                    const clipY = (mouseY / canvas.height) * -2 + 1;
+
+                    const canvasAspect = canvas.width / canvas.height;
+                    const imageAspect = currentImage.width / currentImage.height;
+                    const aspect = imageAspect / canvasAspect;
+
+                    const worldX = (clipX - view.offset.x) / (view.zoom * aspect);
+                    const worldY = (clipY - view.offset.y) / view.zoom;
+                    
+                    const scale = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+                    view.zoom = Math.max(0.1, Math.min(view.zoom * scale, 50.0));
+                    
+                    view.offset.x = clipX - worldX * view.zoom * aspect;
+                    view.offset.y = clipY - worldY * view.zoom;
+                });
+            }
+
+            function selectEffect(id, force = false) {
+                if (currentEffectId === id && !force) return;
+                currentEffectId = id;
+
+                document.querySelectorAll('.effect-btn').forEach(btn => {
+                    btn.classList.toggle('bg-sky-100', parseInt(btn.dataset.effectId) === id);
+                    btn.classList.toggle('border-sky-300', parseInt(btn.dataset.effectId) === id);
+                    btn.classList.toggle('hover:border-sky-200', parseInt(btn.dataset.effectId) !== id);
+                    btn.classList.toggle('hover:bg-sky-50', parseInt(btn.dataset.effectId) !== id);
+                });
+
+                controlsContainer.innerHTML = '';
+                const effect = effects.find(e => e.id === id);
+                if (effect && effect.controls) {
+                    controlsPanel.classList.remove('hidden');
+                    effect.controls.forEach(control => {
+                        const controlGroup = document.createElement('div');
+                        controlGroup.className = 'control-group';
+                        const valText = control.isInt ? control.value : parseFloat(control.value).toFixed(2);
+                        controlGroup.innerHTML = `
+                            <label class="flex justify-between items-center text-sm font-medium text-slate-600 mb-1">
+                                <span>${control.name}</span>
+                                <span id="output-${control.uniform}" class="text-sky-600 font-mono bg-sky-100 px-1.5 py-0.5 rounded-md text-xs">${valText}</span>
+                            </label>
+                            <input type="range" id="control-${control.uniform}" min="${control.min}" max="${control.max}" value="${control.value}" step="${control.step || 'any'}">
+                        `;
+                        const input = controlGroup.querySelector('input');
+                        const output = controlGroup.querySelector('span:last-child');
+                        input.oninput = () => { output.textContent = control.isInt ? input.value : parseFloat(input.value).toFixed(2); };
+                        
+                        controlsContainer.appendChild(controlGroup);
+                        requestAnimationFrame(() => {
+                           controlGroup.classList.add('control-group-enter');
+                           requestAnimationFrame(() => controlGroup.classList.add('control-group-enter-active'));
+                        });
+                    });
+                } else {
+                    controlsPanel.classList.add('hidden');
+                }
+            }
+
+            setupWebGL();
+            setupUI();
+        });
+    </script>
+</body>
+</html>
