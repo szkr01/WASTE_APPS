@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depth-Based Hierarchical Clustering</title>
+    <meta name="description" content="An interactive application to perform hierarchical clustering on images based on their AI-generated depth maps.">
+    <meta name="page:icon" content="fas fa-sitemap">
+    <meta name="page:color" content="#38bdf8">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/ml-hclust@3.2.0/dist/hclust.min.js"></script>
+
+    <style>
+        :root {
+            --theme-color: #38bdf8;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .custom-file-button::before {
+            content: 'Upload Image';
+            display: inline-block;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            padding: 0.5rem 1rem;
+            outline: none;
+            white-space: nowrap;
+            cursor: pointer;
+            font-weight: 500;
+            color: #374151;
+            transition: all 0.2s ease-in-out;
+            width: 100%;
+            text-align: center;
+        }
+        .custom-file-button:hover::before {
+            background-color: #f9fafb;
+            border-color: #9ca3af;
+        }
+        input[type="file"] {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .loader-spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid var(--theme-color);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .output-canvas-container {
+            border: 1px solid #e5e7eb;
+            background-color: #f9fafb;
+            background-image: linear-gradient(45deg, #f3f4f6 25%, transparent 25%), linear-gradient(-45deg, #f3f4f6 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f3f4f6 75%), linear-gradient(-45deg, transparent 75%, #f3f4f6 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        .output-canvas-container canvas {
+            background: transparent;
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type=range]:focus {
+          outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+          background: #e5e7eb;
+          height: 0.25rem;
+          border-radius: 0.5rem;
+        }
+        input[type=range]::-moz-range-track {
+          background: #e5e7eb;
+          height: 0.25rem;
+          border-radius: 0.5rem;
+        }
+        input[type=range]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          margin-top: -6px;
+          background-color: var(--theme-color);
+          height: 1rem;
+          width: 1rem;
+          border-radius: 50%;
+          border: 2px solid white;
+          box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+        input[type=range]::-moz-range-thumb {
+          border: none;
+          border-radius: 50%;
+          background-color: var(--theme-color);
+          height: 1rem;
+          width: 1rem;
+          border: 2px solid white;
+          box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+        .control-disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="loader" class="fixed inset-0 bg-white/80 backdrop-blur-sm flex flex-col justify-center items-center z-50 transition-opacity duration-300">
+        <div class="loader-spinner"></div>
+        <p id="loader-text" class="mt-4 text-lg text-gray-600 font-medium">Loading AI Model...</p>
+        <div class="w-64 bg-gray-200 rounded-full h-2.5 mt-4 overflow-hidden">
+            <div id="loader-progress" class="bg-sky-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <p id="loader-subtext" class="mt-2 text-sm text-gray-500"></p>
+    </div>
+
+    <div class="min-h-screen flex flex-col lg:flex-row">
+        <aside class="w-full lg:w-96 bg-white p-6 border-r border-gray-200 flex flex-col shrink-0">
+            <header class="pb-6 border-b border-gray-200">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-sitemap text-3xl text-sky-500"></i>
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Depth Cluster</h1>
+                        <p class="text-gray-500 text-sm">Hierarchical clustering from image depth.</p>
+                    </div>
+                </div>
+            </header>
+            
+            <div class="flex-grow mt-6">
+                 <div class="space-y-6">
+                    <h2 class="text-lg font-semibold text-gray-900">1. Input Image</h2>
+                    <div>
+                        <label for="image-url" class="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+                        <input type="text" id="image-url" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm transition-colors duration-200">
+                    </div>
+
+                    <div class="relative flex items-center">
+                        <div class="flex-grow border-t border-gray-300"></div>
+                        <span class="flex-shrink mx-2 text-sm text-gray-500">OR</span>
+                        <div class="flex-grow border-t border-gray-300"></div>
+                    </div>
+
+                    <div>
+                        <label for="file-upload" class="custom-file-button"></label>
+                        <input type="file" id="file-upload" accept="image/*">
+                    </div>
+                    
+                    <button id="generate-btn" class="w-full inline-flex items-center justify-center rounded-md border border-transparent bg-sky-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
+                        <i class="fas fa-cogs mr-2"></i>
+                        <span>Generate & Cluster</span>
+                    </button>
+                </div>
+                
+                <div id="clustering-controls" class="mt-8 pt-6 border-t border-gray-200 space-y-6">
+                    <h2 class="text-lg font-semibold text-gray-900">2. Clustering Settings</h2>
+                     <div>
+                        <label for="cluster-count-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+                            <span>Number of Clusters</span>
+                            <span id="cluster-count-value">5</span>
+                        </label>
+                        <input id="cluster-count-slider" type="range" min="2" max="20" step="1" value="5" class="w-full">
+                    </div>
+                    <div>
+                        <label for="linkage-select" class="block text-sm font-medium text-gray-700 mb-1">Linkage Method</label>
+                        <select id="linkage-select" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm">
+                            <option value="ward" selected>Ward</option>
+                            <option value="single">Single</option>
+                            <option value="complete">Complete</option>
+                            <option value="average">Average</option>
+                        </select>
+                    </div>
+                    <button id="apply-cluster-btn" class="w-full inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        <span>Apply New Settings</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="status-box" class="mt-8 p-4 bg-gray-100 rounded-lg border border-gray-200 transition-colors duration-200 h-28">
+                <h3 class="font-semibold text-gray-800 mb-2 flex items-center gap-2"><i class="fas fa-info-circle text-gray-400"></i>Status</h3>
+                <p id="status-message" class="text-sm text-gray-600">Awaiting image. Try the default or upload your own.</p>
+            </div>
+            
+        </aside>
+
+        <main class="flex-grow p-4 sm:p-6 lg:p-8 bg-gray-50">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 h-full">
+                
+                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
+                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Original Image</h3>
+                    <div class="flex-grow flex items-center justify-center min-h-[200px] aspect-video">
+                        <canvas id="original-canvas" class="max-w-full max-h-full"></canvas>
+                    </div>
+                </div>
+
+                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
+                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Depth Map</h3>
+                     <div class="flex-grow flex items-center justify-center min-h-[200px] aspect-video">
+                        <canvas id="depth-canvas" class="max-w-full max-h-full"></canvas>
+                    </div>
+                </div>
+
+                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
+                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Clustered Result</h3>
+                     <div class="flex-grow flex items-center justify-center min-h-[200px] aspect-video">
+                        <canvas id="cluster-canvas" class="max-w-full max-h-full"></canvas>
+                    </div>
+                </div>
+
+                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
+                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Dendrogram</h3>
+                     <div class="flex-grow flex items-center justify-center min-h-[200px] p-4">
+                        <canvas id="dendrogram-canvas" class="w-full h-full"></canvas>
+                    </div>
+                </div>
+                
+            </div>
+        </main>
+    </div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js"
+      }
+    }
+    </script>
+    <script type="module">
+        import { pipeline, env } from '@xenova/transformers';
+
+        const LOADER = document.getElementById('loader');
+        const LOADER_TEXT = document.getElementById('loader-text');
+        const LOADER_PROGRESS = document.getElementById('loader-progress');
+        const LOADER_SUBTEXT = document.getElementById('loader-subtext');
+
+        const GENERATE_BTN = document.getElementById('generate-btn');
+        const APPLY_CLUSTER_BTN = document.getElementById('apply-cluster-btn');
+        const URL_INPUT = document.getElementById('image-url');
+        const FILE_INPUT = document.getElementById('file-upload');
+        const STATUS_MESSAGE = document.getElementById('status-message');
+        const CLUSTER_CONTROLS = document.getElementById('clustering-controls');
+
+        const CLUSTER_COUNT_SLIDER = document.getElementById('cluster-count-slider');
+        const CLUSTER_COUNT_VALUE = document.getElementById('cluster-count-value');
+        const LINKAGE_SELECT = document.getElementById('linkage-select');
+
+        const ORIGINAL_CANVAS = document.getElementById('original-canvas');
+        const DEPTH_CANVAS = document.getElementById('depth-canvas');
+        const CLUSTER_CANVAS = document.getElementById('cluster-canvas');
+        const DENDROGRAM_CANVAS = document.getElementById('dendrogram-canvas');
+
+        const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1542840410-241062d3dcf6?q=80&w=2592';
+
+        let depthEstimator = null;
+        let isProcessing = false;
+        
+        let currentOriginalImage = null;
+        let currentDepthMapData = null;
+        let clusteringResult = null;
+        let samplePoints = [];
+        const SAMPLE_RATE = 0.05;
+
+        function showLoader(text, showProgress = false) {
+            LOADER_TEXT.textContent = text;
+            LOADER_PROGRESS.parentElement.style.display = showProgress ? 'block' : 'none';
+            LOADER_SUBTEXT.textContent = '';
+            LOADER_PROGRESS.style.width = '0%';
+            LOADER.classList.remove('hidden');
+            LOADER.style.opacity = '1';
+        }
+
+        function hideLoader() {
+            LOADER.style.opacity = '0';
+            setTimeout(() => LOADER.classList.add('hidden'), 300);
+        }
+
+        function updateStatus(message, isError = false) {
+            STATUS_MESSAGE.textContent = message;
+            const statusBox = STATUS_MESSAGE.parentElement;
+            statusBox.style.borderColor = isError ? '#fca5a5' : '#e5e7eb';
+            statusBox.style.backgroundColor = isError ? '#fef2f2' : '#f0f9ff';
+        }
+        
+        function toggleControls(enabled) {
+            const elements = [GENERATE_BTN, URL_INPUT, FILE_INPUT.parentElement, CLUSTER_CONTROLS];
+            elements.forEach(el => {
+                if (enabled) el.classList.remove('control-disabled');
+                else el.classList.add('control-disabled');
+            });
+            GENERATE_BTN.querySelector('span').textContent = enabled ? 'Generate & Cluster' : 'Working...';
+        }
+
+        async function loadModel() {
+            try {
+                showLoader('Loading AI Model...', true);
+                updateStatus('Downloading AI model. This may take a moment.');
+                env.allowLocalModels = false;
+                
+                depthEstimator = await pipeline('depth-estimation', 'Xenova/depth-anything-small-hf', {
+                    progress_callback: (progress) => {
+                        const percentage = (progress.progress || 0).toFixed(2);
+                        LOADER_PROGRESS.style.width = `${percentage}%`;
+                        if(progress.file) {
+                           LOADER_SUBTEXT.textContent = `${progress.file} (${(progress.loaded/1024/1024).toFixed(2)}MB / ${(progress.total/1024/1024).toFixed(2)}MB)`;
+                        }
+                    }
+                });
+                
+                updateStatus('Model loaded. Ready to process images.');
+                return true;
+            } catch (error) {
+                console.error('Model loading failed:', error);
+                updateStatus('Failed to load AI model. Please refresh the page.', true);
+                hideLoader();
+                return false;
+            }
+        }
+
+        async function processImage(url) {
+            if (isProcessing || !depthEstimator) {
+                 if(!depthEstimator) updateStatus('Model is not ready yet.', true);
+                 return;
+            }
+            
+            isProcessing = true;
+            toggleControls(false);
+            clearAllCanvas();
+
+            try {
+                showLoader('Generating Depth Map...');
+                updateStatus('1/3: Analyzing image and creating depth map...');
+                const depthOutput = await depthEstimator(url);
+                const depthCanvas = await depthOutput.depth.toCanvas();
+                
+                currentOriginalImage = new Image();
+                currentOriginalImage.crossOrigin = 'Anonymous';
+                await new Promise((resolve, reject) => {
+                    currentOriginalImage.onload = resolve;
+                    currentOriginalImage.onerror = reject;
+                    currentOriginalImage.src = url;
+                });
+
+                const { width, height } = currentOriginalImage;
+                [ORIGINAL_CANVAS, DEPTH_CANVAS, CLUSTER_CANVAS].forEach(c => {
+                    c.width = width;
+                    c.height = height;
+                });
+                
+                const originalCtx = ORIGINAL_CANVAS.getContext('2d');
+                originalCtx.drawImage(currentOriginalImage, 0, 0);
+
+                const depthCtx = DEPTH_CANVAS.getContext('2d');
+                depthCtx.drawImage(depthCanvas, 0, 0, width, height);
+                currentDepthMapData = depthCtx.getImageData(0, 0, width, height);
+
+                await runClustering();
+
+                updateStatus('Successfully generated all outputs!', false);
+            } catch (error) {
+                console.error('Image processing failed:', error);
+                updateStatus('Could not process the image. The URL might be invalid or blocked.', true);
+                clearAllCanvas();
+            } finally {
+                isProcessing = false;
+                toggleControls(true);
+                hideLoader();
+            }
+        }
+
+        function sampleDepthData() {
+            updateStatus('2/3: Sampling depth data for clustering...');
+            const { data, width, height } = currentDepthMapData;
+            samplePoints = [];
+            const dataToCluster = [];
+            
+            const step = Math.floor(1 / Math.sqrt(SAMPLE_RATE));
+
+            for (let y = 0; y < height; y += step) {
+                for (let x = 0; x < width; x += step) {
+                    const i = (y * width + x) * 4;
+                    const depth = data[i]; // Grayscale, so R=G=B
+                    samplePoints.push({ x, y, depth });
+                    dataToCluster.push([depth]);
+                }
+            }
+            return dataToCluster;
+        }
+
+        async function runClustering() {
+             return new Promise(resolve => {
+                setTimeout(() => {
+                    const dataToCluster = sampleDepthData();
+
+                    updateStatus('2/3: Performing hierarchical clustering...');
+                    const linkage = LINKAGE_SELECT.value;
+                    
+                    try {
+                        const agnes = hclust.agnes(dataToCluster, { method: linkage });
+                        clusteringResult = agnes;
+                        drawResults();
+                    } catch(e) {
+                        console.error("Clustering failed: ", e);
+                        updateStatus("Clustering failed. Try a different linkage method.", true);
+                    }
+
+                    resolve();
+                }, 50);
+            });
+        }
+        
+        function drawResults() {
+             updateStatus('3/3: Visualizing results...');
+             const numClusters = parseInt(CLUSTER_COUNT_SLIDER.value);
+
+             if (!clusteringResult) return;
+
+             const clusters = clusteringResult.cut(numClusters);
+             const colors = generateDistinctColors(numClusters);
+
+             drawClusteredImage(clusters, colors);
+             drawDendrogram(clusteringResult, numClusters, colors);
+        }
+        
+        function drawClusteredImage(clusters, colors) {
+            const ctx = CLUSTER_CANVAS.getContext('2d');
+            const { width, height } = currentDepthMapData;
+            const newImageData = ctx.createImageData(width, height);
+            
+            const clusterAssignments = new Array(samplePoints.length);
+            clusters.forEach((cluster, clusterIndex) => {
+                cluster.indices.forEach(pointIndex => {
+                    clusterAssignments[pointIndex] = clusterIndex;
+                });
+            });
+
+            const findNearestCluster = (x, y) => {
+                let minDistSq = Infinity;
+                let bestCluster = 0;
+                samplePoints.forEach((p, i) => {
+                    const distSq = (p.x - x)**2 + (p.y - y)**2;
+                    if(distSq < minDistSq) {
+                        minDistSq = distSq;
+                        bestCluster = clusterAssignments[i];
+                    }
+                });
+                return bestCluster;
+            };
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const i = (y * width + x) * 4;
+                    const clusterIndex = findNearestCluster(x, y);
+                    const color = colors[clusterIndex] || [0,0,0];
+                    newImageData.data[i] = color[0];
+                    newImageData.data[i + 1] = color[1];
+                    newImageData.data[i + 2] = color[2];
+                    newImageData.data[i + 3] = 255;
+                }
+            }
+            ctx.putImageData(newImageData, 0, 0);
+        }
+        
+        function drawDendrogram(tree, numClusters, colors) {
+            const canvas = DENDROGRAM_CANVAS;
+            const ctx = canvas.getContext('2d');
+            
+            const parent = canvas.parentElement;
+            canvas.width = parent.clientWidth;
+            canvas.height = parent.clientHeight;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#6b7280';
+            ctx.lineWidth = 1;
+
+            if (!tree || !tree.children) {
+                 ctx.fillStyle = '#9ca3af';
+                 ctx.textAlign = 'center';
+                 ctx.fillText('Not enough data for dendrogram.', canvas.width / 2, canvas.height / 2);
+                 return;
+            }
+
+            const leaves = tree.indices();
+            const nLeaves = leaves.length;
+            const padding = 20;
+            const xStep = (canvas.width - 2 * padding) / (nLeaves - 1 || 1);
+            const yMax = tree.height;
+            const yMin = 0;
+
+            const leafX = new Map();
+            leaves.forEach((leafIndex, i) => {
+                leafX.set(leafIndex, padding + i * xStep);
+            });
+            
+            const clusterThresholds = new Array(numClusters).fill(Infinity);
+            const merges = tree.getMergeOrder();
+            for(let i=0; i < numClusters - 1; ++i) {
+                clusterThresholds[i] = merges[merges.length-i-1].height;
+            }
+            clusterThresholds.sort((a, b) => a-b);
+            
+            function getClusterColor(height) {
+                for(let i=0; i<clusterThresholds.length; ++i) {
+                    if (height < clusterThresholds[i]) {
+                        return colors[i];
+                    }
+                }
+                return colors[colors.length-1];
+            }
+
+            function drawNode(node) {
+                if (!node) return {x:0, count:0};
+                if (node.isLeaf) {
+                    return { x: leafX.get(node.index), count: 1 };
+                }
+
+                const [left, right] = node.children;
+                const { x: x1 } = drawNode(left);
+                const { x: x2 } = drawNode(right);
+
+                const y1 = (1 - left.height / yMax) * (canvas.height - 2 * padding) + padding;
+                const y2 = (1 - right.height / yMax) * (canvas.height - 2 * padding) + padding;
+                const y3 = (1 - node.height / yMax) * (canvas.height - 2 * padding) + padding;
+
+                const nodeColor = getClusterColor(node.height);
+                ctx.strokeStyle = `rgb(${nodeColor[0]}, ${nodeColor[1]}, ${nodeColor[2]})`;
+                ctx.lineWidth = 1.5;
+
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x1, y3);
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2, y3);
+                ctx.moveTo(x1, y3);
+                ctx.lineTo(x2, y3);
+                ctx.stroke();
+
+                return { x: (x1 + x2) / 2 };
+            }
+
+            drawNode(tree);
+        }
+
+        function generateDistinctColors(count) {
+            const colors = [];
+            for (let i = 0; i < count; i++) {
+                const hue = (i * (360 / count)) % 360;
+                colors.push(hslToRgb(hue / 360, 0.7, 0.5));
+            }
+            return colors;
+        }
+
+        function hslToRgb(h, s, l) {
+            let r, g, b;
+            if (s === 0) {
+                r = g = b = l;
+            } else {
+                const hue2rgb = (p, q, t) => {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1 / 6) return p + (q - p) * 6 * t;
+                    if (t < 1 / 2) return q;
+                    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+                    return p;
+                };
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1 / 3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1 / 3);
+            }
+            return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+        }
+
+        function clearAllCanvas() {
+            [ORIGINAL_CANVAS, DEPTH_CANVAS, CLUSTER_CANVAS, DENDROGRAM_CANVAS].forEach(c => {
+                c.getContext('2d').clearRect(0,0,c.width,c.height);
+                c.width = 1; c.height = 1;
+            });
+        }
+
+        function addEventListeners() {
+            CLUSTER_COUNT_SLIDER.addEventListener('input', () => CLUSTER_COUNT_VALUE.textContent = CLUSTER_COUNT_SLIDER.value);
+            
+            GENERATE_BTN.addEventListener('click', () => {
+                const url = URL_INPUT.value.trim();
+                if (url) {
+                    processImage(url);
+                } else {
+                    updateStatus('Please enter a valid image URL.', true);
+                }
+            });
+
+            FILE_INPUT.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const url = URL.createObjectURL(file);
+                    URL_INPUT.value = '';
+                    processImage(url);
+                }
+            });
+
+            APPLY_CLUSTER_BTN.addEventListener('click', async () => {
+                if (!currentDepthMapData || isProcessing) return;
+
+                isProcessing = true;
+                toggleControls(false);
+                showLoader("Applying new cluster settings...");
+
+                await runClustering();
+                updateStatus('Successfully applied new settings!', false);
+
+                hideLoader();
+                isProcessing = false;
+                toggleControls(true);
+            });
+        }
+
+        async function initializeApp() {
+            addEventListeners();
+            toggleControls(false);
+
+            const modelLoaded = await loadModel();
+            URL_INPUT.value = DEFAULT_IMAGE_URL;
+            
+            if (modelLoaded) {
+                await processImage(DEFAULT_IMAGE_URL);
+            } else {
+                 toggleControls(true);
+            }
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>
