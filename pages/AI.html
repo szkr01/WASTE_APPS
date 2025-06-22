@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Meta Data -->
+    <title>遺伝的アルゴリズム AI 対戦シミュレーター</title>
+    <meta name="description" content="p5.jsで構築された2D対戦ゲームと、遺伝的アルゴリズムで対戦AIを学習させるインタラクティブなシミュレーション。">
+    <meta name="page:icon" content="fas fa-robot">
+    <meta name="page:color" content="#38bdf8">
+
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-dark: #0d1117;
+            --bg-med: #161b22;
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #7d8590;
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --player1-color: #2dd4bf; /* teal-400 */
+            --player2-color: #f472b6; /* pink-400 */
+            --ai-color: #facc15;     /* yellow-400 */
+        }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .glass-card {
+            background: rgba(22, 27, 34, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+        }
+        .btn {
+            transition: all 0.2s ease-in-out;
+            border: 1px solid var(--border-color);
+        }
+        .btn-primary {
+            background-color: var(--accent);
+            color: var(--bg-dark);
+            border-color: var(--accent);
+        }
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+            border-color: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2);
+        }
+        .btn-secondary {
+            background-color: var(--bg-med);
+            border-color: var(--border-color);
+        }
+        .btn-secondary:hover {
+            background-color: var(--bg-dark);
+            border-color: var(--text-secondary);
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--border-color);
+            border-radius: 5px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--accent);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid var(--bg-med);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: var(--accent);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid var(--bg-med);
+        }
+        #game-canvas canvas {
+            border-radius: 0.5rem;
+            border: 2px solid var(--border-color);
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+        }
+        .progress-bar {
+            background-color: var(--border-color);
+            border-radius: 9999px;
+            overflow: hidden;
+            width: 100%;
+            height: 0.5rem;
+        }
+        .progress-bar-inner {
+            height: 100%;
+            background-color: var(--accent);
+            transition: width 0.1s linear;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen text-sm lg:text-base">
+
+    <div class="container mx-auto p-4 lg:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="font-orbitron text-3xl lg:text-5xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-sky-300 to-sky-500">
+                <i class="fas fa-robot mr-2" style="color:var(--accent);"></i> GENETIC BRAWL
+            </h1>
+            <p class="text-base lg:text-lg text-slate-400 mt-2">遺伝的アルゴリズムによるAI対戦シミュレーター</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+            
+            <!-- Game and Controls Section -->
+            <div class="lg:col-span-2 flex flex-col gap-6">
+                <div id="game-container" class="w-full aspect-video glass-card p-2 flex items-center justify-center">
+                    <div id="game-canvas" class="w-full h-full relative">
+                        <div id="game-overlay" class="absolute inset-0 z-10 flex items-center justify-center text-center backdrop-blur-sm bg-black/50 rounded-lg fade-in">
+                            <div>
+                                <h2 id="winner-text" class="font-orbitron text-4xl lg:text-6xl font-bold"></h2>
+                                <p id="subtitle-text" class="mt-4 text-slate-300">モードを選択してゲームを開始してください。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="glass-card p-4 lg:p-6">
+                    <h3 class="font-orbitron text-lg font-bold mb-4 border-b border-b-[var(--border-color)] pb-2 text-slate-300">
+                        <i class="fa-solid fa-gamepad mr-2"></i>コントロールパネル
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="md:col-span-2">
+                            <p class="font-bold text-slate-400 mb-2">ゲームモード</p>
+                            <div class="flex flex-wrap gap-2">
+                                <button id="pvp-btn" class="btn btn-secondary px-4 py-2 rounded-md flex-grow">人間 vs 人間</button>
+                                <button id="pve-btn" class="btn btn-secondary px-4 py-2 rounded-md flex-grow">人間 vs AI</button>
+                                <button id="eve-btn" class="btn btn-secondary px-4 py-2 rounded-md flex-grow">AI vs AI</button>
+                            </div>
+                        </div>
+                        <div>
+                             <p class="font-bold text-slate-400 mb-2">ゲーム操作</p>
+                            <button id="reset-btn" class="btn btn-primary w-full px-4 py-2 rounded-md font-bold">リセット</button>
+                        </div>
+                    </div>
+                     <div class="mt-6 text-slate-400 text-xs md:text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                        <p><strong style="color: var(--player1-color)">Player 1:</strong> WASD (移動), G (ショット), F (サイドステップ)</p>
+                        <p><strong style="color: var(--player2-color)">Player 2:</strong> 矢印キー (移動), L (ショット), K (サイドステップ)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Genetic Algorithm Section -->
+            <div class="lg:col-span-1 glass-card p-4 lg:p-6 flex flex-col">
+                <h3 class="font-orbitron text-lg font-bold mb-4 border-b border-b-[var(--border-color)] pb-2 text-slate-300">
+                    <i class="fa-solid fa-dna mr-2"></i>遺伝的アルゴリズム
+                </h3>
+                <div class="flex-grow space-y-5">
+                    <!-- GA Stats -->
+                    <div class="grid grid-cols-2 gap-4 text-center">
+                        <div>
+                            <p class="text-xs text-slate-400">世代</p>
+                            <p id="generation-stat" class="font-orbitron text-2xl font-bold text-[var(--accent)]">0</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">最高適応度</p>
+                            <p id="fitness-stat" class="font-orbitron text-2xl font-bold">0.00</p>
+                        </div>
+                    </div>
+
+                    <!-- GA Controls -->
+                    <div class="space-y-4">
+                        <div>
+                            <label for="population-slider" class="text-sm font-medium text-slate-400 flex justify-between">
+                                <span>個体数</span><span id="population-value">100</span>
+                            </label>
+                            <input id="population-slider" type="range" min="10" max="200" step="10" value="100" class="w-full mt-1">
+                        </div>
+                        <div>
+                            <label for="mutation-slider" class="text-sm font-medium text-slate-400 flex justify-between">
+                                <span>突然変異率</span><span id="mutation-value">5%</span>
+                            </label>
+                            <input id="mutation-slider" type="range" min="0" max="20" step="1" value="5" class="w-full mt-1">
+                        </div>
+                    </div>
+                     <div class="flex flex-col space-y-2">
+                        <button id="train-btn" class="btn btn-primary w-full px-4 py-2 rounded-md font-bold">
+                            <i class="fas fa-play mr-2"></i>トレーニング開始
+                        </button>
+                        <button id="stop-train-btn" class="btn btn-secondary w-full px-4 py-2 rounded-md hidden">
+                            <i class="fas fa-stop mr-2"></i>停止
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4 text-xs text-slate-500 text-center border-t border-t-[var(--border-color)] pt-3">
+                    <p>AIは「生存時間」「勝利」「弾の回避」を基に学習します。最高のAIを見つけ出そう。</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+<script>
+// --- UTILITY & NEURAL NETWORK ---
+class Matrix {
+    constructor(rows, cols) {
+        this.rows = rows;
+        this.cols = cols;
+        this.data = Array(this.rows).fill().map(() => Array(this.cols).fill(0));
+    }
+
+    static fromArray(arr) {
+        let m = new Matrix(arr.length, 1);
+        m.data = arr.map(val => [val]);
+        return m;
+    }
+
+    toArray() {
+        return this.data.flat();
+    }
+
+    randomize() {
+        this.data = this.data.map(row => row.map(() => Math.random() * 2 - 1));
+    }
+
+    static multiply(a, b) {
+        if (a.cols !== b.rows) {
+            console.error("Matrix dimensions are not compatible for multiplication.");
+            return undefined;
+        }
+        let result = new Matrix(a.rows, b.cols);
+        for (let i = 0; i < result.rows; i++) {
+            for (let j = 0; j < result.cols; j++) {
+                let sum = 0;
+                for (let k = 0; k < a.cols; k++) {
+                    sum += a.data[i][k] * b.data[k][j];
+                }
+                result.data[i][j] = sum;
+            }
+        }
+        return result;
+    }
+
+    map(func) {
+        this.data = this.data.map((row, i) => row.map((val, j) => func(val, i, j)));
+    }
+
+    static map(matrix, func) {
+        let result = new Matrix(matrix.rows, matrix.cols);
+        result.data = matrix.data.map((row, i) => row.map((val, j) => func(val, i, j)));
+        return result;
+    }
+}
+
+class NeuralNetwork {
+    constructor(inputNodes, hiddenNodes, outputNodes) {
+        if (inputNodes instanceof NeuralNetwork) {
+            this.inputNodes = inputNodes.inputNodes;
+            this.hiddenNodes = inputNodes.hiddenNodes;
+            this.outputNodes = inputNodes.outputNodes;
+            this.weights_ih = inputNodes.weights_ih;
+            this.weights_ho = inputNodes.weights_ho;
+            this.bias_h = inputNodes.bias_h;
+            this.bias_o = inputNodes.bias_o;
+        } else {
+            this.inputNodes = inputNodes;
+            this.hiddenNodes = hiddenNodes;
+            this.outputNodes = outputNodes;
+
+            this.weights_ih = new Matrix(this.hiddenNodes, this.inputNodes);
+            this.weights_ho = new Matrix(this.outputNodes, this.hiddenNodes);
+            this.weights_ih.randomize();
+            this.weights_ho.randomize();
+
+            this.bias_h = new Matrix(this.hiddenNodes, 1);
+            this.bias_o = new Matrix(this.outputNodes, 1);
+            this.bias_h.randomize();
+            this.bias_o.randomize();
+        }
+    }
+
+    predict(inputArray) {
+        let inputs = Matrix.fromArray(inputArray);
+        let hidden = Matrix.multiply(this.weights_ih, inputs);
+        hidden.data = hidden.data.map((row, i) => row.map((val, j) => val + this.bias_h.data[i][j]));
+        hidden.map(x => 1 / (1 + Math.exp(-x))); // Sigmoid activation
+
+        let output = Matrix.multiply(this.weights_ho, hidden);
+        output.data = output.data.map((row, i) => row.map((val, j) => val + this.bias_o.data[i][j]));
+        output.map(x => 1 / (1 + Math.exp(-x)));
+
+        return output.toArray();
+    }
+
+    copy() {
+        return new NeuralNetwork(this);
+    }
+    
+    mutate(rate) {
+        const mutate = (val) => {
+            if (Math.random() < rate) {
+                return val + (Math.random() * 2 - 1) * 0.1;
+            }
+            return val;
+        };
+        this.weights_ih.map(mutate);
+        this.weights_ho.map(mutate);
+        this.bias_h.map(mutate);
+        this.bias_o.map(mutate);
+    }
+}
+
+
+// --- P5.JS GAME LOGIC ---
+const sketch = (p) => {
+    let players = [];
+    let projectiles = [];
+    let gameMode = 'IDLE'; // PVP, PVE, EVE, IDLE, TRAINING
+    let winner = null;
+    let gameActive = false;
+    let training = false;
+    let population;
+    let bestAIPlayer = null;
+    
+    const p1Color = getComputedStyle(document.documentElement).getPropertyValue('--player1-color').trim();
+    const p2Color = getComputedStyle(document.documentElement).getPropertyValue('--player2-color').trim();
+    const aiColor = getComputedStyle(document.documentElement).getPropertyValue('--ai-color').trim();
+    const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg-med').trim();
+
+    // --- DOM ELEMENTS ---
+    const gameOverlay = document.getElementById('game-overlay');
+    const winnerText = document.getElementById('winner-text');
+    const subtitleText = document.getElementById('subtitle-text');
+    const pvpBtn = document.getElementById('pvp-btn');
+    const pveBtn = document.getElementById('pve-btn');
+    const eveBtn = document.getElementById('eve-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const trainBtn = document.getElementById('train-btn');
+    const stopTrainBtn = document.getElementById('stop-train-btn');
+    
+    const popSlider = document.getElementById('population-slider');
+    const mutSlider = document.getElementById('mutation-slider');
+    const popValue = document.getElementById('population-value');
+    const mutValue = document.getElementById('mutation-value');
+    const genStat = document.getElementById('generation-stat');
+    const fitStat = document.getElementById('fitness-stat');
+
+    popSlider.oninput = () => popValue.textContent = popSlider.value;
+    mutSlider.oninput = () => mutValue.textContent = `${mutSlider.value}%`;
+    
+    p.setup = () => {
+        const canvasContainer = document.getElementById('game-canvas');
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        let canvas = p.createCanvas(w, h);
+        canvas.parent(canvasContainer);
+        p.frameRate(60);
+        resetGame();
+    };
+
+    p.windowResized = () => {
+        const canvasContainer = document.getElementById('game-canvas');
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        p.resizeCanvas(w, h);
+    };
+    
+    const resetGame = () => {
+        players = [];
+        projectiles = [];
+        winner = null;
+        gameActive = true;
+        
+        const playerSize = p.width * 0.04;
+        const yPos = p.height / 2;
+        
+        if (gameMode === 'PVP') {
+            players.push(new Player(p.width * 0.2, yPos, playerSize, p1Color, 1));
+            players.push(new Player(p.width * 0.8, yPos, playerSize, p2Color, 2));
+        } else if (gameMode === 'PVE') {
+            players.push(new Player(p.width * 0.2, yPos, playerSize, p1Color, 1));
+            if (bestAIPlayer) {
+                 const ai = new Player(p.width * 0.8, yPos, playerSize, aiColor, 0, bestAIPlayer.brain);
+                 players.push(ai);
+            } else {
+                 players.push(new Player(p.width * 0.8, yPos, playerSize, aiColor, 0, new NeuralNetwork(7, 8, 4)));
+            }
+        } else if (gameMode === 'EVE') {
+            if (bestAIPlayer) {
+                players.push(new Player(p.width * 0.2, yPos, playerSize, aiColor, 0, bestAIPlayer.brain));
+                players.push(new Player(p.width * 0.8, yPos, playerSize, p2Color, 0, new NeuralNetwork(7, 8, 4)));
+            } else {
+                players.push(new Player(p.width * 0.2, yPos, playerSize, aiColor, 0, new NeuralNetwork(7, 8, 4)));
+                players.push(new Player(p.width * 0.8, yPos, playerSize, p2Color, 0, new NeuralNetwork(7, 8, 4)));
+            }
+        }
+        
+        if (gameMode !== 'IDLE' && gameMode !== 'TRAINING') {
+            gameOverlay.style.display = 'none';
+        } else {
+            gameOverlay.style.display = 'flex';
+        }
+    };
+    
+    const showWinner = (winnerName, color) => {
+        gameActive = false;
+        winnerText.textContent = `${winnerName} WINS!`;
+        winnerText.style.color = color;
+        subtitleText.textContent = 'リセットして再挑戦するか、別のモードを選択してください。';
+        gameOverlay.style.display = 'flex';
+    };
+
+    p.draw = () => {
+        p.background(bgColor);
+        
+        if (training) {
+            population.run();
+            return; // Skip game rendering during fast training
+        }
+        
+        if (!gameActive) return;
+
+        // Update and draw players
+        players.forEach((player, index) => {
+            if (gameActive) {
+                if (player.isAI) {
+                    const opponent = players[1 - index];
+                    player.think(opponent, projectiles);
+                } else {
+                    player.handleInput();
+                }
+                player.update();
+            }
+            player.draw();
+        });
+
+        // Update and draw projectiles
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            projectiles[i].update();
+            projectiles[i].draw();
+
+            // Check for collision
+            players.forEach((player, playerIndex) => {
+                if (projectiles[i] && projectiles[i].hits(player)) {
+                    winner = projectiles[i].owner === players[0] ? 'Player 1' : 'Player 2';
+                    if (players[playerIndex].isAI && players[1-playerIndex].isAI) winner = projectiles[i].owner === players[0] ? 'AI 1' : 'AI 2';
+                    else if (players[playerIndex].isAI) winner = 'Player 1';
+                    else if (players[1-playerIndex].isAI && playerIndex === 0) winner = 'AI';
+                    
+                    const winnerColor = projectiles[i].owner.color;
+                    showWinner(winner, winnerColor);
+                    projectiles.splice(i, 1);
+                    return;
+                }
+            });
+
+            if (projectiles[i] && (projectiles[i].x < 0 || projectiles[i].x > p.width)) {
+                projectiles.splice(i, 1);
+            }
+        }
+    };
+
+    class Player {
+        constructor(x, y, size, color, playerNum, brain) {
+            this.x = x;
+            this.y = y;
+            this.size = size;
+            this.color = color;
+            this.playerNum = playerNum; // 1 for P1, 2 for P2, 0 for AI
+            this.speed = p.width * 0.005;
+            this.velY = 0;
+            this.gravity = p.height * 0.001;
+
+            this.shootCooldown = 30; // frames
+            this.shootTimer = 0;
+
+            this.stepCooldown = 120; // frames
+            this.stepTimer = 0;
+            this.stepDuration = 5;
+            this.stepDistance = this.size * 2.5;
+            this.isStepping = 0;
+            this.stepDirection = 0;
+            
+            this.isAI = (playerNum === 0);
+            if (this.isAI) {
+                this.brain = brain ? brain.copy() : new NeuralNetwork(7, 8, 4);
+                this.timeAlive = 0;
+                this.fitness = 0;
+            }
+        }
+        
+        handleInput() {
+            if (this.playerNum === 1) { // Player 1: WASD
+                if (p.keyIsDown(65)) this.x -= this.speed; // A
+                if (p.keyIsDown(68)) this.x += this.speed; // D
+                if (p.keyIsDown(87) && this.y === p.height / 2) this.velY = -p.height * 0.02; // W
+                if (p.keyIsDown(71) && this.shootTimer <= 0) this.shoot(); // G
+                if (p.keyIsDown(70) && this.stepTimer <= 0) this.sideStep(); // F
+            } else if (this.playerNum === 2) { // Player 2: Arrow Keys
+                if (p.keyIsDown(p.LEFT_ARROW)) this.x -= this.speed;
+                if (p.keyIsDown(p.RIGHT_ARROW)) this.x += this.speed;
+                if (p.keyIsDown(p.UP_ARROW) && this.y === p.height / 2) this.velY = -p.height * 0.02;
+                if (p.keyIsDown(76) && this.shootTimer <= 0) this.shoot(); // L
+                if (p.keyIsDown(75) && this.stepTimer <= 0) this.sideStep(); // K
+            }
+        }
+        
+        think(opponent, allProjectiles) {
+            let closestBullet = null;
+            let minBulletDist = Infinity;
+            allProjectiles.forEach(proj => {
+                if (proj.owner !== this) {
+                    let d = p.dist(this.x, this.y, proj.x, proj.y);
+                    if (d < minBulletDist) {
+                        minBulletDist = d;
+                        closestBullet = proj;
+                    }
+                }
+            });
+
+            // Normalize inputs
+            let inputs = [
+                this.x / p.width,
+                this.y / p.height,
+                opponent.x / p.width,
+                opponent.y / p.height,
+                closestBullet ? closestBullet.x / p.width : 0.5,
+                closestBullet ? closestBullet.y / p.height : 0.5,
+                this.stepTimer <= 0 ? 1 : 0
+            ];
+            
+            let output = this.brain.predict(inputs);
+            
+            // output: [moveLeft, moveRight, shoot, sideStep]
+            if (output[0] > 0.5) this.x -= this.speed;
+            if (output[1] > 0.5) this.x += this.speed;
+            if (output[2] > 0.8 && this.shootTimer <= 0) this.shoot();
+            if (output[3] > 0.8 && this.stepTimer <= 0) this.sideStep();
+        }
+
+        update() {
+            // Movement logic
+            this.velY += this.gravity;
+            this.y += this.velY;
+            if (this.y >= p.height / 2) {
+                this.y = p.height / 2;
+                this.velY = 0;
+            }
+            this.x = p.constrain(this.x, this.size / 2, p.width - this.size / 2);
+
+            // Cooldowns
+            if (this.shootTimer > 0) this.shootTimer--;
+            if (this.stepTimer > 0) this.stepTimer--;
+
+            // Side step execution
+            if (this.isStepping > 0) {
+                this.x += (this.stepDistance / this.stepDuration) * this.stepDirection;
+                this.isStepping--;
+            }
+            
+            if (this.isAI) {
+                this.timeAlive++;
+            }
+        }
+
+        shoot() {
+            this.shootTimer = this.shootCooldown;
+            const direction = this.playerNum === 1 || (this.isAI && this.x < p.width/2) ? 1 : -1;
+            const projectile = new Projectile(this.x, this.y, direction, this.color, this);
+            projectiles.push(projectile);
+        }
+
+        sideStep() {
+            this.stepTimer = this.stepCooldown;
+            this.isStepping = this.stepDuration;
+            if (this.isAI) {
+                 this.stepDirection = (Math.random() > 0.5) ? 1 : -1;
+            } else {
+                this.stepDirection = (this.playerNum === 1 && p.keyIsDown(68)) || (this.playerNum === 2 && p.keyIsDown(p.RIGHT_ARROW)) ? 1 : -1;
+            }
+        }
+
+        draw() {
+            // Stepping ghost effect
+            if(this.isStepping > 0) {
+                p.fill(this.color + '40'); // Transparent color
+            } else {
+                p.fill(this.color);
+            }
+            p.noStroke();
+            p.rectMode(p.CENTER);
+            p.rect(this.x, this.y, this.size, this.size, this.size * 0.2);
+
+            // Cooldown indicators
+            this.drawCooldownBar(this.y + this.size*0.7, this.shootTimer, this.shootCooldown, '#fde047'); // yellow-300
+            this.drawCooldownBar(this.y + this.size*0.7 + 8, this.stepTimer, this.stepCooldown, '#a5b4fc'); // indigo-300
+        }
+
+        drawCooldownBar(y, timer, maxCooldown, color) {
+            if (timer > 0) {
+                const barWidth = this.size;
+                const fillWidth = p.map(timer, maxCooldown, 0, 0, barWidth);
+                p.fill('#4b5563'); // gray-600
+                p.rect(this.x, y, barWidth, 5, 3);
+                p.fill(color);
+                p.rectMode(p.CORNER);
+                p.rect(this.x - barWidth/2, y - 2.5, fillWidth, 5, 3);
+                p.rectMode(p.CENTER);
+            }
+        }
+        
+        calculateFitness(opponent) {
+            this.fitness = this.timeAlive; // Base fitness is survival time
+            
+            // Reward for keeping distance from opponent
+            let distToOpponent = p.dist(this.x, this.y, opponent.x, opponent.y);
+            this.fitness += p.map(distToOpponent, 0, p.width, 100, 0);
+
+            // Penalty for being close to bullets
+            let closestBulletDist = Infinity;
+            projectiles.forEach(proj => {
+                if (proj.owner === opponent) {
+                    let d = p.dist(this.x, this.y, proj.x, proj.y);
+                    if (d < closestBulletDist) closestBulletDist = d;
+                }
+            });
+            if (closestBulletDist < this.size * 2) {
+                this.fitness -= 200;
+            }
+
+            // Reward for shooting
+            projectiles.forEach(proj => {
+                if (proj.owner === this) {
+                    this.fitness += 5;
+                }
+            });
+        }
+    }
+
+    class Projectile {
+        constructor(x, y, direction, color, owner) {
+            this.x = x;
+            this.y = y;
+            this.r = p.width * 0.01;
+            this.speed = p.width * 0.012 * direction;
+            this.color = color;
+            this.owner = owner;
+        }
+
+        update() {
+            this.x += this.speed;
+        }
+
+        draw() {
+            p.fill(this.color);
+            p.noStroke();
+            p.ellipse(this.x, this.y, this.r * 2, this.r * 2);
+        }
+
+        hits(player) {
+            if (player === this.owner) return false;
+            return p.dist(this.x, this.y, player.x, player.y) < this.r + player.size / 2;
+        }
+    }
+    
+    // --- GENETIC ALGORITHM LOGIC ---
+    class Population {
+        constructor(size) {
+            this.players = [];
+            this.size = size;
+            this.generation = 0;
+            this.bestPlayer = null;
+            this.bestFitness = 0;
+            this.matingPool = [];
+
+            for (let i = 0; i < this.size; i++) {
+                const playerSize = p.width * 0.04;
+                this.players[i] = new Player(p.width * 0.2, p.height / 2, playerSize, aiColor, 0);
+            }
+            this.staticOpponent = new Player(p.width * 0.8, p.height / 2, p.width * 0.04, p2Color, 2);
+        }
+
+        run() {
+            this.players.forEach(player => {
+                projectiles = []; // Reset for each simulation
+                this.staticOpponent.shootTimer = 0; // Reset opponent
+                
+                // Simulate for a fixed duration
+                for (let i = 0; i < 600; i++) { // 10 seconds of simulation
+                    player.think(this.staticOpponent, projectiles);
+                    player.update();
+                    
+                    // Simple opponent logic
+                    if (this.staticOpponent.shootTimer <= 0) {
+                        this.staticOpponent.shoot();
+                    }
+                    this.staticOpponent.update();
+                    
+                    for (let j = projectiles.length - 1; j >= 0; j--) {
+                        projectiles[j].update();
+                        if (projectiles[j].hits(player)) {
+                            player.fitness -= 5000; // Big penalty for getting hit
+                            i = 600; // End simulation
+                            break;
+                        }
+                        if (projectiles[j].hits(this.staticOpponent)) {
+                            player.fitness += 10000; // Big reward for hitting
+                            i = 600; // End simulation
+                            break;
+                        }
+                        if (projectiles[j].x < 0 || projectiles[j].x > p.width) {
+                            projectiles.splice(j, 1);
+                        }
+                    }
+                }
+                player.calculateFitness(this.staticOpponent);
+            });
+
+            this.evaluate();
+            this.selection();
+            this.reproduction();
+            this.updateDOM();
+        }
+
+        evaluate() {
+            let maxFit = 0;
+            this.players.forEach(player => {
+                if (player.fitness > maxFit) {
+                    maxFit = player.fitness;
+                    this.bestPlayer = player;
+                    bestAIPlayer = player;
+                }
+            });
+            this.bestFitness = maxFit;
+            
+            // Normalize fitness
+            let totalFitness = this.players.reduce((sum, player) => sum + player.fitness, 0);
+            if (totalFitness > 0) {
+                this.players.forEach(player => player.fitness /= totalFitness);
+            }
+        }
+
+        selection() {
+            this.matingPool = [];
+            this.players.forEach(player => {
+                let n = Math.floor(player.fitness * 100);
+                for (let j = 0; j < n; j++) {
+                    this.matingPool.push(player);
+                }
+            });
+        }
+        
+        reproduction() {
+            let newPlayers = [];
+            for (let i = 0; i < this.size; i++) {
+                let parentA = this.matingPool[Math.floor(Math.random() * this.matingPool.length)];
+                let parentB = this.matingPool[Math.floor(Math.random() * this.matingPool.length)];
+                let childBrain = this.crossover(parentA.brain, parentB.brain);
+                childBrain.mutate(parseFloat(mutSlider.value) / 100);
+                
+                const playerSize = p.width * 0.04;
+                newPlayers[i] = new Player(p.width * 0.2, p.height / 2, playerSize, aiColor, 0, childBrain);
+            }
+            this.players = newPlayers;
+            this.generation++;
+        }
+        
+        crossover(brainA, brainB) {
+            let childBrain = brainA.copy();
+            // Simple single-point crossover on weights and biases
+            childBrain.weights_ho.data.forEach((row, i) => {
+                row.forEach((val, j) => {
+                    if (Math.random() > 0.5) {
+                        childBrain.weights_ho.data[i][j] = brainB.weights_ho.data[i][j];
+                    }
+                });
+            });
+             childBrain.bias_o.data.forEach((row, i) => {
+                row.forEach((val, j) => {
+                    if (Math.random() > 0.5) {
+                        childBrain.bias_o.data[i][j] = brainB.bias_o.data[i][j];
+                    }
+                });
+            });
+            return childBrain;
+        }
+
+        updateDOM() {
+            genStat.textContent = this.generation;
+            fitStat.textContent = this.bestFitness.toFixed(2);
+        }
+    }
+    
+    // --- EVENT LISTENERS ---
+    const startTraining = () => {
+        const popSize = parseInt(popSlider.value);
+        population = new Population(popSize);
+        training = true;
+        gameMode = 'TRAINING';
+        p.loop();
+        
+        gameOverlay.style.display = 'flex';
+        winnerText.textContent = 'AI TRAINING...';
+        subtitleText.textContent = 'シミュレーションを高速で実行し、AIを学習させています。';
+        
+        trainBtn.classList.add('hidden');
+        stopTrainBtn.classList.remove('hidden');
+        popSlider.disabled = true;
+        mutSlider.disabled = true;
+    };
+    
+    const stopTraining = () => {
+        training = false;
+        gameMode = 'IDLE';
+        p.noLoop();
+        resetGame();
+        
+        winnerText.textContent = '';
+        subtitleText.textContent = 'トレーニングが完了しました。最高のAIと対戦できます！';
+        
+        trainBtn.classList.remove('hidden');
+        stopTrainBtn.classList.add('hidden');
+        popSlider.disabled = false;
+        mutSlider.disabled = false;
+    };
+    
+    const setupGameMode = (mode) => {
+        gameMode = mode;
+        resetGame();
+        p.loop();
+    };
+
+    pvpBtn.addEventListener('click', () => setupGameMode('PVP'));
+    pveBtn.addEventListener('click', () => setupGameMode('PVE'));
+    eveBtn.addEventListener('click', () => setupGameMode('EVE'));
+    resetBtn.addEventListener('click', () => { resetGame(); p.loop(); });
+    trainBtn.addEventListener('click', startTraining);
+    stopTrainBtn.addEventListener('click', stopTraining);
+
+    // Initial state
+    p.noLoop();
+};
+
+new p5(sketch);
+
+</script>
+</body>
+</html>

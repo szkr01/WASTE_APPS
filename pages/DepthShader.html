@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Shader Canvas</title>
+    <meta name="description" content="An interactive WebGL shader editor with a draggable, zoomable canvas and a resizing interface. Apply GLSL effects to images using a live editor, lil-gui controls, and AI-generated depth maps.">
+    <meta name="page:icon" content="fas fa-swatchbook">
+    <meta name="page:color" content="#0ea5e9">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.33.0/ace.js" type="text/javascript" charset="utf-8"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <script type="importmap">
+    {
+      "imports": {
+        "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm",
+        "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js"
+      }
+    }
+    </script>
+    
+    <style>
+        :root {
+            --accent-color: #0ea5e9;
+            --accent-color-hover: #0284c7;
+            --panel-bg: #1f2937;
+            --main-bg: #111827;
+            --border-color: #374151;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            cursor: default;
+        }
+        
+        body.resizing {
+            cursor: col-resize;
+            user-select: none;
+        }
+        
+        #gl-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: grab;
+        }
+        
+        #gl-canvas:active {
+            cursor: grabbing;
+        }
+
+        #editor {
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+        }
+        
+        .ace_editor { background-color: var(--main-bg) !important; color: #d1d5db !important; }
+        .ace_gutter { background: var(--panel-bg) !important; color: #6b7280 !important; }
+        .ace_gutter-active-line { background-color: var(--border-color) !important; }
+        .ace_marker-layer .ace_active-line { background: var(--border-color) !important; }
+        .ace_cursor { color: var(--accent-color) !important; border-left: 2px solid var(--accent-color) !important; }
+        .ace_selection { background-color: rgba(14, 165, 233, 0.25) !important; }
+        .ace_keyword { color: #c084fc !important; }
+        .ace_string { color: #a5b4fc !important; }
+        .ace_comment { color: #6b7280 !important; font-style: italic; }
+        .ace_constant.ace_numeric { color: #f87171 !important; }
+        .ace_support.ace_function { color: #60a5fa !important; }
+        .ace_variable { color: #d1d5db !important; }
+
+        .loader-spinner {
+            border: 4px solid var(--border-color);
+            border-top: 4px solid var(--accent-color);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .custom-file-button::before {
+            content: 'Upload From Device';
+            display: inline-block;
+            background-color: var(--border-color); border: 1px solid #4b5563; color: #d1d5db;
+            border-radius: 0.375rem; padding: 0.5rem 1rem;
+            outline: none; white-space: nowrap; cursor: pointer; font-weight: 500;
+            transition: all 0.2s ease-in-out; text-align: center; width:100%;
+        }
+        .custom-file-button:hover::before { background-color: #4b5563; border-color: #6b7280; }
+        input[type="file"] { opacity: 0; width: 0; height: 0; position: absolute; }
+
+        .toast {
+            animation: toast-in 0.5s ease, toast-out 0.5s ease 4.5s forwards;
+        }
+        @keyframes toast-in { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes toast-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
+
+        .lil-gui.root {
+            --c-bg: rgba(31, 41, 55, 0.8);
+            --c-widget-bg: rgba(17, 24, 39, 0.5);
+            --c-title-bg: transparent;
+            --c-text: #d1d5db;
+            --c-highlight: var(--accent-color);
+            --c-hover: #374151;
+            --c-input-bg: rgba(17, 24, 39, 0.8);
+            --c-input-text: #e5e7eb;
+            --c-number-text: #81e6d9;
+            --c-string-text: #f6ad55;
+            --c-widget-color: var(--accent-color);
+            --c-folder-text: #e5e7eb;
+            --c-folder-bg: #4b5563;
+            --c-separator: #4b5563;
+            --font-size: 13px;
+            --input-font-size: 13px;
+            --font-family: 'Inter', sans-serif;
+            --font-family-mono: 'Fira Code', monospace;
+            width: 320px !important;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border-color);
+        }
+        .lil-gui .title {
+            font-weight: 600;
+            font-size: 0.875rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--c-separator);
+            margin-bottom: 0.5rem;
+        }
+        .lil-gui .controller {
+            border-bottom: 1px solid var(--border-color);
+        }
+        .lil-gui .controller:last-child {
+            border-bottom: none;
+        }
+        
+        #resizer {
+            flex-shrink: 0;
+            width: 5px;
+            background-color: var(--main-bg);
+            cursor: col-resize;
+            transition: background-color 0.2s ease;
+        }
+        #resizer:hover, body.resizing #resizer {
+            background-color: var(--accent-color);
+        }
+
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 overflow-hidden">
+
+    <div id="loader" class="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex flex-col justify-center items-center z-50 transition-opacity duration-300">
+        <div class="loader-spinner"></div>
+        <p id="loader-text" class="mt-6 text-lg text-gray-300 font-medium">Loading AI Model...</p>
+        <div class="w-64 bg-gray-700 rounded-full h-2.5 mt-4 overflow-hidden">
+            <div id="loader-progress" class="bg-sky-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <p id="loader-subtext" class="mt-2 text-sm text-gray-400"></p>
+    </div>
+
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col items-end gap-3"></div>
+
+    <div class="flex h-screen">
+
+        <aside id="controls-panel" class="w-[400px] max-w-[50vw] min-w-[320px] bg-gray-800 flex flex-col">
+            <header class="p-4 border-b border-gray-700 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-swatchbook text-3xl text-sky-500"></i>
+                    <div>
+                        <h1 class="text-xl font-bold text-white">Live GLSL Editor</h1>
+                        <p class="text-gray-400 text-sm">Real-time image shader effects</p>
+                    </div>
+                </div>
+            </header>
+
+            <nav class="flex-shrink-0 border-b border-gray-700">
+                <div class="flex">
+                    <button data-tab="controls" class="tab-btn flex-1 p-3 text-sm font-medium border-b-2 bg-gray-700 border-sky-500 text-white">
+                        <i class="fas fa-sliders-h mr-2"></i>Controls
+                    </button>
+                    <button data-tab="editor" class="tab-btn flex-1 p-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:bg-gray-700/50 hover:text-white transition">
+                        <i class="fas fa-code mr-2"></i>Editor
+                    </button>
+                </div>
+            </nav>
+
+            <div class="flex-grow overflow-y-auto">
+                <div id="controls-tab" class="tab-content p-4 space-y-6">
+                    <section>
+                        <h2 class="text-sm font-semibold uppercase text-gray-400 mb-3">Input Image</h2>
+                        <div class="space-y-3">
+                            <div class="flex gap-2">
+                                <input type="text" id="image-url" class="flex-grow block w-full rounded-md border-gray-600 bg-gray-900 text-gray-200 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm" placeholder="Paste image URL...">
+                                <button id="load-url-btn" title="Load image from URL" class="inline-flex items-center justify-center rounded-md border border-transparent bg-sky-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-800">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                            </div>
+                            <label for="file-upload" class="custom-file-button"></label>
+                            <input type="file" id="file-upload" accept="image/*">
+                        </div>
+                    </section>
+                    
+                    <section>
+                        <h2 class="text-sm font-semibold uppercase text-gray-400 mb-3">Add Custom Uniform</h2>
+                         <div class="flex gap-2">
+                            <input type="text" id="add-uniform-name" class="flex-grow block w-full rounded-md border-gray-600 bg-gray-900 text-gray-200 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm" placeholder="e.g., u_my_uniform">
+                            <select id="add-uniform-type" class="flex-shrink-0 block rounded-md border-gray-600 bg-gray-900 text-gray-200 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm">
+                                <option value="float">float</option>
+                                <option value="vec2">vec2</option>
+                                <option value="vec3">vec3</option>
+                            </select>
+                            <button id="add-uniform-btn" title="Add new uniform" class="inline-flex items-center justify-center rounded-md border border-transparent bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-800">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </section>
+                </div>
+
+                <div id="editor-tab" class="tab-content hidden h-full flex flex-col">
+                    <div id="editor" class="flex-grow w-full"></div>
+                    <div class="p-2 border-t border-gray-700 bg-gray-900 flex-shrink-0">
+                        <button id="run-shader-btn" class="w-full flex items-center justify-center gap-2 rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+                            <i class="fas fa-play"></i>
+                            <span>Apply Shader & Sync Uniforms</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <div id="resizer"></div>
+
+        <main id="main-content" class="flex-grow bg-black flex justify-center items-center relative overflow-hidden">
+             <canvas id="gl-canvas"></canvas>
+             <div id="canvas-placeholder" class="absolute inset-0 flex flex-col justify-center items-center text-center p-4 text-gray-600 pointer-events-none">
+                 <i class="fas fa-image text-7xl mb-4"></i>
+                 <h3 class="text-2xl font-medium text-gray-500">Shader Canvas</h3>
+                 <p class="text-gray-600 mt-2">Load an image to begin.</p>
+            </div>
+            <button id="reset-view-btn" title="Reset View" class="absolute bottom-4 right-4 bg-gray-800/50 backdrop-blur-sm text-white/70 hover:bg-gray-700/70 hover:text-white transition-all rounded-full w-12 h-12 flex items-center justify-center shadow-lg text-xl z-10">
+                <i class="fas fa-expand-arrows-alt"></i>
+            </button>
+        </main>
+
+    </div>
+
+    <script type="module">
+        import { pipeline, env } from '@huggingface/transformers';
+        import GUI from 'lil-gui';
+
+        const LOADER = document.getElementById('loader');
+        const LOADER_TEXT = document.getElementById('loader-text');
+        const LOADER_PROGRESS = document.getElementById('loader-progress');
+        const LOADER_SUBTEXT = document.getElementById('loader-subtext');
+        const TOAST_CONTAINER = document.getElementById('toast-container');
+        
+        const URL_INPUT = document.getElementById('image-url');
+        const LOAD_URL_BTN = document.getElementById('load-url-btn');
+        const FILE_INPUT = document.getElementById('file-upload');
+        const RUN_SHADER_BTN = document.getElementById('run-shader-btn');
+        const CANVAS = document.getElementById('gl-canvas');
+        const CANVAS_PLACEHOLDER = document.getElementById('canvas-placeholder');
+        const ADD_UNIFORM_NAME_INPUT = document.getElementById('add-uniform-name');
+        const ADD_UNIFORM_TYPE_SELECT = document.getElementById('add-uniform-type');
+        const ADD_UNIFORM_BTN = document.getElementById('add-uniform-btn');
+        const RESET_VIEW_BTN = document.getElementById('reset-view-btn');
+
+        const CONTROLS_PANEL = document.getElementById('controls-panel');
+        const MAIN_CONTENT = document.getElementById('main-content');
+        const RESIZER = document.getElementById('resizer');
+
+        const TAB_BUTTONS = document.querySelectorAll('.tab-btn');
+        const TAB_CONTENTS = document.querySelectorAll('.tab-content');
+        
+        let editor;
+        let gl;
+        let program;
+        let depthEstimator = null;
+        let renderLoopId = null;
+        let gui;
+        let uniformControllers = {};
+        
+        const BUILT_IN_UNIFORMS = new Set(['u_image', 'u_depth', 'u_time', 'u_resolution', 'u_mouse', 'u_imageResolution', 'u_zoom', 'u_offset']);
+
+        const appState = {
+            textures: { image: null, depth: null },
+            uniforms: {},
+            mouse: { x: 0.5, y: 0.5 },
+            startTime: Date.now(),
+            resolution: { x: 0, y: 0 },
+            imageResolution: { x: 1, y: 1 },
+            zoom: 1.0,
+            offset: { x: 0, y: 0 },
+        };
+
+        const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1566438480900-0e097285d771?q=80&w=1974&auto=format&fit=crop';
+        const DEFAULT_FRAGMENT_SHADER = `
+precision highp float;
+
+varying vec2 v_texCoord;
+
+uniform sampler2D u_image;
+uniform sampler2D u_depth;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+uniform vec2 u_imageResolution;
+
+// Use lil-gui to control these!
+uniform float u_parallax_strength;
+
+uniform vec2 u_light_pos;
+
+// --- 光沢用のUniform変数を追加 ---
+uniform float u_specular_strength; // 光沢の強さ
+uniform float u_shininess;         // 光沢の鋭さ
+uniform float u_light_z;           // 光源の高さ
+
+float random(vec2 st) {
+    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+}
+
+vec2 depth_normal(vec2 p){
+    float depth = texture2D(u_depth, p).r;
+    // 隣接ピクセルとの深度差から勾配を計算し、擬似的な法線とする
+    return vec2(
+        (texture2D(u_depth, p + vec2(0.04, 0.0)).r - depth) * u_resolution.x,
+        (texture2D(u_depth, p + vec2(0.0, 0.04)).r - depth) * u_resolution.y
+    );
+}
+
+void main() {
+    float depth = texture2D(u_depth, v_texCoord).r;
+
+    // 1. Parallax
+    vec2 parallax_offset = (u_mouse - 0.5) * -1.0;
+    vec2 parallaxCoord = v_texCoord + parallax_offset * depth * u_parallax_strength;
+    
+    // パララックス適用後の座標でベースカラーを取得
+    vec3 color = texture2D(u_image, parallaxCoord).rgb;
+
+    // --- ここから光沢（スペキュラーハイライト）の計算 ---
+
+    // 2. 法線の計算
+    // パララックス適用後の座標を使うことで、光沢も立体的に動く
+    vec2 normal_2d = depth_normal(parallaxCoord);
+    vec3 normal = normalize(vec3(normal_2d.x, normal_2d.y, 1.0));
+
+    vec3 fragPos = vec3(parallaxCoord, depth);              // ピクセルの3D位置
+    vec3 lightPos = vec3(u_light_pos, u_light_z);           // 光源の3D位置
+    vec3 lightDir = normalize(lightPos - fragPos);          // 光線ベクトル
+    vec3 viewDir = vec3(0.0, 0.0, 1.0);                     // 視線ベクトル (Z+方向から見ていると仮定)
+
+    float aspect = u_imageResolution.x / u_imageResolution.y;
+    lightDir.xy = (u_mouse - fragPos.xy) * vec2(aspect, 1.0);
+
+    vec3 halfwayDir = normalize(lightDir + viewDir);        // 半角ベクトル
+    float spec_intensity = pow(max(dot(normal, halfwayDir), 0.0), u_shininess*10.0);
+    vec3 specular = vec3(1.0) * spec_intensity * u_specular_strength;
+    color = texture2D(u_image, parallaxCoord+specular.xy*0.1).rgb;
+    color += specular;
+
+    gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+        const VERTEX_SHADER = `
+attribute vec4 a_position;
+varying vec2 v_texCoord;
+
+uniform vec2 u_resolution;
+uniform vec2 u_imageResolution;
+uniform float u_zoom;
+uniform vec2 u_offset;
+
+void main() {
+    vec2 scale;
+    float canvasAspect = u_resolution.x / u_resolution.y;
+    float imageAspect = u_imageResolution.x / u_imageResolution.y;
+
+    if (canvasAspect > imageAspect) {
+        scale.x = imageAspect / canvasAspect;
+        scale.y = 1.0;
+    } else {
+        scale.x = 1.0;
+        scale.y = canvasAspect / imageAspect;
+    }
+
+    vec2 pos = a_position.xy * scale;
+    pos = pos * u_zoom + u_offset;
+
+    gl_Position = vec4(pos, 0.0, 1.0);
+    
+    v_texCoord = a_position.xy * vec2(0.5, -0.5) + 0.5;
+}
+`;
+
+        function showToast(message, type = 'info') {
+            const colors = { info: 'bg-sky-600', success: 'bg-emerald-600', error: 'bg-red-600' };
+            const icon = { info: 'fa-info-circle', success: 'fa-check-circle', error: 'fa-exclamation-triangle' };
+            const toast = document.createElement('div');
+            toast.className = `toast flex items-center gap-4 ${colors[type]} text-white p-4 rounded-lg shadow-lg`;
+            toast.innerHTML = `<i class="fas ${icon[type]}"></i><p>${message}</p>`;
+            TOAST_CONTAINER.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        function showLoader(text, showProgress = false) {
+            LOADER_TEXT.textContent = text;
+            LOADER_PROGRESS.parentElement.style.display = showProgress ? 'block' : 'none';
+            LOADER_SUBTEXT.textContent = '';
+            LOADER_PROGRESS.style.width = '0%';
+            LOADER.style.opacity = '1';
+            LOADER.style.pointerEvents = 'auto';
+        }
+
+        function hideLoader() {
+            LOADER.style.opacity = '0';
+            LOADER.style.pointerEvents = 'none';
+        }
+
+        function initTabs() {
+            TAB_BUTTONS.forEach(button => {
+                button.addEventListener('click', () => {
+                    const tabId = button.dataset.tab;
+
+                    TAB_BUTTONS.forEach(btn => {
+                        btn.classList.remove('bg-gray-700', 'border-sky-500', 'text-white');
+                        btn.classList.add('border-transparent', 'text-gray-400');
+                    });
+                    button.classList.add('bg-gray-700', 'border-sky-500', 'text-white');
+                    button.classList.remove('border-transparent', 'text-gray-400');
+
+                    TAB_CONTENTS.forEach(content => {
+                        if (content.id === `${tabId}-tab`) {
+                            content.classList.remove('hidden');
+                        } else {
+                            content.classList.add('hidden');
+                        }
+                    });
+
+                    if (tabId === 'editor' && editor) {
+                        editor.resize();
+                    }
+                });
+            });
+        }
+        
+        function initResizer() {
+            RESIZER.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                document.body.classList.add('resizing');
+
+                const mouseMoveHandler = (moveEvent) => {
+                    const newWidth = moveEvent.clientX;
+                    if(newWidth > 320 && newWidth < window.innerWidth * 0.7) {
+                        CONTROLS_PANEL.style.width = `${newWidth}px`;
+                    }
+                    if (editor) editor.resize();
+                };
+
+                const mouseUpHandler = () => {
+                    document.removeEventListener('mousemove', mouseMoveHandler);
+                    document.removeEventListener('mouseup', mouseUpHandler);
+                    document.body.classList.remove('resizing');
+                };
+
+                document.addEventListener('mousemove', mouseMoveHandler);
+                document.addEventListener('mouseup', mouseUpHandler);
+            });
+        }
+
+        function initAceEditor() {
+            editor = ace.edit("editor");
+            editor.session.setMode("ace/mode/glsl");
+            editor.setOptions({
+                useWorker: false, highlightActiveLine: true, showPrintMargin: false,
+                copyWithEmptySelection: true,
+            });
+            editor.setValue(DEFAULT_FRAGMENT_SHADER.trim(), -1);
+        }
+        
+        function initGUI() {
+            if (gui) gui.destroy();
+            gui = new GUI({ title: 'Shader Uniforms', container: MAIN_CONTENT });
+            gui.domElement.style.position = 'absolute';
+            gui.domElement.style.top = '1rem';
+            gui.domElement.style.right = '1rem';
+            uniformControllers = {};
+        }
+        
+        function addUniformControl(name, type, value) {
+            if (uniformControllers[name] || BUILT_IN_UNIFORMS.has(name)) return;
+            
+            const isValid = /^[uU]_[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+            if (!isValid) {
+                showToast(`Invalid uniform name: "${name}"`, 'error');
+                return;
+            }
+
+            appState.uniforms[name] = value;
+            
+            if (type === 'float') {
+                let min = 0, max = 1, step = 0.01;
+                if (name.includes('strength') || name.includes('amount') || name.includes('intensity')) {
+                    if (name.includes('parallax')) { max = 0.2; }
+                    if (name.includes('aberration')) { max = 0.05; }
+                }
+                uniformControllers[name] = gui.add(appState.uniforms, name, min, max, step).name(name);
+            } else if (type === 'vec2' || type === 'vec3') {
+                const folder = gui.addFolder(name);
+                const isColor = name.toLowerCase().includes('color') || name.toLowerCase().includes('tint');
+                const range = isColor ? [0, 1] : [-1, 1];
+                const labels = isColor ? ['R', 'G', 'B'] : ['X', 'Y', 'Z'];
+
+                folder.add(value, 'x', ...range, 0.01).name(labels[0]);
+                folder.add(value, 'y', ...range, 0.01).name(labels[1]);
+                if (type === 'vec3') {
+                    folder.add(value, 'z', ...range, 0.01).name(labels[2]);
+                }
+                uniformControllers[name] = folder;
+            }
+        }
+
+        function syncGuiWithShader(shaderCode) {
+            if (!gui) return;
+
+            const declaredUniforms = new Set();
+            const regex = /uniform\s+(float|vec2|vec3)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*;/g;
+            let match;
+            while ((match = regex.exec(shaderCode)) !== null) {
+                const type = match[1];
+                const uniformName = match[2];
+
+                if (BUILT_IN_UNIFORMS.has(uniformName)) continue;
+                declaredUniforms.add(uniformName);
+                
+                if (!uniformControllers[uniformName]) {
+                    let defaultValue;
+                    if (type === 'vec2') defaultValue = { x: 0.5, y: 0.5 };
+                    else if (type === 'vec3') defaultValue = { x: 1.0, y: 1.0, z: 1.0 };
+                    else defaultValue = 0.5;
+                    addUniformControl(uniformName, type, appState.uniforms[uniformName] || defaultValue);
+                }
+            }
+
+            for (const name in uniformControllers) {
+                if (!declaredUniforms.has(name)) {
+                    uniformControllers[name].destroy();
+                    delete uniformControllers[name];
+                    delete appState.uniforms[name];
+                }
+            }
+        }
+
+        function initWebGL() {
+            gl = CANVAS.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
+            if (!gl) {
+                showToast("WebGL is not supported on your browser.", "error");
+                return false;
+            }
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, 1, 1, -1, -1, -1]), gl.STATIC_DRAW);
+            return true;
+        }
+
+        function compileShader(source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                const error = gl.getShaderInfoLog(shader);
+                showToast("Shader compilation failed. Check console.", "error");
+                console.error(`Shader compile error:\n${error}`);
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(vsSource, fsSource) {
+            const vertexShader = compileShader(vsSource, gl.VERTEX_SHADER);
+            const fragmentShader = compileShader(fsSource, gl.FRAGMENT_SHADER);
+            if (!vertexShader || !fragmentShader) return false;
+
+            const newProgram = gl.createProgram();
+            gl.attachShader(newProgram, vertexShader);
+            gl.attachShader(newProgram, fragmentShader);
+            gl.linkProgram(newProgram);
+
+            if (!gl.getProgramParameter(newProgram, gl.LINK_STATUS)) {
+                showToast("Shader program link failed. See console.", "error");
+                console.error(`Program link error: ${gl.getProgramInfoLog(newProgram)}`);
+                gl.deleteProgram(newProgram);
+                return false;
+            }
+            
+            if(program) gl.deleteProgram(program);
+            program = newProgram;
+            
+            const positionLocation = gl.getAttribLocation(program, 'a_position');
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+            
+            return true;
+        }
+        
+        function createTexture(image) {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            return texture;
+        }
+        
+        async function processImage(url) {
+            if (!depthEstimator) {
+                showToast("AI model not ready. Please wait.", "error");
+                return;
+            }
+            showLoader('Processing Image...');
+
+            try {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.src = url;
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                });
+                
+                appState.imageResolution.x = img.width;
+                appState.imageResolution.y = img.height;
+                appState.zoom = 1.0;
+                appState.offset.x = 0;
+                appState.offset.y = 0;
+
+                CANVAS_PLACEHOLDER.style.display = 'none';
+                
+                showLoader('Generating Depth Map...');
+                const output = await depthEstimator(url);
+                const depthCanvas = await output.depth.toCanvas();
+                
+                if (appState.textures.image) gl.deleteTexture(appState.textures.image);
+                if (appState.textures.depth) gl.deleteTexture(appState.textures.depth);
+
+                appState.textures.image = createTexture(img);
+                appState.textures.depth = createTexture(depthCanvas);
+
+                if (program) startRenderLoop();
+                showToast("Image and depth map loaded.", "success");
+
+            } catch (error) {
+                console.error('Image processing failed:', error);
+                showToast('Could not load or process image.', 'error');
+                CANVAS_PLACEHOLDER.style.display = 'flex';
+            } finally {
+                hideLoader();
+            }
+        }
+        
+        function resizeCanvasToDisplaySize() {
+            const dpr = window.devicePixelRatio || 1;
+            const { width, height } = CANVAS.getBoundingClientRect();
+            const displayWidth = Math.round(width * dpr);
+            const displayHeight = Math.round(height * dpr);
+
+            if (CANVAS.width !== displayWidth || CANVAS.height !== displayHeight) {
+                CANVAS.width = displayWidth;
+                CANVAS.height = displayHeight;
+                appState.resolution.x = CANVAS.width;
+                appState.resolution.y = CANVAS.height;
+                if(gl) gl.viewport(0, 0, CANVAS.width, CANVAS.height);
+            }
+        }
+        
+        function render() {
+            renderLoopId = requestAnimationFrame(render);
+            resizeCanvasToDisplaySize();
+            if(!gl) return;
+
+            gl.clearColor(0.07, 0.09, 0.14, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            if (!program || !appState.textures.image || !appState.textures.depth) {
+                return;
+            }
+
+            gl.useProgram(program);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, appState.textures.image);
+            gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, appState.textures.depth);
+            gl.uniform1i(gl.getUniformLocation(program, 'u_depth'), 1);
+            
+            gl.uniform1f(gl.getUniformLocation(program, 'u_time'), (Date.now() - appState.startTime) / 1000.0);
+            gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), appState.resolution.x, appState.resolution.y);
+            gl.uniform2f(gl.getUniformLocation(program, 'u_imageResolution'), appState.imageResolution.x, appState.imageResolution.y);
+            gl.uniform2f(gl.getUniformLocation(program, 'u_mouse'), appState.mouse.x, appState.mouse.y);
+            gl.uniform1f(gl.getUniformLocation(program, 'u_zoom'), appState.zoom);
+            gl.uniform2f(gl.getUniformLocation(program, 'u_offset'), appState.offset.x, appState.offset.y);
+            
+            for (const name in appState.uniforms) {
+                const location = gl.getUniformLocation(program, name);
+                if (location) {
+                    const value = appState.uniforms[name];
+                    if (typeof value === 'number') {
+                        gl.uniform1f(location, value);
+                    } else if (value.z !== undefined) {
+                        gl.uniform3f(location, value.x, value.y, value.z);
+                    } else if (value.y !== undefined) {
+                        gl.uniform2f(location, value.x, value.y);
+                    }
+                }
+            }
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        function startRenderLoop() {
+            if (renderLoopId) cancelAnimationFrame(renderLoopId);
+            renderLoopId = requestAnimationFrame(render);
+        }
+
+        function initCanvasControls() {
+            let isPanning = false;
+            let lastMouse = { x: 0, y: 0 };
+
+            const updateMousePosition = (e) => {
+                const rect = CANVAS.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return;
+
+                const mouseX_canvas = (e.clientX - rect.left) / rect.width;
+                const mouseY_canvas = (e.clientY - rect.top) / rect.height;
+
+                const mouseX_clip = mouseX_canvas * 2.0 - 1.0;
+                const mouseY_clip = -(mouseY_canvas * 2.0 - 1.0);
+
+                const canvasAspect = rect.width / rect.height;
+                const imageAspect = appState.imageResolution.x / appState.imageResolution.y;
+                
+                const scale = { x: 1.0, y: 1.0 };
+                if (imageAspect > 0) {
+                     if (canvasAspect > imageAspect) {
+                        scale.x = imageAspect / canvasAspect;
+                    } else {
+                        scale.y = canvasAspect / imageAspect;
+                    }
+                }
+
+                const quadX = ((mouseX_clip - appState.offset.x) / appState.zoom) / scale.x;
+                const quadY = ((mouseY_clip - appState.offset.y) / appState.zoom) / scale.y;
+                
+                appState.mouse.x = Math.max(0.0, Math.min(1.0, quadX * 0.5 + 0.5));
+                appState.mouse.y = Math.max(0.0, Math.min(1.0, quadY * -0.5 + 0.5));
+            };
+
+            CANVAS.addEventListener('mousedown', (e) => {
+                isPanning = true;
+                lastMouse.x = e.clientX;
+                lastMouse.y = e.clientY;
+            });
+
+            CANVAS.addEventListener('mousemove', (e) => {
+                updateMousePosition(e);
+                
+                if (!isPanning) return;
+
+                const dx = e.clientX - lastMouse.x;
+                const dy = e.clientY - lastMouse.y;
+
+                appState.offset.x += (dx / CANVAS.clientWidth) * 2;
+                appState.offset.y -= (dy / CANVAS.clientHeight) * 2;
+
+                lastMouse.x = e.clientX;
+                lastMouse.y = e.clientY;
+            });
+
+            const endPan = () => { isPanning = false; };
+            CANVAS.addEventListener('mouseup', endPan);
+            CANVAS.addEventListener('mouseleave', endPan);
+
+            CANVAS.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const rect = CANVAS.getBoundingClientRect();
+                
+                const mouseX_canvas = (e.clientX - rect.left) / rect.width;
+                const mouseY_canvas = (e.clientY - rect.top) / rect.height;
+                const mouseX_clip = mouseX_canvas * 2.0 - 1.0;
+                const mouseY_clip = -(mouseY_canvas * 2.0 - 1.0);
+                
+                const oldZoom = appState.zoom;
+                
+                const zoomFactor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+                appState.zoom = Math.max(0.5, Math.min(appState.zoom * zoomFactor, 30));
+
+                appState.offset.x = mouseX_clip - (mouseX_clip - appState.offset.x) * (appState.zoom / oldZoom);
+                appState.offset.y = mouseY_clip - (mouseY_clip - appState.offset.y) * (appState.zoom / oldZoom);
+            }, { passive: false });
+        }
+        
+        async function main() {
+            showLoader('Loading AI Model...', true);
+            initTabs();
+            initResizer();
+            initAceEditor();
+            if (!initWebGL()) return;
+            initGUI();
+            initCanvasControls();
+
+            const initialCode = editor.getValue();
+            if(createProgram(VERTEX_SHADER, initialCode)){
+                 syncGuiWithShader(initialCode);
+            }
+
+            try {
+                env.allowLocalModels = false;
+                depthEstimator = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
+                    progress_callback: p => {
+                        const percentage = (p.progress || 0).toFixed(2);
+                        LOADER_PROGRESS.style.width = `${percentage}%`;
+                        if(p.file) {
+                           LOADER_SUBTEXT.textContent = `${p.file} (${(p.loaded/1024/1024).toFixed(2)}MB / ${(p.total/1024/1024).toFixed(2)}MB)`;
+                        }
+                    }
+                });
+                showToast("Depth model loaded.", "success");
+            } catch (error) {
+                console.error("Model loading failed:", error);
+                showToast("Failed to load AI model.", "error");
+                hideLoader();
+            }
+
+            URL_INPUT.value = DEFAULT_IMAGE_URL;
+            await processImage(DEFAULT_IMAGE_URL);
+
+            LOAD_URL_BTN.addEventListener('click', () => {
+                const url = URL_INPUT.value.trim();
+                if (url) processImage(url);
+                else showToast('Please enter an image URL.', 'error');
+            });
+
+            FILE_INPUT.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const url = URL.createObjectURL(file);
+                    URL_INPUT.value = '';
+                    processImage(url);
+                }
+            });
+            
+            RUN_SHADER_BTN.addEventListener('click', () => {
+                const code = editor.getValue();
+                if (createProgram(VERTEX_SHADER, code)) {
+                   initGUI();
+                   syncGuiWithShader(code);
+                   showToast("Shader applied & uniforms synced!", "success");
+                }
+            });
+
+            ADD_UNIFORM_BTN.addEventListener('click', () => {
+                const name = ADD_UNIFORM_NAME_INPUT.value.trim();
+                const type = ADD_UNIFORM_TYPE_SELECT.value;
+                if (name) {
+                    let defaultValue;
+                    if (type === 'vec2') defaultValue = { x: 0.5, y: 0.5 };
+                    else if (type === 'vec3') defaultValue = { x: 1.0, y: 1.0, z: 1.0 };
+                    else defaultValue = 0.5;
+
+                    addUniformControl(name, type, defaultValue);
+                    ADD_UNIFORM_NAME_INPUT.value = '';
+                } else {
+                    showToast('Please enter a uniform name.', 'error');
+                }
+            });
+            
+            RESET_VIEW_BTN.addEventListener('click', () => {
+                appState.zoom = 1.0;
+                appState.offset.x = 0;
+                appState.offset.y = 0;
+                showToast("View reset", "info");
+            });
+
+            startRenderLoop();
+        }
+        
+        main();
+    </script>
+</body>
+</html>

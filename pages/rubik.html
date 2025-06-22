@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ルービックキューブソルバー＆ビジュアライザー</title>
+    <meta name="description" content="three.jsで作られたインタラクティブな3Dルービックキューブ。双方向探索による最短手ソルバーを搭載。">
+    <meta name="page:icon" content="fas fa-brain">
+    <meta name="page:color" content="#60a5fa">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        #canvas-container {
+            touch-action: none;
+            cursor: grab;
+        }
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+        .control-panel h2 {
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #374151;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        .btn {
+            @apply flex items-center justify-center gap-2 px-4 py-2 font-semibold text-white rounded-lg shadow-md transition-all duration-300 transform;
+        }
+        .btn:disabled {
+            @apply bg-gray-400 cursor-not-allowed shadow-none;
+        }
+        .btn-primary { @apply bg-sky-500 hover:bg-sky-600 active:scale-95; }
+        .btn-secondary { @apply bg-emerald-500 hover:bg-emerald-600 active:scale-95; }
+        .btn-danger { @apply bg-rose-500 hover:bg-rose-600 active:scale-95; }
+        
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3b82f6;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #solver-overlay {
+            @apply absolute inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center gap-4 transition-opacity duration-300;
+        }
+    </style>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="loader-overlay" class="fixed inset-0 bg-gray-50 bg-opacity-90 flex items-center justify-center z-50">
+        <div class="loader"></div>
+    </div>
+
+    <div class="container mx-auto p-4 md:p-8 min-h-screen flex flex-col">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800">
+                <i class="fas fa-cube text-sky-500"></i> Rubik's Cube Solver
+            </h1>
+            <p class="text-gray-500 mt-2">A 3D Visualizer with a Shortest Path Finding Algorithm</p>
+        </header>
+
+        <main class="flex-grow grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div id="canvas-container" class="lg:col-span-2 w-full h-[50vh] lg:h-full bg-white rounded-xl shadow-lg border border-gray-200 relative overflow-hidden">
+            </div>
+
+            <div class="lg:col-span-1 control-panel bg-white p-6 rounded-xl shadow-lg border border-gray-200 flex flex-col gap-6 relative">
+                 <div id="solver-overlay" class="hidden">
+                    <div class="loader"></div>
+                    <p id="solver-status" class="text-gray-600 font-semibold">最短手を探しています...</p>
+                </div>
+                
+                <section>
+                    <h2><i class="fas fa-random mr-2 text-gray-400"></i>シャッフル</h2>
+                    <div class="flex items-center gap-4 mb-3">
+                        <label for="shuffle-slider" class="text-sm font-medium text-gray-700 whitespace-nowrap">手数:</label>
+                        <input id="shuffle-slider" type="range" min="1" max="15" value="7" class="w-full">
+                        <span id="shuffle-count" class="font-bold text-sky-600 w-8 text-center">7</span>
+                    </div>
+                    <button id="shuffle-btn" class="btn btn-primary w-full"><i class="fas fa-random"></i>シャッフル実行</button>
+                </section>
+                
+                <section>
+                    <h2><i class="fas fa-cogs mr-2 text-gray-400"></i>操作</h2>
+                    <div class="grid grid-cols-1 gap-3">
+                        <button id="solve-btn" class="btn btn-secondary" disabled><i class="fas fa-brain"></i>最短手を探す</button>
+                        <button id="reset-btn" class="btn btn-danger"><i class="fas fa-undo"></i>リセット</button>
+                    </div>
+                </section>
+
+                <section>
+                    <h2><i class="fas fa-tachometer-alt mr-2 text-gray-400"></i>アニメーション速度</h2>
+                    <div class="flex items-center gap-4">
+                        <i class="fas fa-tortoise text-gray-500"></i>
+                        <input id="speed-slider" type="range" min="10" max="300" value="150" class="w-full">
+                        <i class="fas fa-hare text-gray-500"></i>
+                    </div>
+                </section>
+
+                <section class="flex-grow flex flex-col">
+                    <h2><i class="fas fa-clipboard-list mr-2 text-gray-400"></i>状態</h2>
+                    <div class="flex flex-col gap-4 flex-grow">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">シャッフル手順:</label>
+                            <div id="scramble-sequence" class="w-full p-2 h-16 bg-gray-100 rounded-md text-sm font-mono break-words overflow-y-auto"></div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">解答手順 (最短手):</label>
+                            <div id="solve-sequence" class="w-full p-2 h-16 bg-gray-100 rounded-md text-sm font-mono break-words overflow-y-auto"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+        
+        <footer class="text-center text-gray-400 text-sm mt-8 pb-4">
+            <p>Created with three.js, TailwindCSS, and a Bidirectional BFS solver.</p>
+        </footer>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const CUBE_SIZE = 1;
+        const SPACING = 0.05;
+        const CUBIE_SIZE = CUBE_SIZE - SPACING;
+
+        let scene, camera, renderer, controls;
+        let cubeGroup;
+        let animationQueue = [];
+        let isAnimating = false;
+        let animationSpeed = 150; 
+        
+        let scrambleSequence = [];
+        let solveSequence = [];
+        let shuffleCount = 7;
+
+        const FACES = ['U', 'R', 'F', 'D', 'L', 'B'];
+        const ALL_MOVES = FACES.flatMap(face => [face, `${face}'`, `${face}2`]);
+
+        const ui = {
+            loader: document.getElementById('loader-overlay'),
+            solverOverlay: document.getElementById('solver-overlay'),
+            solverStatus: document.getElementById('solver-status'),
+            canvasContainer: document.getElementById('canvas-container'),
+            shuffleBtn: document.getElementById('shuffle-btn'),
+            shuffleSlider: document.getElementById('shuffle-slider'),
+            shuffleCount: document.getElementById('shuffle-count'),
+            solveBtn: document.getElementById('solve-btn'),
+            resetBtn: document.getElementById('reset-btn'),
+            speedSlider: document.getElementById('speed-slider'),
+            scrambleSeqEl: document.getElementById('scramble-sequence'),
+            solveSeqEl: document.getElementById('solve-sequence'),
+        };
+
+        const colors = {
+            F: new THREE.MeshLambertMaterial({ color: 0x009E60 }), // Green
+            B: new THREE.MeshLambertMaterial({ color: 0x0051BA }), // Blue
+            U: new THREE.MeshLambertMaterial({ color: 0xFFFFFF }), // White
+            D: new THREE.MeshLambertMaterial({ color: 0xFFD500 }), // Yellow
+            R: new THREE.MeshLambertMaterial({ color: 0xC41E3A }), // Red
+            L: new THREE.MeshLambertMaterial({ color: 0xFF5800 }), // Orange
+            I: new THREE.MeshLambertMaterial({ color: 0x222222 }),
+        };
+
+        let initialStickerState, currentStickerState;
+        const stickerMap = {
+            U: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            R: [9, 10, 11, 12, 13, 14, 15, 16, 17],
+            F: [18, 19, 20, 21, 22, 23, 24, 25, 26],
+            D: [27, 28, 29, 30, 31, 32, 33, 34, 35],
+            L: [36, 37, 38, 39, 40, 41, 42, 43, 44],
+            B: [45, 46, 47, 48, 49, 50, 51, 52, 53],
+        };
+        const moveEffects = {
+            U: [[0, 2, 8, 6], [1, 5, 7, 3], [18, 9, 45, 36], [19, 10, 46, 37], [20, 11, 47, 38]],
+            R: [[9, 11, 17, 15], [10, 14, 16, 12], [8, 26, 35, 53], [5, 23, 32, 50], [2, 20, 29, 47]],
+            F: [[18, 20, 26, 24], [19, 23, 25, 21], [6, 38, 29, 15], [7, 37, 28, 16], [8, 36, 27, 17]],
+            D: [[27, 29, 35, 33], [28, 32, 34, 30], [24, 44, 51, 15], [25, 43, 52, 16], [26, 42, 53, 17]],
+            L: [[36, 38, 44, 42], [37, 41, 43, 39], [0, 45, 27, 18], [3, 48, 30, 21], [6, 51, 33, 24]],
+            B: [[45, 47, 53, 51], [46, 50, 52, 48], [2, 11, 33, 42], [1, 10, 34, 43], [0, 9, 35, 44]],
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+
+            camera = new THREE.PerspectiveCamera(50, ui.canvasContainer.clientWidth / ui.canvasContainer.clientHeight, 0.1, 1000);
+            camera.position.set(4, 4, 6);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(ui.canvasContainer.clientWidth, ui.canvasContainer.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            ui.canvasContainer.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0x404040, 3);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 5;
+            controls.maxDistance = 20;
+            controls.enablePan = false;
+            
+            initialStickerState = FACES.flatMap(face => Array(9).fill(face));
+            
+            createCube();
+            resetState(true);
+            animate();
+            ui.loader.style.display = 'none';
+        }
+
+        function createCube() {
+            if (cubeGroup) scene.remove(cubeGroup);
+            cubeGroup = new THREE.Group();
+            const cubieGeometry = new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE);
+
+            for (let x = -1; x <= 1; x++) {
+                for (let y = -1; y <= 1; y++) {
+                    for (let z = -1; z <= 1; z++) {
+                        if (x === 0 && y === 0 && z === 0) continue;
+                        const materials = [
+                            x === 1 ? colors.R : colors.I, x === -1 ? colors.L : colors.I,
+                            y === 1 ? colors.U : colors.I, y === -1 ? colors.D : colors.I,
+                            z === 1 ? colors.F : colors.I, z === -1 ? colors.B : colors.I,
+                        ];
+                        const cubie = new THREE.Mesh(cubieGeometry, materials);
+                        cubie.position.set(x * CUBE_SIZE, y * CUBE_SIZE, z * CUBE_SIZE);
+                        cubeGroup.add(cubie);
+                    }
+                }
+            }
+            scene.add(cubeGroup);
+        }
+
+        function applyMoveToState(state, move) {
+            const newState = [...state];
+            const face = move[0];
+            const cycles = moveEffects[face];
+            const turns = move.endsWith("'") ? 3 : (move.endsWith("2") ? 2 : 1);
+
+            for (let i = 0; i < turns; i++) {
+                cycles.forEach(cycle => {
+                    const temp = newState[cycle[0]];
+                    for (let j = 0; j < cycle.length - 1; j++) {
+                        newState[cycle[j]] = newState[cycle[j + 1]];
+                    }
+                    newState[cycle[cycle.length - 1]] = temp;
+                });
+            }
+            return newState;
+        }
+
+        function performMove(move) {
+            currentStickerState = applyMoveToState(currentStickerState, move);
+            queueMove(move);
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            if (animationQueue.length > 0 && !isAnimating) {
+                isAnimating = true;
+                updateButtonState();
+                const nextAnimation = animationQueue.shift();
+                nextAnimation();
+            }
+            renderer.render(scene, camera);
+        }
+
+        function getCubiesOnFace(axis, direction) {
+            const cubies = [];
+            const threshold = CUBE_SIZE / 2;
+            cubeGroup.children.forEach(cubie => {
+                if (Math.abs(cubie.position[axis] - (direction * CUBE_SIZE)) < threshold) {
+                    cubies.push(cubie);
+                }
+            });
+            return cubies;
+        }
+
+        function animateMove(axis, direction, angle) {
+            const cubiesToRotate = getCubiesOnFace(axis, direction);
+            const pivot = new THREE.Object3D();
+            scene.add(pivot);
+            cubiesToRotate.forEach(cubie => pivot.attach(cubie));
+
+            const duration = 400 * (150 / animationSpeed);
+            const startTime = performance.now();
+            const startRotation = new THREE.Euler().copy(pivot.rotation);
+            const targetRotation = new THREE.Euler(
+                startRotation.x + (axis === 'x' ? angle : 0),
+                startRotation.y + (axis === 'y' ? angle : 0),
+                startRotation.z + (axis === 'z' ? angle : 0)
+            );
+
+            function updateRotation() {
+                const elapsedTime = performance.now() - startTime;
+                let progress = Math.min(elapsedTime / duration, 1.0);
+                progress = 1 - Math.pow(1 - progress, 3);
+                
+                pivot.rotation.set(
+                    THREE.MathUtils.lerp(startRotation.x, targetRotation.x, progress),
+                    THREE.MathUtils.lerp(startRotation.y, targetRotation.y, progress),
+                    THREE.MathUtils.lerp(startRotation.z, targetRotation.z, progress)
+                );
+
+                if (progress < 1.0) {
+                    requestAnimationFrame(updateRotation);
+                } else {
+                    pivot.rotation.copy(targetRotation);
+                    pivot.updateMatrixWorld(true);
+                    [...cubiesToRotate].forEach(cubie => {
+                        cubeGroup.attach(cubie);
+                        cubie.position.round();
+                        cubie.rotation.x = Math.round(cubie.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
+                        cubie.rotation.y = Math.round(cubie.rotation.y / (Math.PI / 2)) * (Math.PI / 2);
+                        cubie.rotation.z = Math.round(cubie.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
+                    });
+                    scene.remove(pivot);
+                    isAnimating = false;
+                    updateButtonState();
+                }
+            }
+            requestAnimationFrame(updateRotation);
+        }
+
+        function queueMove(move) {
+            const moveMap = {
+                'U': { axis: 'y', direction: 1, angle: -Math.PI / 2 }, 'U\'': { axis: 'y', direction: 1, angle: Math.PI / 2 }, 'U2': { axis: 'y', direction: 1, angle: -Math.PI },
+                'D': { axis: 'y', direction: -1, angle: Math.PI / 2 }, 'D\'': { axis: 'y', direction: -1, angle: -Math.PI / 2 }, 'D2': { axis: 'y', direction: -1, angle: Math.PI },
+                'R': { axis: 'x', direction: 1, angle: -Math.PI / 2 }, 'R\'': { axis: 'x', direction: 1, angle: Math.PI / 2 }, 'R2': { axis: 'x', direction: 1, angle: -Math.PI },
+                'L': { axis: 'x', direction: -1, angle: Math.PI / 2 }, 'L\'': { axis: 'x', direction: -1, angle: -Math.PI / 2 }, 'L2': { axis: 'x', direction: -1, angle: Math.PI },
+                'F': { axis: 'z', direction: 1, angle: -Math.PI / 2 }, 'F\'': { axis: 'z', direction: 1, angle: Math.PI / 2 }, 'F2': { axis: 'z', direction: 1, angle: -Math.PI },
+                'B': { axis: 'z', direction: -1, angle: Math.PI / 2 }, 'B\'': { axis: 'z', direction: -1, angle: -Math.PI / 2 }, 'B2': { axis: 'z', direction: -1, angle: Math.PI },
+            };
+            const { axis, direction, angle } = moveMap[move];
+            animationQueue.push(() => animateMove(axis, direction, angle));
+        }
+
+        function handleShuffle() {
+            //resetState(false);
+            //createCube();
+            let lastMove = '';
+            for (let i = 0; i < shuffleCount; i++) {
+                let randomMove;
+                do {
+                    randomMove = FACES[Math.floor(Math.random() * FACES.length)];
+                } while (randomMove === lastMove);
+                lastMove = randomMove;
+                const randomModifier = ["", "'", "2"][Math.floor(Math.random() * 3)];
+                const move = randomMove + randomModifier;
+                scrambleSequence.push(move);
+                performMove(move);
+            }
+            ui.scrambleSeqEl.textContent = scrambleSequence.join(' ');
+            ui.solveSeqEl.textContent = '';
+        }
+        
+        async function handleSolve() {
+            ui.solverOverlay.classList.remove('hidden');
+            ui.solverStatus.textContent = '最短手を探しています...';
+            updateButtonState();
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const startStateStr = currentStickerState.join('');
+            const goalStateStr = initialStickerState.join('');
+
+            const solution = await findShortestPath(startStateStr, goalStateStr);
+
+            if (solution) {
+                solveSequence = solution;
+                ui.solveSeqEl.textContent = solveSequence.join(' ');
+                solveSequence.forEach(move => performMove(move));
+            } else {
+                ui.solveSeqEl.textContent = '解が見つかりませんでした。';
+            }
+
+            ui.solverOverlay.classList.add('hidden');
+            scrambleSequence = [];
+            updateButtonState();
+        }
+
+        function findShortestPath(startStateStr, goalStateStr) {
+            return new Promise(resolve => {
+                const qF = [{ state: startStateStr, path: [] }];
+                const vF = new Map([[startStateStr, []]]);
+                const qB = [{ state: goalStateStr, path: [] }];
+                const vB = new Map([[goalStateStr, []]]);
+
+                const invertMove = move => move.endsWith("'") ? move.slice(0, 1) : (move.length === 1 ? `${move}'` : move);
+                const invertPath = path => path.map(invertMove).reverse();
+
+                function search() {
+                    if (qF.length === 0 || qB.length === 0) return resolve(null);
+
+                    let levelSizeF = qF.length;
+                    for (let i = 0; i < levelSizeF; i++) {
+                        const { state, path } = qF.shift();
+                        if (vB.has(state)) return resolve(path.concat(invertPath(vB.get(state))));
+                        
+                        for (const move of ALL_MOVES) {
+                            const nextState = applyMoveToState(state.split(''), move).join('');
+                            if (!vF.has(nextState)) {
+                                const newPath = [...path, move];
+                                vF.set(nextState, newPath);
+                                qF.push({ state: nextState, path: newPath });
+                            }
+                        }
+                    }
+
+                    let levelSizeB = qB.length;
+                    for (let i = 0; i < levelSizeB; i++) {
+                        const { state, path } = qB.shift();
+                        if (vF.has(state)) return resolve(vF.get(state).concat(invertPath(path)));
+
+                        for (const move of ALL_MOVES) {
+                            const nextState = applyMoveToState(state.split(''), move).join('');
+                            if (!vB.has(nextState)) {
+                                const newPath = [...path, move];
+                                vB.set(nextState, newPath);
+                                qB.push({ state: nextState, path: newPath });
+                            }
+                        }
+                    }
+                    setTimeout(search, 0);
+                }
+                search();
+            });
+        }
+
+
+        function handleReset() {
+            resetState(true);
+            createCube();
+        }
+        
+        function resetState(fullReset) {
+            animationQueue = [];
+            isAnimating = false;
+            scrambleSequence = [];
+            solveSequence = [];
+            currentStickerState = [...initialStickerState];
+            ui.scrambleSeqEl.textContent = '';
+            ui.solveSeqEl.textContent = '';
+            if (fullReset) updateButtonState();
+        }
+
+        function updateButtonState() {
+            const isBusy = isAnimating || animationQueue.length > 0 || !ui.solverOverlay.classList.contains('hidden');
+            ui.shuffleBtn.disabled = isBusy;
+            ui.resetBtn.disabled = isBusy;
+            ui.solveBtn.disabled = isBusy || scrambleSequence.length === 0;
+        }
+
+        function handleResize() {
+            camera.aspect = ui.canvasContainer.clientWidth / ui.canvasContainer.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(ui.canvasContainer.clientWidth, ui.canvasContainer.clientHeight);
+        }
+
+        ui.shuffleBtn.addEventListener('click', handleShuffle);
+        ui.solveBtn.addEventListener('click', handleSolve);
+        ui.resetBtn.addEventListener('click', handleReset);
+        ui.shuffleSlider.addEventListener('input', (e) => {
+            shuffleCount = parseInt(e.target.value, 10);
+            ui.shuffleCount.textContent = shuffleCount;
+        });
+        ui.speedSlider.addEventListener('input', (e) => { animationSpeed = e.target.value; });
+        window.addEventListener('resize', handleResize);
+
+        init();
+    </script>
+</body>
+</html>

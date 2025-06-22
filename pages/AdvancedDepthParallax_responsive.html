@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Parallax Generator</title>
+    <meta name="description" content="Create interactive parallax effects from any 2D image using AI-powered depth estimation, k-means clustering, and animation controls.">
+    <meta name="page:icon" content="fas fa-cubes">
+    <meta name="page:color" content="#38bdf8">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        :root {
+            --brand-color: #38bdf8;
+            --brand-color-light: #7dd3fc;
+            --brand-color-dark: #0ea5e9;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overscroll-behavior: none;
+        }
+        .custom-file-button::before {
+            content: 'Upload Image';
+            display: inline-block;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            padding: 0.5rem 1rem;
+            outline: none;
+            white-space: nowrap;
+            cursor: pointer;
+            font-weight: 500;
+            color: #374151;
+            transition: all 0.2s ease-in-out;
+            width: 100%;
+            text-align: center;
+        }
+        .custom-file-button:hover::before {
+            background-color: #f9fafb;
+            border-color: #9ca3af;
+        }
+        .custom-file-button:focus-within::before {
+            box-shadow: 0 0 0 2px var(--brand-color);
+        }
+        input[type="file"] {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        .loader-spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid var(--brand-color);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .canvas-placeholder-bg {
+            border: 2px dashed #d1d5db;
+            background-image: linear-gradient(45deg, #f9fafb 25%, transparent 25%), linear-gradient(-45deg, #f9fafb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f9fafb 75%), linear-gradient(-45deg, transparent 75%, #f9fafb 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+            width: 100%;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #e5e7eb;
+            border-radius: 9999px;
+        }
+        input[type=range]::-moz-range-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #e5e7eb;
+            border-radius: 9999px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            margin-top: -6px;
+            background-color: var(--brand-color);
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            transition: transform 0.2s ease;
+        }
+        input[type=range]::-moz-range-thumb {
+            background-color: var(--brand-color);
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            transition: transform 0.2s ease;
+        }
+        input[type=range]:hover::-webkit-slider-thumb {
+            transform: scale(1.15);
+        }
+        input[type=range]:hover::-moz-range-thumb {
+            transform: scale(1.15);
+        }
+        input[type=range]:focus-visible::-webkit-slider-thumb {
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1), 0 0 0 3px rgba(56, 189, 248, 0.5);
+        }
+        input[type=range]:focus-visible::-moz-range-thumb {
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1), 0 0 0 3px rgba(56, 189, 248, 0.5);
+        }
+        .view-container-grab { cursor: grab; }
+        .view-container-grabbing { cursor: grabbing; }
+        .tab-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .tab-button.active {
+            color: var(--brand-color-dark);
+            border-color: var(--brand-color-dark);
+        }
+        .settings-tab.active {
+            color: var(--brand-color-dark);
+            background-color: #f0f9ff;
+        }
+        #controls-panel.is-open {
+            transform: translateX(0);
+        }
+        
+        .range-editor-handle {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 28px;
+            background-color: white;
+            border: 2px solid #9ca3af;
+            border-radius: 4px;
+            cursor: ew-resize;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .range-editor-handle:hover {
+            border-color: var(--brand-color);
+            background-color: #f0f9ff;
+        }
+        .range-editor-handle::after {
+            content: '||';
+            font-size: 8px;
+            letter-spacing: -1px;
+            color: #9ca3af;
+            transform: rotate(90deg);
+        }
+        .range-editor-handle .tooltip {
+            position: absolute;
+            bottom: 120%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #1f2937;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+            pointer-events: none;
+        }
+        .range-editor-handle:hover .tooltip, .range-editor-handle.dragging .tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        .cluster-segment {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            transition: all 0.1s linear;
+        }
+        .cluster-segment:hover {
+             filter: brightness(1.1);
+        }
+
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 antialiased overflow-hidden">
+
+    <div id="loader" class="fixed inset-0 bg-white/80 backdrop-blur-sm flex flex-col justify-center items-center z-50 transition-opacity duration-300 opacity-0 pointer-events-none">
+        <div class="loader-spinner"></div>
+        <p id="loader-text" class="mt-4 text-lg text-gray-600 font-medium">Loading AI Model...</p>
+        <div class="w-64 bg-gray-200 rounded-full h-2.5 mt-4 overflow-hidden">
+            <div id="loader-progress" class="bg-sky-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <p id="loader-subtext" class="mt-2 text-sm text-gray-500"></p>
+    </div>
+
+    <div id="app" class="h-screen flex flex-col">
+        <header class="flex-shrink-0 bg-white px-4 py-3 border-b border-gray-200 shadow-sm z-20">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <button id="open-drawer-btn" aria-label="Open Controls" class="p-2 -ml-2 text-gray-600 hover:text-sky-500 lg:hidden">
+                        <i class="fas fa-sliders-h text-xl"></i>
+                    </button>
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-cubes text-3xl text-sky-500"></i>
+                        <div>
+                            <h1 class="text-lg sm:text-xl font-bold text-gray-900">Parallax Generator</h1>
+                            <p class="hidden sm:block text-gray-500 text-xs">AI Depth & K-Means Clustering</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-1 sm:space-x-2 bg-gray-100 p-1 rounded-lg">
+                    <button id="view-tab-parallax" aria-label="Parallax View" class="view-tab active text-sm font-medium flex items-center gap-2 px-3 py-1.5 rounded-md bg-white shadow-sm"><i class="fas fa-layer-group"></i><span class="hidden sm:inline">Parallax</span></button>
+                    <button id="view-tab-cluster" aria-label="Cluster View" class="view-tab text-sm font-medium text-gray-500 hover:text-gray-800 flex items-center gap-2 px-3 py-1.5 rounded-md"><i class="fas fa-palette"></i><span class="hidden sm:inline">Cluster</span></button>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow flex relative overflow-hidden">
+            <aside id="controls-panel" class="absolute lg:relative top-0 left-0 h-full w-full max-w-sm bg-white border-r border-gray-200 flex flex-col transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out z-40 lg:w-[380px] flex-shrink-0">
+                <div class="p-4 flex justify-between items-center border-b border-gray-200 lg:hidden">
+                    <h2 class="text-lg font-semibold text-gray-900">Controls</h2>
+                    <button id="close-drawer-btn" aria-label="Close Controls" class="p-2 text-gray-500 hover:text-gray-800">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="flex-grow overflow-y-auto p-6">
+                    <div class="space-y-6">
+                        <div>
+                            <label for="image-url" class="block text-sm font-medium text-gray-700 mb-1">Image URL (Auto-loads on change)</label>
+                            <input type="text" id="image-url" class="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm transition-colors duration-200" placeholder="Enter image URL and press Enter...">
+                        </div>
+                        <div class="relative flex items-center justify-center">
+                            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-300"></div></div>
+                            <div class="relative bg-white px-2 text-sm text-gray-500">OR</div>
+                        </div>
+                        <div>
+                            <label for="file-upload" class="custom-file-button"></label>
+                            <input type="file" id="file-upload" accept="image/*">
+                        </div>
+                         <button id="generate-btn" class="w-full inline-flex items-center justify-center rounded-md border border-transparent bg-sky-500 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
+                            <i class="fas fa-sync-alt mr-2"></i>
+                            <span>Re-Generate Manually</span>
+                        </button>
+                    </div>
+
+                    <div id="status-box" class="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200 transition-colors duration-200 min-h-[90px]">
+                        <h3 class="font-semibold text-gray-800 mb-2 flex items-center gap-2"><i class="fas fa-info-circle text-gray-400"></i>Status</h3>
+                        <p id="status-message" class="text-sm text-gray-600">Awaiting image. Try the default or upload your own.</p>
+                    </div>
+
+                    <div id="settings-container" class="mt-8 pt-6 border-t border-gray-200 opacity-50 pointer-events-none">
+                        <div class="border-b border-gray-200 mb-4">
+                            <nav class="flex space-x-2 bg-gray-100 p-1 rounded-lg" aria-label="Tabs">
+                                <button id="tab-btn-clustering" type="button" class="settings-tab active flex-1 whitespace-nowrap py-2 px-1 text-sm font-medium rounded-md">Clustering</button>
+                                <button id="tab-btn-effect" type="button" class="settings-tab flex-1 whitespace-nowrap py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 rounded-md">Effect</button>
+                            </nav>
+                        </div>
+                        
+                        <div id="tab-content-clustering">
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="clusters-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+                                        <span>Clusters (k)</span>
+                                        <span id="clusters-value">4</span>
+                                    </label>
+                                    <input id="clusters-slider" type="range" min="2" max="10" step="1" value="4" class="w-full">
+                                </div>
+
+                                <div id="cluster-range-editor-container" class="pt-2 hidden">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Cluster Depth Ranges (Real-time)</label>
+                                    <div class="relative w-full h-12 bg-gray-200 rounded-md border border-gray-300 overflow-hidden">
+                                        <canvas id="depth-histogram-canvas" class="absolute inset-0 w-full h-full opacity-30"></canvas>
+                                        <div id="range-slider-ui-container" class="relative w-full h-full">
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between text-xs text-gray-500 mt-1 px-1">
+                                        <span>Shallow (0)</span>
+                                        <span>Deep (255)</span>
+                                    </div>
+                                </div>
+                                
+                                <div id="sublayers-controls-container" class="pt-2 hidden">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Sub-layers per Cluster (Real-time)</label>
+                                     <div id="sublayers-container" class="space-y-2"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="tab-content-effect" class="hidden">
+                             <div class="space-y-4">
+                                <div>
+                                    <label for="intensity-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+                                        <span>Intensity</span>
+                                        <span id="intensity-value">30</span>
+                                    </label>
+                                    <input id="intensity-slider" type="range" min="0" max="100" step="1" value="30" class="w-full">
+                                </div>
+                                <div class="flex items-center justify-between py-1">
+                                    <span class="text-sm font-medium text-gray-700">Invert Depth</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                      <input type="checkbox" id="invert-depth-toggle" class="sr-only peer">
+                                      <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-300 peer-checked:bg-sky-500 transition-all duration-200"></div>
+                                      <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-full transition-all duration-200"></span>
+                                    </label>
+                                </div>
+                             </div>
+                             <div class="pt-4 mt-4 border-t border-gray-200">
+                                <h3 class="text-base font-semibold text-gray-800 mb-3">Animation</h3>
+                                <div class="space-y-4">
+                                    <div class="space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-sm font-medium text-gray-700">Vertical Sway</span>
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                              <input type="checkbox" id="anim-vert-toggle" class="sr-only peer">
+                                              <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-300 peer-checked:bg-sky-500 transition-all duration-200"></div>
+                                              <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-full transition-all duration-200"></span>
+                                            </label>
+                                        </div>
+                                        <div id="anim-vert-controls" class="space-y-3 opacity-50 pointer-events-none transition-opacity duration-300">
+                                            <div>
+                                                <label for="anim-vert-speed-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Speed</span><span id="anim-vert-speed-value">0.5</span></label>
+                                                <input id="anim-vert-speed-slider" type="range" min="0.1" max="5" step="0.1" value="0.5" class="w-full">
+                                            </div>
+                                            <div>
+                                                <label for="anim-vert-range-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Range</span><span id="anim-vert-range-value">5</span></label>
+                                                <input id="anim-vert-range-slider" type="range" min="0" max="50" step="1" value="5" class="w-full">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-sm font-medium text-gray-700">Horizontal Sway</span>
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                              <input type="checkbox" id="anim-horiz-toggle" class="sr-only peer">
+                                              <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-300 peer-checked:bg-sky-500 transition-all duration-200"></div>
+                                              <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-full transition-all duration-200"></span>
+                                            </label>
+                                        </div>
+                                        <div id="anim-horiz-controls" class="space-y-3 opacity-50 pointer-events-none transition-opacity duration-300">
+                                            <div>
+                                                <label for="anim-horiz-speed-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Speed</span><span id="anim-horiz-speed-value">0.5</span></label>
+                                                <input id="anim-horiz-speed-slider" type="range" min="0.1" max="5" step="0.1" value="0.5" class="w-full">
+                                            </div>
+                                            <div>
+                                                <label for="anim-horiz-range-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1"><span>Range</span><span id="anim-horiz-range-value">5</span></label>
+                                                <input id="anim-horiz-range-slider" type="range" min="0" max="50" step="1" value="5" class="w-full">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="apply-settings-btn" class="mt-6 w-full inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
+                            <i class="fas fa-check mr-2"></i>
+                            Apply Major Changes
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-shrink-0 p-6 pt-4 border-t border-gray-200 text-xs text-gray-400">
+                    <p>Depth model by <a href="https://huggingface.co/docs/transformers.js" target="_blank" class="font-medium hover:text-sky-500">Transformers.js</a>.</p>
+                </div>
+            </aside>
+
+            <div id="drawer-overlay" class="fixed inset-0 bg-black/40 z-30 hidden lg:hidden transition-opacity duration-300 opacity-0 pointer-events-none"></div>
+
+            <div class="flex-grow flex flex-col bg-gray-50">
+                <div id="view-container" class="flex-grow relative w-full h-full overflow-hidden view-container-grab">
+                    <canvas id="main-canvas" class="absolute inset-0 w-full h-full"></canvas>
+                    <canvas id="cluster-canvas" class="absolute inset-0 w-full h-full hidden"></canvas>
+                    <div id="canvas-placeholder" class="absolute inset-0 flex flex-col justify-center items-center text-center p-4 canvas-placeholder-bg">
+                         <i class="fas fa-image text-5xl text-gray-300 mb-4"></i>
+                         <h3 class="text-xl font-medium text-gray-500">Viewport</h3>
+                         <p class="text-gray-400 mt-1">Your generated image will appear here.</p>
+                    </div>
+                </div>
+                <div class="p-2 bg-white/80 backdrop-blur-sm border-t border-gray-200 text-xs text-gray-600 text-center flex-shrink-0">
+                    <i class="fas fa-expand-arrows-alt"></i> <b>Interact:</b> Drag to <b>Pan</b> | Pinch/Scroll to <b>Zoom</b>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="importmap">
+    { "imports": { "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js" } }
+    </script>
+    <script type="module">
+        import { pipeline, env } from '@xenova/transformers';
+
+        const LOADER = document.getElementById('loader');
+        const LOADER_TEXT = document.getElementById('loader-text');
+        const LOADER_PROGRESS = document.getElementById('loader-progress');
+        const LOADER_SUBTEXT = document.getElementById('loader-subtext');
+        
+        const GENERATE_BTN = document.getElementById('generate-btn');
+        const URL_INPUT = document.getElementById('image-url');
+        const FILE_INPUT = document.getElementById('file-upload');
+        const STATUS_MESSAGE = document.getElementById('status-message');
+        const VIEW_CONTAINER = document.getElementById('view-container');
+        const CANVAS_PLACEHOLDER = document.getElementById('canvas-placeholder');
+        const MAIN_CANVAS = document.getElementById('main-canvas');
+        const CLUSTER_CANVAS = document.getElementById('cluster-canvas');
+        const SETTINGS_CONTAINER = document.getElementById('settings-container');
+
+        const CONTROLS_PANEL = document.getElementById('controls-panel');
+        const OPEN_DRAWER_BTN = document.getElementById('open-drawer-btn');
+        const CLOSE_DRAWER_BTN = document.getElementById('close-drawer-btn');
+        const DRAWER_OVERLAY = document.getElementById('drawer-overlay');
+
+        const TAB_BTN_CLUSTERING = document.getElementById('tab-btn-clustering');
+        const TAB_BTN_EFFECT = document.getElementById('tab-btn-effect');
+        const TAB_CONTENT_CLUSTERING = document.getElementById('tab-content-clustering');
+        const TAB_CONTENT_EFFECT = document.getElementById('tab-content-effect');
+
+        const VIEW_TAB_PARALLAX = document.getElementById('view-tab-parallax');
+        const VIEW_TAB_CLUSTER = document.getElementById('view-tab-cluster');
+
+        const CLUSTERS_SLIDER = document.getElementById('clusters-slider');
+        const CLUSTERS_VALUE = document.getElementById('clusters-value');
+        const CLUSTER_RANGE_EDITOR_CONTAINER = document.getElementById('cluster-range-editor-container');
+        const DEPTH_HISTOGRAM_CANVAS = document.getElementById('depth-histogram-canvas');
+        const RANGE_SLIDER_UI_CONTAINER = document.getElementById('range-slider-ui-container');
+        const SUBLAYERS_CONTROLS_CONTAINER = document.getElementById('sublayers-controls-container');
+        const SUBLAYERS_CONTAINER = document.getElementById('sublayers-container');
+
+        const INTENSITY_SLIDER = document.getElementById('intensity-slider');
+        const INTENSITY_VALUE = document.getElementById('intensity-value');
+        const INVERT_DEPTH_TOGGLE = document.getElementById('invert-depth-toggle');
+        const APPLY_SETTINGS_BTN = document.getElementById('apply-settings-btn');
+        
+        const ANIM_VERT_TOGGLE = document.getElementById('anim-vert-toggle');
+        const ANIM_VERT_CONTROLS = document.getElementById('anim-vert-controls');
+        const ANIM_VERT_SPEED_SLIDER = document.getElementById('anim-vert-speed-slider');
+        const ANIM_VERT_SPEED_VALUE = document.getElementById('anim-vert-speed-value');
+        const ANIM_VERT_RANGE_SLIDER = document.getElementById('anim-vert-range-slider');
+        const ANIM_VERT_RANGE_VALUE = document.getElementById('anim-vert-range-value');
+        
+        const ANIM_HORIZ_TOGGLE = document.getElementById('anim-horiz-toggle');
+        const ANIM_HORIZ_CONTROLS = document.getElementById('anim-horiz-controls');
+        const ANIM_HORIZ_SPEED_SLIDER = document.getElementById('anim-horiz-speed-slider');
+        const ANIM_HORIZ_SPEED_VALUE = document.getElementById('anim-horiz-speed-value');
+        const ANIM_HORIZ_RANGE_SLIDER = document.getElementById('anim-horiz-range-slider');
+        const ANIM_HORIZ_RANGE_VALUE = document.getElementById('anim-horiz-range-value');
+
+        const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=2041';
+        const CLUSTER_COLORS = ['#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4'];
+
+        let depth_estimator = null, isProcessing = false, animationFrameId = null;
+        let currentOriginalImage = null, currentDepthMap = null, currentGrayscaleData = null, imageLayers = [], baseClusterCanvas = null, clusterHighlightMasks = [];
+        let highlightedClusterIndex = -1;
+        
+        let lastAppliedK = 0, sortedKmeansClusters = [], clusterBoundaries = [], depthHistogram = [];
+        
+        let parallaxMouse = { x: 0, y: 0 }, targetParallaxMouse = { x: 0, y: 0 };
+        const LERP_FACTOR = 0.08;
+        let viewTransform = { scale: 1, offsetX: 0, offsetY: 0 };
+        let panOffset = { x: 0, y: 0 }, isDragging = false, dragStart = { x: 0, y: 0 }, startPanOffset = { x: 0, y: 0 };
+        let initialPinchDist = 0, startScale = 1;
+        
+        let animVert = { enabled: false, speed: 0.5, range: 5 };
+        let animHoriz = { enabled: false, speed: 0.5, range: 5 };
+        
+        let realtimeUpdateTimeout = null;
+
+        function showLoader(text, showProgress = false) {
+            LOADER_TEXT.textContent = text;
+            LOADER_PROGRESS.parentElement.style.display = showProgress ? 'block' : 'none';
+            LOADER_SUBTEXT.textContent = '';
+            LOADER_PROGRESS.style.width = '0%';
+            LOADER.style.opacity = '1';
+            LOADER.style.pointerEvents = 'auto';
+        }
+
+        function hideLoader() {
+            LOADER.style.opacity = '0';
+            LOADER.style.pointerEvents = 'none';
+        }
+
+        function updateStatus(message, isError = false) {
+            STATUS_MESSAGE.textContent = message;
+            const parent = STATUS_MESSAGE.parentElement;
+            parent.style.borderColor = isError ? '#fca5a5' : '#e5e7eb';
+            parent.style.backgroundColor = isError ? '#fef2f2' : '#f9fafb';
+        }
+        
+        function renderLoop() {
+            animationFrameId = requestAnimationFrame(renderLoop);
+            if(isProcessing && MAIN_CANVAS.classList.contains('hidden')) return;
+
+            parallaxMouse.x += (targetParallaxMouse.x - parallaxMouse.x) * LERP_FACTOR;
+            parallaxMouse.y += (targetParallaxMouse.y - parallaxMouse.y) * LERP_FACTOR;
+            
+            let activeCanvas = !MAIN_CANVAS.classList.contains('hidden') ? MAIN_CANVAS : CLUSTER_CANVAS;
+            
+            const ctx = activeCanvas.getContext('2d');
+            ctx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
+            ctx.save();
+            ctx.translate(viewTransform.offsetX + panOffset.x, viewTransform.offsetY + panOffset.y);
+            ctx.scale(viewTransform.scale, viewTransform.scale);
+
+            if (activeCanvas === MAIN_CANVAS) {
+                if (imageLayers.length > 0) {
+                    const time = performance.now() / 1000;
+                    let animX = 0;
+                    if (animHoriz.enabled) animX = Math.sin(time * animHoriz.speed) * animHoriz.range;
+                    let animY = 0;
+                    if (animVert.enabled) animY = Math.sin(time * animVert.speed) * animVert.range;
+                    
+                    const intensity = parseInt(INTENSITY_SLIDER.value);
+                    const numLayers = imageLayers.length;
+                    
+                    imageLayers.forEach((layer, i) => {
+                        const depthFactor = numLayers > 1 ? (i / (numLayers - 1)) : 0;
+                        const parallaxOffsetX = (parallaxMouse.x * intensity + animX) * depthFactor;
+                        const parallaxOffsetY = (parallaxMouse.y * intensity + animY) * depthFactor;
+                        ctx.drawImage(layer, parallaxOffsetX, parallaxOffsetY, currentOriginalImage.width, currentOriginalImage.height);
+                    });
+                }
+            } else { // CLUSTER_CANVAS
+                if (baseClusterCanvas) {
+                    ctx.drawImage(baseClusterCanvas, 0, 0);
+                }
+            }
+
+            if (highlightedClusterIndex !== -1 && clusterHighlightMasks[highlightedClusterIndex]) {
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = '#ffffff';
+                ctx.drawImage(clusterHighlightMasks[highlightedClusterIndex], 0, 0);
+                ctx.globalAlpha = 1.0;
+            }
+
+            ctx.restore();
+        }
+
+        function kmeans(data, k) {
+            let centroids = [];
+            const sortedData = [...data].sort((a,b) => a-b);
+            for(let i = 1; i <= k; i++) centroids.push([sortedData[Math.floor(i * sortedData.length / (k+1))]]);
+            for(let iter = 0; iter < 20; iter++) {
+                const assignments = data.map(point => {
+                    let minDistance = Infinity, bestCluster = 0;
+                    centroids.forEach((centroid, j) => {
+                        const distance = Math.abs(point - centroid[0]);
+                        if (distance < minDistance) { minDistance = distance; bestCluster = j; }
+                    });
+                    return bestCluster;
+                });
+                const newCentroids = Array.from({ length: k }, () => []);
+                assignments.forEach((cluster, i) => newCentroids[cluster].push(data[i]));
+                const nextCentroids = newCentroids.map(clusterPoints => [clusterPoints.length > 0 ? clusterPoints.reduce((s, p) => s + p, 0) / clusterPoints.length : centroids[centroids.length-1][0]]);
+                if (nextCentroids.every((nc, i) => Math.abs(nc[0] - centroids[i][0]) < 1e-3)) break;
+                centroids = nextCentroids;
+            }
+            return centroids.map(c => c[0]);
+        }
+        
+        async function updateEverything(showLoaderScreen = true) {
+            if (isProcessing || !currentDepthMap) return;
+            
+            isProcessing = true;
+            toggleControls(false);
+            if (showLoaderScreen) {
+                showLoader('Applying settings...', true);
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+
+            try {
+                const k = parseInt(CLUSTERS_SLIDER.value);
+                if (k !== lastAppliedK) {
+                    if (showLoaderScreen) LOADER_TEXT.textContent = `Clustering (k=${k})...`;
+                    const sampleData = currentGrayscaleData.filter((_, i) => i % 100 === 0);
+                    const centroids = kmeans(sampleData, k);
+                    sortedKmeansClusters = centroids.map((c, i) => ({ val: c, originalIndex: i }))
+                        .sort((a, b) => a.val - b.val);
+                    
+                    clusterBoundaries = [];
+                    for (let i = 0; i < sortedKmeansClusters.length - 1; i++) {
+                        const boundary = (sortedKmeansClusters[i].val + sortedKmeansClusters[i+1].val) / 2;
+                        clusterBoundaries.push(Math.round(boundary));
+                    }
+                    lastAppliedK = k;
+                    updateRangeEditorUI();
+                    updateSublayerControls();
+                    drawDepthHistogram();
+                }
+                
+                if (showLoaderScreen) LOADER_TEXT.textContent = 'Visualizing clusters...';
+                await visualizeClusters();
+                
+                if (showLoaderScreen) LOADER_TEXT.textContent = 'Creating parallax layers...';
+                await createLayers();
+                
+                if (showLoaderScreen) LOADER_TEXT.textContent = 'Generating highlight masks...';
+                await generateAllHighlightMasks();
+                
+                if (showLoaderScreen) {
+                    hideLoader();
+                    updateStatus('Settings applied! Interact with the viewport.');
+                }
+            } catch (error) {
+                console.error("Update failed:", error);
+                if (showLoaderScreen) {
+                    hideLoader();
+                    updateStatus('Failed to apply settings.', true);
+                }
+            } finally {
+                isProcessing = false;
+                toggleControls(true);
+            }
+        }
+        
+        function triggerRealtimeUpdate() {
+            clearTimeout(realtimeUpdateTimeout);
+            realtimeUpdateTimeout = setTimeout(() => {
+                updateEverything(false);
+            }, 150);
+        }
+
+        async function visualizeClusters() {
+            return new Promise(resolve => setTimeout(() => {
+                const { width, height } = currentOriginalImage;
+                baseClusterCanvas = document.createElement('canvas');
+                baseClusterCanvas.width = width;
+                baseClusterCanvas.height = height;
+                const ctx = baseClusterCanvas.getContext('2d');
+                const imageData = ctx.createImageData(width, height);
+                const data = imageData.data;
+
+                const boundaryValues = [0, ...clusterBoundaries, 255];
+
+                for (let i = 0; i < currentGrayscaleData.length; i++) {
+                    const depthValue = currentGrayscaleData[i];
+                    let segmentIndex = 0;
+                    for(let j = 0; j < boundaryValues.length - 1; j++) {
+                        if (depthValue >= boundaryValues[j] && depthValue <= boundaryValues[j+1]) {
+                            segmentIndex = j;
+                            break;
+                        }
+                    }
+
+                    const color = hexToRgb(CLUSTER_COLORS[segmentIndex % CLUSTER_COLORS.length]);
+                    data[i * 4] = color.r;
+                    data[i * 4 + 1] = color.g;
+                    data[i * 4 + 2] = color.b;
+                    data[i * 4 + 3] = 255;
+                }
+                ctx.putImageData(imageData, 0, 0);
+                resolve();
+            }, 10));
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : null;
+        }
+
+        async function createLayers() {
+            return new Promise(resolve => setTimeout(() => {
+                const { width, height } = currentOriginalImage;
+                const invertDepth = INVERT_DEPTH_TOGGLE.checked;
+                const k = sortedKmeansClusters.length;
+
+                let boundaryValues = [0, ...clusterBoundaries, 255];
+                let subLayerCounts = Array.from({length: k}, (_, i) => {
+                    const slider = document.getElementById(`sublayers-slider-${i}`);
+                    return slider ? parseInt(slider.value) : 4;
+                });
+                
+                if (invertDepth) {
+                    subLayerCounts.reverse();
+                }
+
+                const clusterBaseLayer = [0];
+                for (let i = 0; i < k - 1; i++) {
+                    clusterBaseLayer.push(clusterBaseLayer[i] + subLayerCounts[i]);
+                }
+                const totalLayers = clusterBaseLayer[k-1] + subLayerCounts[k-1];
+                
+                const colorCtx = document.createElement('canvas').getContext('2d');
+                colorCtx.canvas.width = width; colorCtx.canvas.height = height;
+                colorCtx.drawImage(currentOriginalImage, 0, 0);
+                const colorData = colorCtx.getImageData(0, 0, width, height).data;
+                
+                imageLayers = Array.from({ length: totalLayers }, () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width; canvas.height = height;
+                    return canvas;
+                });
+                const layerImageData = imageLayers.map(canvas => canvas.getContext('2d').createImageData(width, height));
+
+                for (let i = 0; i < colorData.length; i += 4) {
+                    const depthValue = currentGrayscaleData[i / 4];
+                    
+                    let segmentIndex = 0;
+                    for(let j = 0; j < boundaryValues.length - 1; j++) {
+                        if (depthValue >= boundaryValues[j] && depthValue <= boundaryValues[j+1]) {
+                            segmentIndex = j;
+                            break;
+                        }
+                    }
+                    
+                    const layerOrderIndex = invertDepth ? (k - 1 - segmentIndex) : segmentIndex;
+                    
+                    const segmentLower = boundaryValues[segmentIndex];
+                    const segmentUpper = boundaryValues[segmentIndex + 1];
+                    const normalizedDepth = Math.max(0, Math.min(1, (depthValue - segmentLower) / (segmentUpper - segmentLower || 1)));
+
+                    const currentSubLayerCount = subLayerCounts[layerOrderIndex];
+                    const subLayerIndex = Math.min(Math.floor(normalizedDepth * currentSubLayerCount), currentSubLayerCount - 1);
+                    const finalLayerIndex = clusterBaseLayer[layerOrderIndex] + subLayerIndex;
+
+                    for(let l = 0; l <= finalLayerIndex; l++) {
+                        if (layerImageData[l]) {
+                            const data = layerImageData[l].data;
+                            data[i] = colorData[i]; data[i+1] = colorData[i+1]; data[i+2] = colorData[i+2]; data[i+3] = colorData[i+3];
+                        }
+                    }
+                }
+                imageLayers.forEach((canvas, i) => canvas.getContext('2d').putImageData(layerImageData[i], 0, 0));
+                resolve();
+            }, 10));
+        }
+
+        async function generateAllHighlightMasks() {
+            return new Promise(resolve => setTimeout(() => {
+                clusterHighlightMasks = [];
+                if (!currentOriginalImage) return resolve();
+                const { width, height } = currentOriginalImage;
+                const k = sortedKmeansClusters.length;
+                const boundaryValues = [0, ...clusterBoundaries, 255];
+                
+                for (let i = 0; i < k; i++) {
+                    const maskCanvas = document.createElement('canvas');
+                    maskCanvas.width = width;
+                    maskCanvas.height = height;
+                    const ctx = maskCanvas.getContext('2d');
+                    const imageData = ctx.createImageData(width, height);
+                    const data = imageData.data;
+                    const lower = boundaryValues[i];
+                    const upper = boundaryValues[i+1];
+
+                    for (let p = 0; p < currentGrayscaleData.length; p++) {
+                        const depth = currentGrayscaleData[p];
+                        if (depth >= lower && depth <= upper) {
+                            data[p * 4] = 255; data[p * 4 + 1] = 255; data[p * 4 + 2] = 255; data[p * 4 + 3] = 255;
+                        }
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    clusterHighlightMasks[i] = maskCanvas;
+                }
+                resolve();
+            }, 10));
+        }
+        
+        async function processImage(url) {
+            if (isProcessing || !depth_estimator) {
+                 if(!depth_estimator) updateStatus('Model is not ready yet.', true);
+                 return;
+            }
+            isProcessing = true;
+            toggleControls(false);
+            lastAppliedK = 0;
+            try {
+                showLoader('Generating Depth Map...');
+                updateStatus(`Analyzing image and creating depth map...`);
+                const output = await depth_estimator(url);
+                currentDepthMap = await output.depth.toCanvas();
+                const depthData = currentDepthMap.getContext('2d').getImageData(0, 0, currentDepthMap.width, currentDepthMap.height).data;
+                currentGrayscaleData = [];
+                for (let i = 0; i < depthData.length; i += 4) currentGrayscaleData.push(depthData[i]);
+
+                currentOriginalImage = new Image();
+                currentOriginalImage.crossOrigin = 'Anonymous';
+                await new Promise((resolve, reject) => {
+                    currentOriginalImage.onload = resolve;
+                    currentOriginalImage.onerror = reject;
+                    currentOriginalImage.src = url;
+                });
+                CANVAS_PLACEHOLDER.style.display = 'none';
+                SETTINGS_CONTAINER.classList.remove('opacity-50', 'pointer-events-none');
+                CLUSTER_RANGE_EDITOR_CONTAINER.classList.remove('hidden');
+                SUBLAYERS_CONTROLS_CONTAINER.classList.remove('hidden');
+                resetView();
+                await updateEverything(true);
+            } catch (error) {
+                console.error('Image processing failed:', error);
+                updateStatus('Could not process the image. The URL might be invalid or blocked by CORS.', true);
+                CANVAS_PLACEHOLDER.style.display = 'flex';
+                currentOriginalImage = null; currentDepthMap = null; currentGrayscaleData = null;
+                SETTINGS_CONTAINER.classList.add('opacity-50', 'pointer-events-none');
+                CLUSTER_RANGE_EDITOR_CONTAINER.classList.add('hidden');
+                SUBLAYERS_CONTROLS_CONTAINER.classList.add('hidden');
+            } finally {
+                isProcessing = false;
+                toggleControls(true);
+                hideLoader();
+                closeDrawer();
+            }
+        }
+
+        function toggleControls(enabled) {
+            const elements = document.querySelectorAll('#settings-container input, #settings-container button, #generate-btn, #file-upload, #image-url');
+            elements.forEach(el => { el.disabled = !enabled; });
+            [ANIM_VERT_CONTROLS, ANIM_HORIZ_CONTROLS].forEach(el => {
+                const toggle = el.previousElementSibling.querySelector('input');
+                el.classList.toggle('opacity-50', !toggle.checked);
+                el.classList.toggle('pointer-events-none', !toggle.checked);
+            });
+            GENERATE_BTN.querySelector('span').textContent = enabled ? 'Re-Generate Manually' : 'Working...';
+        }
+
+        function resetView() {
+            if (!currentOriginalImage) return;
+            const containerRect = VIEW_CONTAINER.getBoundingClientRect();
+            [MAIN_CANVAS, CLUSTER_CANVAS].forEach(c => {
+                c.width = containerRect.width;
+                c.height = containerRect.height;
+            });
+            const image = currentOriginalImage;
+            const canvasAspect = MAIN_CANVAS.width / MAIN_CANVAS.height;
+            const imageAspect = image.width / image.height;
+            if (imageAspect > canvasAspect) {
+                viewTransform.scale = MAIN_CANVAS.height / image.height;
+                viewTransform.offsetX = (MAIN_CANVAS.width - image.width * viewTransform.scale) / 2;
+                viewTransform.offsetY = 0;
+            } else {
+                viewTransform.scale = MAIN_CANVAS.width / image.width;
+                viewTransform.offsetX = 0;
+                viewTransform.offsetY = (MAIN_CANVAS.height - image.height * viewTransform.scale) / 2;
+            }
+            panOffset = { x: 0, y: 0 };
+        }
+
+        function updateSublayerControls() {
+            const currentSettings = {};
+            Array.from(SUBLAYERS_CONTAINER.querySelectorAll('input')).forEach(input => {
+                currentSettings[input.dataset.sortedIndex] = input.value;
+            });
+            
+            SUBLAYERS_CONTAINER.innerHTML = '';
+            if (!sortedKmeansClusters.length) return;
+
+            let displayClusters = [...sortedKmeansClusters];
+            if (INVERT_DEPTH_TOGGLE.checked) displayClusters.reverse();
+
+            displayClusters.forEach((_, i) => {
+                const sortedIndex = INVERT_DEPTH_TOGGLE.checked ? (sortedKmeansClusters.length - 1 - i) : i;
+                const id = `sublayers-slider-${sortedIndex}`;
+                const color = CLUSTER_COLORS[sortedIndex % CLUSTER_COLORS.length];
+                const value = currentSettings[sortedIndex] || 4;
+                const controlDiv = document.createElement('div');
+                controlDiv.className = "flex items-center gap-2 pl-2 border-l-4";
+                controlDiv.style.borderColor = color;
+                controlDiv.innerHTML = `<label for="${id}" class="text-sm font-medium text-gray-600 whitespace-nowrap" title="Layer ${i + 1}">L${i + 1}</label><input id="${id}" type="range" min="1" max="16" step="1" value="${value}" class="w-full" data-sorted-index="${sortedIndex}"><span id="sublayers-value-${sortedIndex}" class="text-sm text-gray-500 font-mono w-8 text-right pr-1">${value}</span>`;
+                SUBLAYERS_CONTAINER.appendChild(controlDiv);
+                
+                const slider = document.getElementById(id);
+                slider.addEventListener('input', e => {
+                    document.getElementById(`sublayers-value-${sortedIndex}`).textContent = e.target.value;
+                    triggerRealtimeUpdate();
+                });
+                controlDiv.addEventListener('mouseover', () => highlightedClusterIndex = sortedIndex);
+                controlDiv.addEventListener('mouseout', () => highlightedClusterIndex = -1);
+            });
+        }
+        
+        function drawDepthHistogram() {
+            if(!currentGrayscaleData) return;
+            depthHistogram = new Array(256).fill(0);
+            for(const val of currentGrayscaleData) depthHistogram[val]++;
+            const max = Math.max(...depthHistogram);
+            const ctx = DEPTH_HISTOGRAM_CANVAS.getContext('2d');
+            const { width, height } = DEPTH_HISTOGRAM_CANVAS;
+            ctx.clearRect(0,0,width,height);
+            ctx.fillStyle = '#9ca3af';
+            for(let i=0; i<256; i++) {
+                const barHeight = (depthHistogram[i] / max) * height;
+                ctx.fillRect(i/255 * width, height - barHeight, width/255, barHeight);
+            }
+        }
+
+        function updateRangeEditorUI() {
+            RANGE_SLIDER_UI_CONTAINER.innerHTML = '';
+            const k = clusterBoundaries.length + 1;
+            const intervals = [0, ...clusterBoundaries, 255];
+
+            for(let i = 0; i < k; i++) {
+                const segment = document.createElement('div');
+                segment.className = 'cluster-segment';
+                segment.style.left = `${(intervals[i] / 255) * 100}%`;
+                segment.style.width = `${((intervals[i+1] - intervals[i]) / 255) * 100}%`;
+                segment.style.backgroundColor = CLUSTER_COLORS[i % CLUSTER_COLORS.length];
+                segment.dataset.segmentIndex = i;
+                segment.addEventListener('mouseover', () => highlightedClusterIndex = i);
+                segment.addEventListener('mouseout', () => highlightedClusterIndex = -1);
+                RANGE_SLIDER_UI_CONTAINER.appendChild(segment);
+            }
+
+            for(let i = 0; i < k - 1; i++) {
+                const handle = document.createElement('div');
+                handle.className = 'range-editor-handle';
+                handle.dataset.handleIndex = i;
+                handle.style.left = `${(clusterBoundaries[i] / 255) * 100}%`;
+                
+                const tooltip = document.createElement('div');
+                tooltip.className = 'tooltip';
+                tooltip.textContent = clusterBoundaries[i];
+                handle.appendChild(tooltip);
+                
+                handle.addEventListener('mousedown', onHandleDragStart);
+                RANGE_SLIDER_UI_CONTAINER.appendChild(handle);
+            }
+        }
+
+        function onHandleDragStart(e) {
+            e.preventDefault();
+            const handle = e.currentTarget;
+            handle.classList.add('dragging');
+            const handleIndex = parseInt(handle.dataset.handleIndex);
+            const containerRect = RANGE_SLIDER_UI_CONTAINER.getBoundingClientRect();
+            
+            const onDragMove = (moveEvent) => {
+                const dx = moveEvent.clientX - containerRect.left;
+                let newValue = Math.round((dx / containerRect.width) * 255);
+                
+                const minLimit = (handleIndex === 0) ? 0 : clusterBoundaries[handleIndex - 1] + 1;
+                const maxLimit = (handleIndex === clusterBoundaries.length - 1) ? 255 : clusterBoundaries[handleIndex + 1] - 1;
+                newValue = Math.max(minLimit, Math.min(newValue, maxLimit));
+                
+                if (clusterBoundaries[handleIndex] !== newValue) {
+                    clusterBoundaries[handleIndex] = newValue;
+                    updateRangeEditorUI();
+                    triggerRealtimeUpdate();
+                }
+            };
+            
+            const onDragEnd = () => {
+                handle.classList.remove('dragging');
+                document.removeEventListener('mousemove', onDragMove);
+                document.removeEventListener('mouseup', onDragEnd);
+            };
+
+            document.addEventListener('mousemove', onDragMove);
+            document.addEventListener('mouseup', onDragEnd);
+        }
+
+        function getPinchDist(e) { return Math.sqrt(Math.pow(e.touches[0].clientX - e.touches[1].clientX, 2) + Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2)); }
+        function getEventCoords(e) { return e.touches ? e.touches[0] : e; }
+        function onPanStart(e) { if (e.touches && e.touches.length > 1) return; isDragging = true; const c = getEventCoords(e); dragStart = { x: c.clientX, y: c.clientY }; startPanOffset = { ...panOffset }; VIEW_CONTAINER.classList.replace('view-container-grab', 'view-container-grabbing'); }
+        function onPanMove(e) { if (!isDragging || (e.touches && e.touches.length > 1)) return; const c = getEventCoords(e); panOffset.x = startPanOffset.x + (c.clientX - dragStart.x); panOffset.y = startPanOffset.y + (c.clientY - dragStart.y); }
+        function onPanEnd() { isDragging = false; VIEW_CONTAINER.classList.replace('view-container-grabbing', 'view-container-grab'); }
+        function handleZoom(delta, centerX, centerY) { if (!currentOriginalImage) return; const oldScale = viewTransform.scale; viewTransform.scale = Math.max(0.1, Math.min(viewTransform.scale * delta, 30)); const rect = VIEW_CONTAINER.getBoundingClientRect(); const mX = centerX - rect.left, mY = centerY - rect.top; const wX = (mX - (viewTransform.offsetX + panOffset.x)) / oldScale; const wY = (mY - (viewTransform.offsetY + panOffset.y)) / oldScale; viewTransform.offsetX = mX - wX * viewTransform.scale - panOffset.x; viewTransform.offsetY = mY - wY * viewTransform.scale - panOffset.y; }
+        function closeDrawer() { CONTROLS_PANEL.classList.remove('is-open'); DRAWER_OVERLAY.classList.add('opacity-0', 'pointer-events-none'); }
+
+        function addEventListeners() {
+            OPEN_DRAWER_BTN.addEventListener('click', () => { CONTROLS_PANEL.classList.add('is-open'); DRAWER_OVERLAY.classList.remove('hidden', 'opacity-0', 'pointer-events-none'); });
+            CLOSE_DRAWER_BTN.addEventListener('click', closeDrawer);
+            DRAWER_OVERLAY.addEventListener('click', closeDrawer);
+            
+            INTENSITY_SLIDER.addEventListener('input', () => INTENSITY_VALUE.textContent = INTENSITY_SLIDER.value);
+            CLUSTERS_SLIDER.addEventListener('input', () => CLUSTERS_VALUE.textContent = CLUSTERS_SLIDER.value);
+            CLUSTERS_SLIDER.addEventListener('change', () => updateEverything(true));
+
+            INVERT_DEPTH_TOGGLE.addEventListener('change', () => {
+                updateSublayerControls();
+                updateEverything(true);
+            });
+            
+            APPLY_SETTINGS_BTN.addEventListener('click', () => updateEverything(true));
+            
+            GENERATE_BTN.addEventListener('click', () => {
+                const url = URL_INPUT.value.trim();
+                if (url) {
+                    processImage(url);
+                } else if (currentOriginalImage) {
+                    updateEverything(true);
+                } else {
+                    updateStatus('Please enter an image URL or upload a file.', true);
+                }
+            });
+
+            FILE_INPUT.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const url = URL.createObjectURL(file);
+                    URL_INPUT.value = '';
+                    processImage(url);
+                }
+            });
+
+            URL_INPUT.addEventListener('change', () => {
+                const url = URL_INPUT.value.trim();
+                if (url) processImage(url);
+            });
+
+            URL_INPUT.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const url = URL_INPUT.value.trim();
+                    if (url) {
+                        processImage(url);
+                        URL_INPUT.blur();
+                    }
+                }
+            });
+
+
+            VIEW_CONTAINER.addEventListener('mousedown', onPanStart);
+            window.addEventListener('mouseup', onPanEnd);
+            VIEW_CONTAINER.addEventListener('mouseleave', () => targetParallaxMouse = { x: 0, y: 0 });
+            window.addEventListener('mousemove', e => { onPanMove(e); if (!isDragging) { const rect = VIEW_CONTAINER.getBoundingClientRect(); targetParallaxMouse.x = ((e.clientX - rect.left) / rect.width - 0.5) * 2; targetParallaxMouse.y = ((e.clientY - rect.top) / rect.height - 0.5) * 2; } });
+            VIEW_CONTAINER.addEventListener('wheel', e => { e.preventDefault(); handleZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); });
+            
+            VIEW_CONTAINER.addEventListener('touchstart', e => { e.preventDefault(); if (e.touches.length === 1) onPanStart(e); else if (e.touches.length === 2) { isDragging = false; initialPinchDist = getPinchDist(e); startScale = viewTransform.scale; } }, { passive: false });
+            VIEW_CONTAINER.addEventListener('touchmove', e => { e.preventDefault(); if (e.touches.length === 1) onPanMove(e); else if (e.touches.length === 2) { const currentDist = getPinchDist(e); const zoomFactor = currentDist / initialPinchDist; viewTransform.scale = startScale * zoomFactor; onPanEnd(); } }, { passive: false });
+            VIEW_CONTAINER.addEventListener('touchend', e => { if (e.touches.length < 2) onPanEnd(); if(e.touches.length === 1) onPanStart(e); else startScale = viewTransform.scale; });
+
+            const setupSettingsTab = (btn, content) => { btn.addEventListener('click', () => { document.querySelectorAll('.settings-tab').forEach(b => b.classList.remove('active')); [TAB_CONTENT_CLUSTERING, TAB_CONTENT_EFFECT].forEach(c => c.classList.add('hidden')); btn.classList.add('active'); content.classList.remove('hidden'); }); };
+            setupSettingsTab(TAB_BTN_CLUSTERING, TAB_CONTENT_CLUSTERING);
+            setupSettingsTab(TAB_BTN_EFFECT, TAB_CONTENT_EFFECT);
+
+            const setupViewTab = (btn, canvasToShow) => { btn.addEventListener('click', () => { document.querySelectorAll('.view-tab').forEach(b => { b.classList.remove('active', 'bg-white', 'shadow-sm'); b.classList.add('text-gray-500', 'hover:text-gray-800'); }); [MAIN_CANVAS, CLUSTER_CANVAS].forEach(c => c.classList.add('hidden')); btn.classList.add('active', 'bg-white', 'shadow-sm'); btn.classList.remove('text-gray-500', 'hover:text-gray-800'); canvasToShow.classList.remove('hidden'); }) };
+            setupViewTab(VIEW_TAB_PARALLAX, MAIN_CANVAS);
+            setupViewTab(VIEW_TAB_CLUSTER, CLUSTER_CANVAS);
+
+            [ANIM_VERT_TOGGLE, ANIM_HORIZ_TOGGLE].forEach(toggle => { toggle.addEventListener('change', (e) => { const c = e.target.parentElement.parentElement.nextElementSibling, s = e.target.id.includes('vert') ? animVert : animHoriz; s.enabled = e.target.checked; c.classList.toggle('opacity-50', !s.enabled); c.classList.toggle('pointer-events-none', !s.enabled); }); });
+            ANIM_VERT_SPEED_SLIDER.addEventListener('input', e => { animVert.speed = parseFloat(e.target.value); ANIM_VERT_SPEED_VALUE.textContent = animVert.speed.toFixed(1); });
+            ANIM_VERT_RANGE_SLIDER.addEventListener('input', e => { animVert.range = parseInt(e.target.value); ANIM_VERT_RANGE_VALUE.textContent = animVert.range; });
+            ANIM_HORIZ_SPEED_SLIDER.addEventListener('input', e => { animHoriz.speed = parseFloat(e.target.value); ANIM_HORIZ_SPEED_VALUE.textContent = animHoriz.speed.toFixed(1); });
+            ANIM_HORIZ_RANGE_SLIDER.addEventListener('input', e => { animHoriz.range = parseInt(e.target.value); ANIM_HORIZ_RANGE_VALUE.textContent = animHoriz.range; });
+            window.addEventListener('resize', () => { if (currentOriginalImage && !isProcessing) { resetView(); drawDepthHistogram(); updateRangeEditorUI(); } });
+        }
+
+        async function initializeApp() {
+            addEventListeners();
+            renderLoop();
+            try {
+                showLoader('Loading AI Model...', true);
+                updateStatus('Downloading AI model. This may take a moment.');
+                env.allowLocalModels = false;
+                depth_estimator = await pipeline('depth-estimation', 'Xenova/depth-anything-small-hf', {
+                    progress_callback: p => {
+                        LOADER_PROGRESS.style.width = `${(p.progress || 0).toFixed(2)}%`;
+                        if(p.file) LOADER_SUBTEXT.textContent = `${p.file} (${(p.loaded/1e6).toFixed(2)}/${(p.total/1e6).toFixed(2)}MB)`;
+                    }
+                });
+                URL_INPUT.value = DEFAULT_IMAGE_URL;
+                await processImage(DEFAULT_IMAGE_URL);
+            } catch (error) {
+                console.error('Model loading failed:', error);
+                updateStatus('Failed to load AI model. Please refresh.', true);
+                hideLoader();
+            }
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>

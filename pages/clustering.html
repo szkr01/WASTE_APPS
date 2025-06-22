@@ -3,314 +3,280 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Depth-Based Hierarchical Clustering</title>
-    <meta name="description" content="An interactive application to perform hierarchical clustering on images based on their AI-generated depth maps.">
-    <meta name="page:icon" content="fas fa-sitemap">
+    <title>Depth-Aware Image Mesher</title>
+    <meta name="description" content="A tool to generate a mesh overlay on an image using an AI-powered depth estimation model.">
+    <meta name="page:icon" content="fas fa-layer-group">
     <meta name="page:color" content="#38bdf8">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/ml-hclust@3.2.0/dist/hclust.min.js"></script>
-
+    
     <style>
-        :root {
-            --theme-color: #38bdf8;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
+            background-color: #f8fafc;
         }
-        .custom-file-button::before {
-            content: 'Upload Image';
-            display: inline-block;
-            background: white;
-            border: 1px solid #d1d5db;
-            border-radius: 0.375rem;
-            padding: 0.5rem 1rem;
-            outline: none;
-            white-space: nowrap;
-            cursor: pointer;
-            font-weight: 500;
-            color: #374151;
-            transition: all 0.2s ease-in-out;
-            width: 100%;
-            text-align: center;
+        .main-container {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 1.5rem;
+            height: calc(100vh - 80px); /* Header height */
         }
-        .custom-file-button:hover::before {
-            background-color: #f9fafb;
-            border-color: #9ca3af;
-        }
-        input[type="file"] {
-            opacity: 0;
-            width: 0;
-            height: 0;
-            position: absolute;
-        }
-        .loader-spinner {
-            border: 4px solid #f3f4f6;
-            border-top: 4px solid var(--theme-color);
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .output-canvas-container {
-            border: 1px solid #e5e7eb;
-            background-color: #f9fafb;
-            background-image: linear-gradient(45deg, #f3f4f6 25%, transparent 25%), linear-gradient(-45deg, #f3f4f6 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f3f4f6 75%), linear-gradient(-45deg, transparent 75%, #f3f4f6 75%);
+        .canvas-container {
+            position: relative;
+            background-color: #e2e8f0;
+            background-image:
+                linear-gradient(45deg, #cbd5e1 25%, transparent 25%),
+                linear-gradient(-45deg, #cbd5e1 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #cbd5e1 75%),
+                linear-gradient(-45deg, transparent 75%, #cbd5e1 75%);
             background-size: 20px 20px;
             background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
         }
-        .output-canvas-container canvas {
-            background: transparent;
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
-        input[type=range] {
+        .control-panel label {
+            font-weight: 500;
+            color: #475569;
+        }
+        .control-panel input[type="range"] {
             -webkit-appearance: none;
             appearance: none;
-            background: transparent;
+            width: 100%;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        .control-panel input[type="range"]:hover {
+            opacity: 1;
+        }
+        .control-panel input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #38bdf8;
             cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
         }
-        input[type=range]:focus {
-          outline: none;
+        .control-panel input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: #38bdf8;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
         }
-        input[type=range]::-webkit-slider-runnable-track {
-          background: #e5e7eb;
-          height: 0.25rem;
-          border-radius: 0.5rem;
+        #fileDropZone {
+            transition: background-color .3s, border-color .3s;
         }
-        input[type=range]::-moz-range-track {
-          background: #e5e7eb;
-          height: 0.25rem;
-          border-radius: 0.5rem;
+        #fileDropZone.dragover {
+            background-color: #e0f2fe;
+            border-color: #38bdf8;
         }
-        input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          margin-top: -6px;
-          background-color: var(--theme-color);
-          height: 1rem;
-          width: 1rem;
-          border-radius: 50%;
-          border: 2px solid white;
-          box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        .btn-primary {
+            background-color: #38bdf8;
+            color: white;
+            transition: background-color .3s, transform .1s;
         }
-        input[type=range]::-moz-range-thumb {
-          border: none;
-          border-radius: 50%;
-          background-color: var(--theme-color);
-          height: 1rem;
-          width: 1rem;
-          border: 2px solid white;
-          box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        .btn-primary:hover:not(:disabled) {
+            background-color: #0ea5e9;
         }
-        .control-disabled {
-            opacity: 0.5;
-            pointer-events: none;
+        .btn-primary:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+        .btn-primary:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+        .loader-overlay {
+            transition: opacity .5s, visibility .5s;
+        }
+        .loader-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800">
-
-    <div id="loader" class="fixed inset-0 bg-white/80 backdrop-blur-sm flex flex-col justify-center items-center z-50 transition-opacity duration-300">
-        <div class="loader-spinner"></div>
-        <p id="loader-text" class="mt-4 text-lg text-gray-600 font-medium">Loading AI Model...</p>
-        <div class="w-64 bg-gray-200 rounded-full h-2.5 mt-4 overflow-hidden">
-            <div id="loader-progress" class="bg-sky-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+<body class="text-slate-700 antialiased">
+    <div id="loader" class="loader-overlay fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+        <div class="w-full max-w-md text-center">
+            <i class="fas fa-microchip text-5xl text-sky-500 animate-pulse"></i>
+            <h2 id="loader-text" class="text-2xl font-semibold mt-4 text-slate-800">Loading AI Model...</h2>
+            <p id="loader-subtext" class="text-slate-500 mt-2">This may take a moment, please wait.</p>
+            <div class="w-full bg-slate-200 rounded-full h-2.5 mt-6">
+                <div id="loader-progress" class="bg-sky-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
         </div>
-        <p id="loader-subtext" class="mt-2 text-sm text-gray-500"></p>
     </div>
+    
+    <header class="h-[80px] bg-white border-b border-slate-200 flex items-center px-6 sticky top-0 z-10">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-layer-group text-3xl text-sky-500"></i>
+            <div>
+                <h1 class="text-xl font-bold text-slate-800">Depth-Aware Image Mesher</h1>
+                <p class="text-sm text-slate-500">Generate mesh segmentation from images using AI depth estimation.</p>
+            </div>
+        </div>
+    </header>
 
-    <div class="min-h-screen flex flex-col lg:flex-row">
-        <aside class="w-full lg:w-96 bg-white p-6 border-r border-gray-200 flex flex-col shrink-0">
-            <header class="pb-6 border-b border-gray-200">
-                <div class="flex items-center gap-3">
-                    <i class="fas fa-sitemap text-3xl text-sky-500"></i>
-                    <div>
-                        <h1 class="text-2xl font-bold text-gray-900">Depth Cluster</h1>
-                        <p class="text-gray-500 text-sm">Hierarchical clustering from image depth.</p>
-                    </div>
+    <main class="main-container p-6">
+        <aside class="control-panel bg-white border border-slate-200 rounded-lg p-6 flex flex-col gap-6 overflow-y-auto">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-800 border-b pb-2 mb-4">1. Upload Image</h2>
+                <div id="fileDropZone" class="w-full h-40 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center text-center p-4 cursor-pointer">
+                    <i class="fas fa-cloud-upload-alt text-4xl text-slate-400 mb-2"></i>
+                    <p class="text-slate-600 font-medium">Drag & drop an image</p>
+                    <p class="text-sm text-slate-500">or click to select</p>
+                    <input type="file" id="fileInput" class="hidden" accept="image/*">
                 </div>
-            </header>
-            
-            <div class="flex-grow mt-6">
-                 <div class="space-y-6">
-                    <h2 class="text-lg font-semibold text-gray-900">1. Input Image</h2>
-                    <div>
-                        <label for="image-url" class="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
-                        <input type="text" id="image-url" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm transition-colors duration-200">
-                    </div>
+            </div>
 
-                    <div class="relative flex items-center">
-                        <div class="flex-grow border-t border-gray-300"></div>
-                        <span class="flex-shrink mx-2 text-sm text-gray-500">OR</span>
-                        <div class="flex-grow border-t border-gray-300"></div>
-                    </div>
-
-                    <div>
-                        <label for="file-upload" class="custom-file-button"></label>
-                        <input type="file" id="file-upload" accept="image/*">
-                    </div>
+            <div id="controls-section" class="hidden flex-grow flex flex-col gap-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-800 border-b pb-2 mb-4">2. Generate Mesh</h2>
+                    <button id="generateBtn" disabled class="w-full btn-primary font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2">
+                        <i class="fas fa-cogs"></i>
+                        <span>Generate</span>
+                    </button>
+                </div>
+    
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-800 border-b pb-2 mb-4">3. Adjust & Export</h2>
                     
-                    <button id="generate-btn" class="w-full inline-flex items-center justify-center rounded-md border border-transparent bg-sky-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
-                        <i class="fas fa-cogs mr-2"></i>
-                        <span>Generate & Cluster</span>
-                    </button>
-                </div>
-                
-                <div id="clustering-controls" class="mt-8 pt-6 border-t border-gray-200 space-y-6">
-                    <h2 class="text-lg font-semibold text-gray-900">2. Clustering Settings</h2>
-                     <div>
-                        <label for="cluster-count-slider" class="flex justify-between text-sm font-medium text-gray-700 mb-1">
-                            <span>Number of Clusters</span>
-                            <span id="cluster-count-value">5</span>
-                        </label>
-                        <input id="cluster-count-slider" type="range" min="2" max="20" step="1" value="5" class="w-full">
+                    <div class="space-y-5">
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label for="densitySlider">Mesh Density</label>
+                                <span id="densityValue" class="text-sm font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded">30</span>
+                            </div>
+                            <input type="range" id="densitySlider" min="5" max="100" value="30" class="w-full">
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label for="opacitySlider">Line Opacity</label>
+                                <span id="opacityValue" class="text-sm font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded">0.7</span>
+                            </div>
+                            <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.7" class="w-full">
+                        </div>
+    
+                        <div>
+                            <label for="colorPicker" class="block mb-1">Line Color</label>
+                            <input type="color" id="colorPicker" value="#ffffff" class="w-full h-10 p-1 bg-white border border-slate-200 rounded-lg cursor-pointer">
+                        </div>
                     </div>
-                    <div>
-                        <label for="linkage-select" class="block text-sm font-medium text-gray-700 mb-1">Linkage Method</label>
-                        <select id="linkage-select" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-sky-500 focus:ring-sky-500 sm:text-sm">
-                            <option value="ward" selected>Ward</option>
-                            <option value="single">Single</option>
-                            <option value="complete">Complete</option>
-                            <option value="average">Average</option>
-                        </select>
-                    </div>
-                    <button id="apply-cluster-btn" class="w-full inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
-                        <i class="fas fa-sync-alt mr-2"></i>
-                        <span>Apply New Settings</span>
-                    </button>
                 </div>
-            </div>
 
-            <div id="status-box" class="mt-8 p-4 bg-gray-100 rounded-lg border border-gray-200 transition-colors duration-200 h-28">
-                <h3 class="font-semibold text-gray-800 mb-2 flex items-center gap-2"><i class="fas fa-info-circle text-gray-400"></i>Status</h3>
-                <p id="status-message" class="text-sm text-gray-600">Awaiting image. Try the default or upload your own.</p>
+                <div class="mt-auto">
+                    <button id="downloadBtn" disabled class="w-full bg-slate-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 hover:bg-slate-700 transition disabled:bg-slate-400 disabled:cursor-not-allowed">
+                        <i class="fas fa-download"></i>
+                        <span>Download Result</span>
+                    </button>
+                </div>
             </div>
-            
         </aside>
 
-        <main class="flex-grow p-4 sm:p-6 lg:p-8 bg-gray-50">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 h-full">
-                
-                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
-                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Original Image</h3>
-                    <div class="flex-grow flex items-center justify-center min-h-[200px] aspect-video">
-                        <canvas id="original-canvas" class="max-w-full max-h-full"></canvas>
-                    </div>
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-6" id="canvas-grid">
+            <div class="flex flex-col gap-2">
+                <h3 class="text-center font-semibold text-slate-600">Original Image</h3>
+                <div class="canvas-container aspect-video rounded-lg overflow-hidden shadow-inner">
+                    <canvas id="originalCanvas"></canvas>
+                    <div id="originalPlaceholder" class="w-full h-full flex items-center justify-center text-slate-500">Upload an image to begin</div>
                 </div>
-
-                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
-                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Depth Map</h3>
-                     <div class="flex-grow flex items-center justify-center min-h-[200px] aspect-video">
-                        <canvas id="depth-canvas" class="max-w-full max-h-full"></canvas>
-                    </div>
-                </div>
-
-                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
-                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Clustered Result</h3>
-                     <div class="flex-grow flex items-center justify-center min-h-[200px] aspect-video">
-                        <canvas id="cluster-canvas" class="max-w-full max-h-full"></canvas>
-                    </div>
-                </div>
-
-                <div class="output-canvas-container rounded-lg flex flex-col shadow-sm">
-                    <h3 class="p-3 font-medium text-gray-700 bg-white/50 border-b border-gray-200 rounded-t-lg">Dendrogram</h3>
-                     <div class="flex-grow flex items-center justify-center min-h-[200px] p-4">
-                        <canvas id="dendrogram-canvas" class="w-full h-full"></canvas>
-                    </div>
-                </div>
-                
             </div>
-        </main>
-    </div>
-
-    <script type="importmap">
-    {
-      "imports": {
-        "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js"
-      }
-    }
-    </script>
+            <div class="flex flex-col gap-2">
+                <h3 class="text-center font-semibold text-slate-600">AI-Generated Depth Map</h3>
+                <div class="canvas-container aspect-video rounded-lg overflow-hidden shadow-inner">
+                    <canvas id="depthCanvas"></canvas>
+                    <div id="depthPlaceholder" class="w-full h-full flex items-center justify-center text-slate-500">Awaiting generation...</div>
+                </div>
+            </div>
+            <div class="md:col-span-2 flex flex-col gap-2">
+                 <h3 class="text-center font-semibold text-slate-600">Final Result with Mesh Overlay</h3>
+                <div class="canvas-container aspect-video rounded-lg overflow-hidden shadow-lg border-2 border-sky-500">
+                    <canvas id="resultCanvas"></canvas>
+                    <div id="resultPlaceholder" class="w-full h-full flex items-center justify-center text-slate-500">Awaiting generation...</div>
+                </div>
+            </div>
+        </section>
+    </main>
+    
     <script type="module">
-        import { pipeline, env } from '@xenova/transformers';
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js';
 
         const LOADER = document.getElementById('loader');
         const LOADER_TEXT = document.getElementById('loader-text');
-        const LOADER_PROGRESS = document.getElementById('loader-progress');
         const LOADER_SUBTEXT = document.getElementById('loader-subtext');
-
-        const GENERATE_BTN = document.getElementById('generate-btn');
-        const APPLY_CLUSTER_BTN = document.getElementById('apply-cluster-btn');
-        const URL_INPUT = document.getElementById('image-url');
-        const FILE_INPUT = document.getElementById('file-upload');
-        const STATUS_MESSAGE = document.getElementById('status-message');
-        const CLUSTER_CONTROLS = document.getElementById('clustering-controls');
-
-        const CLUSTER_COUNT_SLIDER = document.getElementById('cluster-count-slider');
-        const CLUSTER_COUNT_VALUE = document.getElementById('cluster-count-value');
-        const LINKAGE_SELECT = document.getElementById('linkage-select');
-
-        const ORIGINAL_CANVAS = document.getElementById('original-canvas');
-        const DEPTH_CANVAS = document.getElementById('depth-canvas');
-        const CLUSTER_CANVAS = document.getElementById('cluster-canvas');
-        const DENDROGRAM_CANVAS = document.getElementById('dendrogram-canvas');
-
-        const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1542840410-241062d3dcf6?q=80&w=2592';
-
-        let depthEstimator = null;
-        let isProcessing = false;
+        const LOADER_PROGRESS = document.getElementById('loader-progress');
         
-        let currentOriginalImage = null;
-        let currentDepthMapData = null;
-        let clusteringResult = null;
-        let samplePoints = [];
-        const SAMPLE_RATE = 0.05;
+        const fileDropZone = document.getElementById('fileDropZone');
+        const fileInput = document.getElementById('fileInput');
+        const generateBtn = document.getElementById('generateBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const controlsSection = document.getElementById('controls-section');
+        
+        const densitySlider = document.getElementById('densitySlider');
+        const opacitySlider = document.getElementById('opacitySlider');
+        const colorPicker = document.getElementById('colorPicker');
+        const densityValue = document.getElementById('densityValue');
+        const opacityValue = document.getElementById('opacityValue');
+        
+        const originalCanvas = document.getElementById('originalCanvas');
+        const depthCanvas = document.getElementById('depthCanvas');
+        const resultCanvas = document.getElementById('resultCanvas');
+        
+        const originalCtx = originalCanvas.getContext('2d');
+        const depthCtx = depthCanvas.getContext('2d');
+        const resultCtx = resultCanvas.getContext('2d');
 
-        function showLoader(text, showProgress = false) {
+        const originalPlaceholder = document.getElementById('originalPlaceholder');
+        const depthPlaceholder = document.getElementById('depthPlaceholder');
+        const resultPlaceholder = document.getElementById('resultPlaceholder');
+
+        let depth_estimator = null;
+        let sourceImage = null;
+        let depthData = null;
+
+        function showLoader(text, subtext = '') {
             LOADER_TEXT.textContent = text;
-            LOADER_PROGRESS.parentElement.style.display = showProgress ? 'block' : 'none';
-            LOADER_SUBTEXT.textContent = '';
+            LOADER_SUBTEXT.textContent = subtext;
             LOADER_PROGRESS.style.width = '0%';
             LOADER.classList.remove('hidden');
-            LOADER.style.opacity = '1';
         }
 
         function hideLoader() {
-            LOADER.style.opacity = '0';
-            setTimeout(() => LOADER.classList.add('hidden'), 300);
+            LOADER.classList.add('hidden');
         }
 
-        function updateStatus(message, isError = false) {
-            STATUS_MESSAGE.textContent = message;
-            const statusBox = STATUS_MESSAGE.parentElement;
-            statusBox.style.borderColor = isError ? '#fca5a5' : '#e5e7eb';
-            statusBox.style.backgroundColor = isError ? '#fef2f2' : '#f0f9ff';
+        function updateStatus(text, isError = false) {
+            LOADER_TEXT.textContent = text;
+            if (isError) {
+                LOADER_TEXT.classList.add('text-red-500');
+            } else {
+                LOADER_TEXT.classList.remove('text-red-500');
+            }
         }
         
-        function toggleControls(enabled) {
-            const elements = [GENERATE_BTN, URL_INPUT, FILE_INPUT.parentElement, CLUSTER_CONTROLS];
-            elements.forEach(el => {
-                if (enabled) el.classList.remove('control-disabled');
-                else el.classList.add('control-disabled');
-            });
-            GENERATE_BTN.querySelector('span').textContent = enabled ? 'Generate & Cluster' : 'Working...';
-        }
-
         async function loadModel() {
             try {
-                showLoader('Loading AI Model...', true);
-                updateStatus('Downloading AI model. This may take a moment.');
+                showLoader('Loading AI Model...', 'This happens once and may take a moment.');
                 env.allowLocalModels = false;
                 
-                depthEstimator = await pipeline('depth-estimation', 'Xenova/depth-anything-small-hf', {
+                depth_estimator = await pipeline('depth-estimation', 'Xenova/depth-anything-small-hf', {
                     progress_callback: (progress) => {
                         const percentage = (progress.progress || 0).toFixed(2);
                         LOADER_PROGRESS.style.width = `${percentage}%`;
@@ -320,330 +286,197 @@
                     }
                 });
                 
-                updateStatus('Model loaded. Ready to process images.');
+                hideLoader();
                 return true;
             } catch (error) {
                 console.error('Model loading failed:', error);
                 updateStatus('Failed to load AI model. Please refresh the page.', true);
-                hideLoader();
+                LOADER_SUBTEXT.textContent = 'An error occurred while downloading the necessary AI components.';
+                LOADER_PROGRESS.parentElement.style.display = 'none';
                 return false;
             }
         }
 
-        async function processImage(url) {
-            if (isProcessing || !depthEstimator) {
-                 if(!depthEstimator) updateStatus('Model is not ready yet.', true);
-                 return;
+        function handleFile(file) {
+            if (!file || !file.type.startsWith('image/')) {
+                alert('Please select a valid image file.');
+                return;
             }
-            
-            isProcessing = true;
-            toggleControls(false);
-            clearAllCanvas();
 
-            try {
-                showLoader('Generating Depth Map...');
-                updateStatus('1/3: Analyzing image and creating depth map...');
-                const depthOutput = await depthEstimator(url);
-                const depthCanvas = await depthOutput.depth.toCanvas();
-                
-                currentOriginalImage = new Image();
-                currentOriginalImage.crossOrigin = 'Anonymous';
-                await new Promise((resolve, reject) => {
-                    currentOriginalImage.onload = resolve;
-                    currentOriginalImage.onerror = reject;
-                    currentOriginalImage.src = url;
-                });
-
-                const { width, height } = currentOriginalImage;
-                [ORIGINAL_CANVAS, DEPTH_CANVAS, CLUSTER_CANVAS].forEach(c => {
-                    c.width = width;
-                    c.height = height;
-                });
-                
-                const originalCtx = ORIGINAL_CANVAS.getContext('2d');
-                originalCtx.drawImage(currentOriginalImage, 0, 0);
-
-                const depthCtx = DEPTH_CANVAS.getContext('2d');
-                depthCtx.drawImage(depthCanvas, 0, 0, width, height);
-                currentDepthMapData = depthCtx.getImageData(0, 0, width, height);
-
-                await runClustering();
-
-                updateStatus('Successfully generated all outputs!', false);
-            } catch (error) {
-                console.error('Image processing failed:', error);
-                updateStatus('Could not process the image. The URL might be invalid or blocked.', true);
-                clearAllCanvas();
-            } finally {
-                isProcessing = false;
-                toggleControls(true);
-                hideLoader();
-            }
-        }
-
-        function sampleDepthData() {
-            updateStatus('2/3: Sampling depth data for clustering...');
-            const { data, width, height } = currentDepthMapData;
-            samplePoints = [];
-            const dataToCluster = [];
-            
-            const step = Math.floor(1 / Math.sqrt(SAMPLE_RATE));
-
-            for (let y = 0; y < height; y += step) {
-                for (let x = 0; x < width; x += step) {
-                    const i = (y * width + x) * 4;
-                    const depth = data[i]; // Grayscale, so R=G=B
-                    samplePoints.push({ x, y, depth });
-                    dataToCluster.push([depth]);
-                }
-            }
-            return dataToCluster;
-        }
-
-        async function runClustering() {
-             return new Promise(resolve => {
-                setTimeout(() => {
-                    const dataToCluster = sampleDepthData();
-
-                    updateStatus('2/3: Performing hierarchical clustering...');
-                    const linkage = LINKAGE_SELECT.value;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                sourceImage = new Image();
+                sourceImage.onload = () => {
+                    originalPlaceholder.style.display = 'none';
+                    const aspectRatio = sourceImage.width / sourceImage.height;
                     
-                    try {
-                        const agnes = hclust.agnes(dataToCluster, { method: linkage });
-                        clusteringResult = agnes;
-                        drawResults();
-                    } catch(e) {
-                        console.error("Clustering failed: ", e);
-                        updateStatus("Clustering failed. Try a different linkage method.", true);
-                    }
+                    [originalCanvas, depthCanvas, resultCanvas].forEach(canvas => {
+                        const container = canvas.parentElement;
+                        const containerWidth = container.clientWidth;
+                        const containerHeight = container.clientHeight;
+                        let canvasWidth, canvasHeight;
 
-                    resolve();
-                }, 50);
-            });
-        }
-        
-        function drawResults() {
-             updateStatus('3/3: Visualizing results...');
-             const numClusters = parseInt(CLUSTER_COUNT_SLIDER.value);
+                        if (containerWidth / containerHeight > aspectRatio) {
+                            canvasHeight = containerHeight;
+                            canvasWidth = canvasHeight * aspectRatio;
+                        } else {
+                            canvasWidth = containerWidth;
+                            canvasHeight = canvasWidth / aspectRatio;
+                        }
 
-             if (!clusteringResult) return;
+                        canvas.width = sourceImage.naturalWidth;
+                        canvas.height = sourceImage.naturalHeight;
+                        canvas.style.width = `${canvasWidth}px`;
+                        canvas.style.height = `${canvasHeight}px`;
+                        canvas.style.top = `${(containerHeight - canvasHeight) / 2}px`;
+                        canvas.style.left = `${(containerWidth - canvasWidth) / 2}px`;
+                    });
 
-             const clusters = clusteringResult.cut(numClusters);
-             const colors = generateDistinctColors(numClusters);
+                    originalCtx.drawImage(sourceImage, 0, 0);
+                    
+                    resetState();
 
-             drawClusteredImage(clusters, colors);
-             drawDendrogram(clusteringResult, numClusters, colors);
-        }
-        
-        function drawClusteredImage(clusters, colors) {
-            const ctx = CLUSTER_CANVAS.getContext('2d');
-            const { width, height } = currentDepthMapData;
-            const newImageData = ctx.createImageData(width, height);
-            
-            const clusterAssignments = new Array(samplePoints.length);
-            clusters.forEach((cluster, clusterIndex) => {
-                cluster.indices.forEach(pointIndex => {
-                    clusterAssignments[pointIndex] = clusterIndex;
-                });
-            });
-
-            const findNearestCluster = (x, y) => {
-                let minDistSq = Infinity;
-                let bestCluster = 0;
-                samplePoints.forEach((p, i) => {
-                    const distSq = (p.x - x)**2 + (p.y - y)**2;
-                    if(distSq < minDistSq) {
-                        minDistSq = distSq;
-                        bestCluster = clusterAssignments[i];
-                    }
-                });
-                return bestCluster;
-            };
-            
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const i = (y * width + x) * 4;
-                    const clusterIndex = findNearestCluster(x, y);
-                    const color = colors[clusterIndex] || [0,0,0];
-                    newImageData.data[i] = color[0];
-                    newImageData.data[i + 1] = color[1];
-                    newImageData.data[i + 2] = color[2];
-                    newImageData.data[i + 3] = 255;
-                }
-            }
-            ctx.putImageData(newImageData, 0, 0);
-        }
-        
-        function drawDendrogram(tree, numClusters, colors) {
-            const canvas = DENDROGRAM_CANVAS;
-            const ctx = canvas.getContext('2d');
-            
-            const parent = canvas.parentElement;
-            canvas.width = parent.clientWidth;
-            canvas.height = parent.clientHeight;
-            
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = '#6b7280';
-            ctx.lineWidth = 1;
-
-            if (!tree || !tree.children) {
-                 ctx.fillStyle = '#9ca3af';
-                 ctx.textAlign = 'center';
-                 ctx.fillText('Not enough data for dendrogram.', canvas.width / 2, canvas.height / 2);
-                 return;
-            }
-
-            const leaves = tree.indices();
-            const nLeaves = leaves.length;
-            const padding = 20;
-            const xStep = (canvas.width - 2 * padding) / (nLeaves - 1 || 1);
-            const yMax = tree.height;
-            const yMin = 0;
-
-            const leafX = new Map();
-            leaves.forEach((leafIndex, i) => {
-                leafX.set(leafIndex, padding + i * xStep);
-            });
-            
-            const clusterThresholds = new Array(numClusters).fill(Infinity);
-            const merges = tree.getMergeOrder();
-            for(let i=0; i < numClusters - 1; ++i) {
-                clusterThresholds[i] = merges[merges.length-i-1].height;
-            }
-            clusterThresholds.sort((a, b) => a-b);
-            
-            function getClusterColor(height) {
-                for(let i=0; i<clusterThresholds.length; ++i) {
-                    if (height < clusterThresholds[i]) {
-                        return colors[i];
-                    }
-                }
-                return colors[colors.length-1];
-            }
-
-            function drawNode(node) {
-                if (!node) return {x:0, count:0};
-                if (node.isLeaf) {
-                    return { x: leafX.get(node.index), count: 1 };
-                }
-
-                const [left, right] = node.children;
-                const { x: x1 } = drawNode(left);
-                const { x: x2 } = drawNode(right);
-
-                const y1 = (1 - left.height / yMax) * (canvas.height - 2 * padding) + padding;
-                const y2 = (1 - right.height / yMax) * (canvas.height - 2 * padding) + padding;
-                const y3 = (1 - node.height / yMax) * (canvas.height - 2 * padding) + padding;
-
-                const nodeColor = getClusterColor(node.height);
-                ctx.strokeStyle = `rgb(${nodeColor[0]}, ${nodeColor[1]}, ${nodeColor[2]})`;
-                ctx.lineWidth = 1.5;
-
-                ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x1, y3);
-                ctx.moveTo(x2, y2);
-                ctx.lineTo(x2, y3);
-                ctx.moveTo(x1, y3);
-                ctx.lineTo(x2, y3);
-                ctx.stroke();
-
-                return { x: (x1 + x2) / 2 };
-            }
-
-            drawNode(tree);
-        }
-
-        function generateDistinctColors(count) {
-            const colors = [];
-            for (let i = 0; i < count; i++) {
-                const hue = (i * (360 / count)) % 360;
-                colors.push(hslToRgb(hue / 360, 0.7, 0.5));
-            }
-            return colors;
-        }
-
-        function hslToRgb(h, s, l) {
-            let r, g, b;
-            if (s === 0) {
-                r = g = b = l;
-            } else {
-                const hue2rgb = (p, q, t) => {
-                    if (t < 0) t += 1;
-                    if (t > 1) t -= 1;
-                    if (t < 1 / 6) return p + (q - p) * 6 * t;
-                    if (t < 1 / 2) return q;
-                    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-                    return p;
+                    generateBtn.disabled = false;
+                    controlsSection.classList.remove('hidden');
                 };
-                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                const p = 2 * l - q;
-                r = hue2rgb(p, q, h + 1 / 3);
-                g = hue2rgb(p, q, h);
-                b = hue2rgb(p, q, h - 1 / 3);
-            }
-            return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+                sourceImage.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
         }
 
-        function clearAllCanvas() {
-            [ORIGINAL_CANVAS, DEPTH_CANVAS, CLUSTER_CANVAS, DENDROGRAM_CANVAS].forEach(c => {
-                c.getContext('2d').clearRect(0,0,c.width,c.height);
-                c.width = 1; c.height = 1;
-            });
+        function resetState() {
+            depthData = null;
+            depthCtx.clearRect(0, 0, depthCanvas.width, depthCanvas.height);
+            resultCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+            depthPlaceholder.style.display = 'flex';
+            resultPlaceholder.style.display = 'flex';
+            downloadBtn.disabled = true;
         }
 
-        function addEventListeners() {
-            CLUSTER_COUNT_SLIDER.addEventListener('input', () => CLUSTER_COUNT_VALUE.textContent = CLUSTER_COUNT_SLIDER.value);
+        fileDropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            fileDropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        fileDropZone.addEventListener('dragenter', () => fileDropZone.classList.add('dragover'));
+        fileDropZone.addEventListener('dragleave', () => fileDropZone.classList.remove('dragover'));
+        fileDropZone.addEventListener('drop', (e) => {
+            fileDropZone.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        generateBtn.addEventListener('click', async () => {
+            if (!depth_estimator || !sourceImage) return;
+
+            showLoader('Generating Depth Map...', 'The AI is analyzing your image.');
+            generateBtn.disabled = true;
             
-            GENERATE_BTN.addEventListener('click', () => {
-                const url = URL_INPUT.value.trim();
-                if (url) {
-                    processImage(url);
-                } else {
-                    updateStatus('Please enter a valid image URL.', true);
-                }
-            });
-
-            FILE_INPUT.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const url = URL.createObjectURL(file);
-                    URL_INPUT.value = '';
-                    processImage(url);
-                }
-            });
-
-            APPLY_CLUSTER_BTN.addEventListener('click', async () => {
-                if (!currentDepthMapData || isProcessing) return;
-
-                isProcessing = true;
-                toggleControls(false);
-                showLoader("Applying new cluster settings...");
-
-                await runClustering();
-                updateStatus('Successfully applied new settings!', false);
-
+            try {
+                depthData = await depth_estimator(sourceImage.src);
+                drawDepthMap();
+                drawMesh();
+                downloadBtn.disabled = false;
+            } catch (error) {
+                console.error('Processing failed:', error);
+                updateStatus('Image processing failed.', true);
+            } finally {
                 hideLoader();
-                isProcessing = false;
-                toggleControls(true);
-            });
-        }
-
-        async function initializeApp() {
-            addEventListeners();
-            toggleControls(false);
-
-            const modelLoaded = await loadModel();
-            URL_INPUT.value = DEFAULT_IMAGE_URL;
-            
-            if (modelLoaded) {
-                await processImage(DEFAULT_IMAGE_URL);
-            } else {
-                 toggleControls(true);
+                generateBtn.disabled = false;
             }
+        });
+
+        function drawDepthMap() {
+            if (!depthData) return;
+            
+            depthPlaceholder.style.display = 'none';
+
+            const { width, height } = depthData.predicted_depth;
+            const depthArray = depthData.predicted_depth.data;
+            const imageData = depthCtx.createImageData(width, height);
+            
+            let min = Infinity, max = -Infinity;
+            for (let v of depthArray) {
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+            
+            const range = max - min;
+            if (range === 0) return;
+
+            for (let i = 0; i < depthArray.length; i++) {
+                const normalized = 255 * (depthArray[i] - min) / range;
+                imageData.data[i * 4] = normalized;
+                imageData.data[i * 4 + 1] = normalized;
+                imageData.data[i * 4 + 2] = normalized;
+                imageData.data[i * 4 + 3] = 255;
+            }
+            depthCtx.putImageData(imageData, 0, 0);
+        }
+        
+        function drawMesh() {
+            if (!sourceImage) return;
+            
+            resultPlaceholder.style.display = 'none';
+            resultCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+            resultCtx.drawImage(sourceImage, 0, 0, resultCanvas.width, resultCanvas.height);
+
+            const density = parseInt(densitySlider.value);
+            const step = Math.max(resultCanvas.width, resultCanvas.height) / density;
+            
+            resultCtx.strokeStyle = colorPicker.value;
+            resultCtx.globalAlpha = parseFloat(opacitySlider.value);
+            resultCtx.lineWidth = 1.5;
+            resultCtx.beginPath();
+            
+            for (let y = 0; y < resultCanvas.height; y += step) {
+                for (let x = 0; x < resultCanvas.width; x += step) {
+                    resultCtx.moveTo(x, y);
+                    resultCtx.lineTo(x + step, y);
+                    resultCtx.lineTo(x, y + step);
+                    resultCtx.lineTo(x, y);
+                    
+                    resultCtx.moveTo(x + step, y);
+                    resultCtx.lineTo(x, y + step);
+                    resultCtx.lineTo(x + step, y + step);
+                    resultCtx.lineTo(x + step, y);
+                }
+            }
+            resultCtx.stroke();
+            resultCtx.globalAlpha = 1.0;
         }
 
-        initializeApp();
+        [densitySlider, opacitySlider, colorPicker].forEach(control => {
+            control.addEventListener('input', () => {
+                densityValue.textContent = densitySlider.value;
+                opacityValue.textContent = opacitySlider.value;
+                if (sourceImage) {
+                    drawMesh();
+                }
+            });
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            if (!sourceImage) return;
+            const link = document.createElement('a');
+            link.download = 'meshed-image.png';
+            link.href = resultCanvas.toDataURL();
+            link.click();
+        });
+
+        window.addEventListener('resize', () => {
+            if (sourceImage) {
+                handleFile(fileInput.files[0] || sourceImage); // Re-handle to resize canvases
+            }
+        });
+
+        loadModel();
     </script>
 </body>
 </html>
