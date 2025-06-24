@@ -137,6 +137,13 @@
             color: #0ea5e9;
             border-color: #0ea5e9;
         }
+        
+        #export-modal {
+             transition: opacity 0.3s ease-in-out;
+        }
+        #export-modal > div {
+             transition: transform 0.3s ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -157,7 +164,7 @@
                     <i class="fas fa-cubes text-3xl text-sky-500"></i>
                     <div>
                         <h1 class="text-2xl font-bold text-gray-900">Advanced Parallax Generator</h1>
-                        <p class="text-gray-500 text-sm">Create interactive 3D effects with AI depth and k-means clustering.</p>
+                        <p class="text-gray-500 text-sm">Create and export interactive 3D effects with AI depth.</p>
                     </div>
                 </div>
             </div>
@@ -294,14 +301,16 @@
                                 </div>
                             </div>
                         </div>
-                        <button id="apply-settings-btn" class="mt-6 w-full inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
-                            <i class="fas fa-check mr-2"></i>
-                            Apply Settings
-                        </button>
-                        <button id="export-btn" class="mt-3 w-full inline-flex items-center justify-center rounded-md border border-transparent bg-sky-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200 disabled:bg-sky-300 disabled:cursor-not-allowed">
-                            <i class="fas fa-file-export mr-2"></i>
-                            <span>Export Embed Code</span>
-                        </button>
+                        <div class="mt-6 pt-6 border-t border-gray-300 space-y-4">
+                            <button id="apply-settings-btn" class="w-full inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
+                                <i class="fas fa-check mr-2"></i>
+                                Apply Settings
+                            </button>
+                            <button id="export-btn" disabled class="w-full inline-flex items-center justify-center rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fas fa-code mr-2"></i>
+                                Export Embed Code
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="flex-shrink-0 p-6 pt-4 border-t border-gray-200 text-xs text-gray-400">
@@ -329,28 +338,26 @@
                     <i class="fas fa-mouse-pointer"></i> <b>Interact:</b> Move mouse for <b>Parallax</b> | Scroll to <b>Zoom</b> | Drag to <b>Pan</b>
                 </div>
             </div>
+
         </main>
     </div>
 
-    <div id="export-modal" class="hidden fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity duration-300">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
-            <div class="flex items-center justify-between p-5 border-b border-gray-200 flex-shrink-0">
-                <div class="flex items-center gap-3">
-                    <i class="fas fa-file-export text-xl text-sky-500"></i>
-                    <h3 class="text-xl font-semibold text-gray-800">Embed Code</h3>
-                </div>
+    <div id="export-modal" class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex justify-center items-center z-50 opacity-0 pointer-events-none">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col m-4 transform scale-95">
+            <div class="flex justify-between items-center p-5 border-b border-gray-200 flex-shrink-0">
+                <h3 class="text-xl font-semibold text-gray-800">Embeddable HTML</h3>
                 <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-2xl"></i>
+                    <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
-            <div class="p-6 flex-grow overflow-y-auto">
-                <p class="text-sm text-gray-600 mb-4">Copy and paste this code into your website's HTML where you want the parallax effect to appear. The container has a default height, but you can adjust it by changing the `height` property in the `style` attribute of the main `div`.</p>
-                <textarea id="export-code-textarea" readonly class="w-full h-64 p-3 font-mono text-xs bg-gray-900 text-green-400 border border-gray-700 rounded-md focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors selection:bg-sky-500 selection:text-white"></textarea>
+            <div class="p-5 flex-grow overflow-y-auto">
+                <p class="text-sm text-gray-600 mb-2">Copy and paste this code into your website's HTML where you want the parallax effect to appear.</p>
+                <textarea id="export-code-textarea" readonly class="w-full h-80 p-3 font-mono text-xs bg-gray-100 border border-gray-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:border-sky-500 resize-y"></textarea>
             </div>
-            <div class="flex items-center justify-end p-5 bg-gray-50 border-t border-gray-200 rounded-b-xl flex-shrink-0">
-                <button id="copy-code-btn" class="inline-flex items-center justify-center rounded-md border border-transparent bg-sky-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200">
-                    <i class="fas fa-copy mr-2"></i>
-                    <span>Copy to Clipboard</span>
+            <div class="flex justify-end items-center p-4 border-t border-gray-200 bg-gray-50 rounded-b-lg flex-shrink-0">
+                <button id="copy-code-btn" class="inline-flex items-center justify-center rounded-md border border-transparent bg-sky-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200 min-w-[160px]">
+                    <i class="far fa-copy mr-2"></i>
+                    <span id="copy-code-text">Copy to Clipboard</span>
                 </button>
             </div>
         </div>
@@ -392,6 +399,7 @@
         const INTENSITY_VALUE = document.getElementById('intensity-value');
         const SUBLAYERS_CONTAINER = document.getElementById('sublayers-container');
         const APPLY_SETTINGS_BTN = document.getElementById('apply-settings-btn');
+        const EXPORT_BTN = document.getElementById('export-btn');
         
         const ANIM_VERT_TOGGLE = document.getElementById('anim-vert-toggle');
         const ANIM_VERT_CONTROLS = document.getElementById('anim-vert-controls');
@@ -407,11 +415,11 @@
         const ANIM_HORIZ_RANGE_SLIDER = document.getElementById('anim-horiz-range-slider');
         const ANIM_HORIZ_RANGE_VALUE = document.getElementById('anim-horiz-range-value');
 
-        const EXPORT_BTN = document.getElementById('export-btn');
         const EXPORT_MODAL = document.getElementById('export-modal');
         const CLOSE_MODAL_BTN = document.getElementById('close-modal-btn');
-        const COPY_CODE_BTN = document.getElementById('copy-code-btn');
         const EXPORT_CODE_TEXTAREA = document.getElementById('export-code-textarea');
+        const COPY_CODE_BTN = document.getElementById('copy-code-btn');
+        const COPY_CODE_TEXT = document.getElementById('copy-code-text');
 
         const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=2041';
         const CLUSTER_COLORS = ['#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4'];
@@ -549,6 +557,7 @@
             if (!currentDepthMap) return;
             isProcessing = true;
             toggleControls(false);
+            EXPORT_BTN.disabled = true;
             showLoader('Clustering depth map...', true);
             await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -587,6 +596,7 @@
             hideLoader();
             isProcessing = false;
             toggleControls(true);
+            EXPORT_BTN.disabled = false;
             updateStatus('Generation complete! Interact with the viewport.');
         }
 
@@ -732,6 +742,7 @@
             
             isProcessing = true;
             toggleControls(false);
+            EXPORT_BTN.disabled = true;
             sublayerSettings = {};
 
             try {
@@ -769,6 +780,7 @@
         function toggleControls(enabled) {
             const elements = document.querySelectorAll('#settings-container input, #settings-container button, #generate-btn, #file-upload');
             elements.forEach(el => {
+                if(el.id === 'export-btn') return;
                 el.disabled = !enabled;
                 const parent = el.closest('div, label');
                 if (parent && parent.id !== 'settings-container') {
@@ -784,6 +796,7 @@
 
             GENERATE_BTN.querySelector('span').textContent = enabled ? 'Generate' : 'Working...';
         }
+
 
         function resetView() {
             if (!currentOriginalImage) return;
@@ -850,69 +863,78 @@
             });
         }
 
-        function hideExportModal() {
-            EXPORT_MODAL.classList.add('hidden');
+        function generateEmbedCode(layerData, settings) {
+            const uniqueId = `parallax-container-${Date.now()}`;
+            const settingsJSON = JSON.stringify(settings);
+            const layerDataJSON = JSON.stringify(layerData);
+
+            const embedScript = `
+<div id="${uniqueId}" style="position: relative; width: 100%; max-width: ${settings.width}px; aspect-ratio: ${settings.width} / ${settings.height}; margin: auto; overflow: hidden; background-color: #f0f0f0; user-select: none; touch-action: none;"></div>
+<script>
+(function() {
+    const container = document.getElementById('${uniqueId}');
+    if (!container) { console.error('Parallax container not found.'); return; }
+    const settings = ${settingsJSON};
+    const layerSources = ${layerDataJSON};
+    const imageLayers = [];
+    let layersLoaded = 0;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.style.cssText = "position: absolute; top: 0; left: 0; width: 100%; height: 100%;";
+    container.appendChild(canvas);
+    let parallaxMouse = { x: 0, y: 0 }, targetParallaxMouse = { x: 0, y: 0 };
+    const LERP_FACTOR = 0.08;
+
+    function render() {
+        requestAnimationFrame(render);
+        if (layersLoaded < layerSources.length) return;
+        parallaxMouse.x += (targetParallaxMouse.x - parallaxMouse.x) * LERP_FACTOR;
+        parallaxMouse.y += (targetParallaxMouse.y - parallaxMouse.y) * LERP_FACTOR;
+        const time = performance.now() / 1000;
+        let animX = settings.animHoriz.enabled ? Math.sin(time * settings.animHoriz.speed) * settings.animHoriz.range : 0;
+        let animY = settings.animVert.enabled ? Math.sin(time * settings.animVert.speed) * settings.animVert.range : 0;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const numLayers = imageLayers.length;
+        imageLayers.forEach((layer, i) => {
+            const depthFactor = numLayers > 1 ? (i / (numLayers - 1)) : 0;
+            const parallaxOffsetX = (parallaxMouse.x * settings.intensity + animX) * depthFactor;
+            const parallaxOffsetY = (parallaxMouse.y * settings.intensity + animY) * depthFactor;
+            ctx.drawImage(layer, parallaxOffsetX, parallaxOffsetY, canvas.width, canvas.height);
+        });
+    }
+
+    function onAssetsLoaded() {
+        canvas.width = imageLayers[0].naturalWidth;
+        canvas.height = imageLayers[0].naturalHeight;
+        const moveHandler = e => {
+            const rect = container.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            targetParallaxMouse.x = ((clientX - rect.left) / rect.width - 0.5) * 2;
+            targetParallaxMouse.y = ((clientY - rect.top) / rect.height - 0.5) * 2;
+        };
+        container.addEventListener('mousemove', moveHandler);
+        container.addEventListener('touchmove', moveHandler, { passive: true });
+        container.addEventListener('mouseleave', () => { targetParallaxMouse = { x: 0, y: 0 }; });
+        container.addEventListener('touchend', () => { targetParallaxMouse = { x: 0, y: 0 }; });
+        render();
+    }
+    
+    if (layerSources.length > 0) {
+        layerSources.forEach(src => {
+            const img = new Image();
+            img.onload = () => { if (++layersLoaded === layerSources.length) onAssetsLoaded(); };
+            img.onerror = () => { if (++layersLoaded === layerSources.length) onAssetsLoaded(); };
+            img.src = src;
+            imageLayers.push(img);
+        });
+    }
+})();
+<\/script>
+            `;
+            return embedScript.trim().replace(/<\/script>/g, '<\\/script>');
         }
 
-        function copyEmbedCode() {
-            navigator.clipboard.writeText(EXPORT_CODE_TEXTAREA.value).then(() => {
-                const btnSpan = COPY_CODE_BTN.querySelector('span');
-                const originalText = btnSpan.textContent;
-                btnSpan.textContent = 'Copied!';
-                COPY_CODE_BTN.classList.replace('bg-sky-500', 'bg-green-500');
-                COPY_CODE_BTN.classList.replace('hover:bg-sky-600', 'hover:bg-green-600');
-                
-                setTimeout(() => {
-                    btnSpan.textContent = originalText;
-                    COPY_CODE_BTN.classList.replace('bg-green-500', 'bg-sky-500');
-                    COPY_CODE_BTN.classList.replace('hover:bg-green-600', 'hover:bg-sky-600');
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy text: ', err);
-                alert('Failed to copy code. Please copy it manually.');
-            });
-        }
-
-        async function generateAndShowEmbedCode() {
-            if (!imageLayers || imageLayers.length === 0) {
-                alert('Please generate a parallax image first before exporting.');
-                return;
-            }
-
-            const btnSpan = EXPORT_BTN.querySelector('span');
-            const originalBtnHtml = btnSpan.innerHTML;
-            EXPORT_BTN.disabled = true;
-            btnSpan.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Generating...`;
-
-            try {
-                const layerDataUrls = await Promise.all(imageLayers.map(canvas => canvas.toDataURL('image/png')));
-                const uniqueId = 'parallax-embed-' + Date.now();
-                const config = {
-                    intensity: parseInt(INTENSITY_SLIDER.value),
-                    layerCount: imageLayers.length,
-                    animVert: { enabled: animVert.enabled, speed: animVert.speed, range: animVert.range },
-                    animHoriz: { enabled: animHoriz.enabled, speed: animHoriz.speed, range: animHoriz.range }
-                };
-
-                const imageTags = layerDataUrls.map((url, i) => 
-                    `<img id="${uniqueId}-layer-${i}" src="${url}" style="display:none;position:absolute;left:0;top:0;" alt="Parallax Layer ${i+1}">`
-                ).join('');
-
-                const embedScript = `<script>(function(){var s=document.currentScript,c=s.parentElement,f=${JSON.stringify(config)},n=document.createElement("canvas");c.appendChild(n);var t=n.getContext("2d"),l=[],d=[],i=0;i<f.layerCount;i++){var a=c.querySelector("#"+c.id+"-layer-"+i);l.push(a),a.complete?d.push(Promise.resolve()):d.push(new Promise(function(e){a.onload=e}))}var p,h,m={x:0,y:0},g={x:0,y:0};function v(){var e=c.getBoundingClientRect();n.width=e.width,n.height=e.height}function y(e){var o=c.getBoundingClientRect();g.x=(e.clientX-o.left)/o.width*2-1,g.y=(e.clientY-o.top)/o.height*2-1}function E(){g={x:0,y:0}}function u(){requestAnimationFrame(u),m.x+=(g.x-m.x)*.08,m.y+=(g.y-m.y)*.08;var e=performance.now()/1e3,o=0;f.animHoriz.enabled&&(o=Math.sin(e*f.animHoriz.speed)*f.animHoriz.range);var r=0;f.animVert.enabled&&(r=Math.sin(e*f.animVert.speed)*f.animVert.range),t.clearRect(0,0,n.width,n.height);var x=n.width/n.height,I=p/h,w,C,S;I>x?(w=n.width/p,C=0,S=(n.height-h*w)/2):(w=n.height/h,C=(n.width-p*w)/2,S=0);var b=l.length;l.forEach(function(e,o){if(e.complete){var i=b>1?o/(b-1):0,a=m.x*f.intensity*i+o,L=m.y*f.intensity*i+r;t.drawImage(e,C+a,S+L,p*w,h*w)}})}Promise.all(d).then(function(){l.length>0&&l[0].naturalWidth>0?(p=l[0].naturalWidth,h=l[0].naturalHeight):(p=500,h=500),v(),window.addEventListener("resize",v),c.addEventListener("mousemove",y),c.addEventListener("mouseleave",E),u()})})();<\/script>`;
-
-                const finalHtml = `<!-- Start Parallax Embed -->\n<div id="${uniqueId}" style="width: 100%; height: 400px; position: relative; overflow: hidden; background-color: #e5e7eb; user-select: none; border-radius: 0.5rem;">${imageTags}${embedScript}</div>\n<!-- End Parallax Embed -->`;
-
-                EXPORT_CODE_TEXTAREA.value = finalHtml;
-                EXPORT_MODAL.classList.remove('hidden');
-
-            } catch (error) {
-                console.error("Failed to generate embed code:", error);
-                alert("An error occurred while generating the code. See console for details.");
-            } finally {
-                EXPORT_BTN.disabled = false;
-                btnSpan.innerHTML = originalBtnHtml;
-            }
-        }
 
         function addEventListeners() {
             INTENSITY_SLIDER.addEventListener('input', () => INTENSITY_VALUE.textContent = INTENSITY_SLIDER.value);
@@ -935,6 +957,48 @@
                     URL_INPUT.value = '';
                     processImage(url);
                 }
+            });
+
+            EXPORT_BTN.addEventListener('click', () => {
+                if (EXPORT_BTN.disabled || !currentOriginalImage || imageLayers.length === 0) return;
+                
+                const settings = {
+                    intensity: parseInt(INTENSITY_SLIDER.value),
+                    width: currentOriginalImage.width,
+                    height: currentOriginalImage.height,
+                    animVert: { ...animVert },
+                    animHoriz: { ...animHoriz }
+                };
+
+                const layerData = imageLayers.map(canvas => canvas.toDataURL('image/png'));
+                const embedCode = generateEmbedCode(layerData, settings);
+
+                EXPORT_CODE_TEXTAREA.value = embedCode;
+                
+                EXPORT_MODAL.classList.remove('opacity-0', 'pointer-events-none');
+                EXPORT_MODAL.querySelector('div').classList.remove('scale-95');
+            });
+
+            CLOSE_MODAL_BTN.addEventListener('click', () => {
+                EXPORT_MODAL.classList.add('opacity-0', 'pointer-events-none');
+                EXPORT_MODAL.querySelector('div').classList.add('scale-95');
+            });
+
+            COPY_CODE_BTN.addEventListener('click', () => {
+                navigator.clipboard.writeText(EXPORT_CODE_TEXTAREA.value).then(() => {
+                    COPY_CODE_TEXT.textContent = 'Copied!';
+                    COPY_CODE_BTN.querySelector('i').classList.replace('fa-copy', 'fa-check');
+                    setTimeout(() => {
+                        COPY_CODE_TEXT.textContent = 'Copy to Clipboard';
+                        COPY_CODE_BTN.querySelector('i').classList.replace('fa-check', 'fa-copy');
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                    COPY_CODE_TEXT.textContent = 'Copy Failed';
+                     setTimeout(() => {
+                        COPY_CODE_TEXT.textContent = 'Copy to Clipboard';
+                    }, 2000);
+                });
             });
 
             VIEW_CONTAINER.addEventListener('mousedown', e => {
@@ -1027,15 +1091,6 @@
                 animHoriz.range = parseInt(e.target.value);
                 ANIM_HORIZ_RANGE_VALUE.textContent = animHoriz.range;
             });
-
-            EXPORT_BTN.addEventListener('click', generateAndShowEmbedCode);
-            CLOSE_MODAL_BTN.addEventListener('click', hideExportModal);
-            EXPORT_MODAL.addEventListener('click', (e) => {
-                if (e.target === EXPORT_MODAL) {
-                    hideExportModal();
-                }
-            });
-            COPY_CODE_BTN.addEventListener('click', copyEmbedCode);
 
             window.addEventListener('resize', () => { if (currentOriginalImage && !isProcessing) resetView(); });
         }
