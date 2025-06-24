@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<title>フーリエ変換ドローイング</title>
+	<meta name="description"
+		content="HTML5 Canvas APIで構築されたインタラクティブな描画アプリケーション。描いた線をフーリエ変換で美しいエピサイクロイドのアニメーションとして可視化します。">
+	<meta name="page:icon" content="fas fa-wave-square">
+	<meta name="page:color" content="#38bdf8">
+
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+
+	<script>var module = {};</script>
+	<script src="https://cdn.jsdelivr.net/npm/fft.js@4.0.4/lib/fft.js"></script>
+
+	<style>
+		@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700&display=swap');
+
+		body {
+			font-family: 'Noto Sans JP', sans-serif;
+			-webkit-font-smoothing: antialiased;
+			-moz-osx-font-smoothing: grayscale;
+		}
+
+		#drawingCanvas {
+			cursor: crosshair;
+			touch-action: none;
+		}
+
+		.fade-in {
+			animation: fadeIn 0.5s ease-in-out forwards;
+		}
+
+		@keyframes fadeIn {
+			from {
+				opacity: 0;
+				transform: translateY(10px);
+			}
+
+			to {
+				opacity: 1;
+				transform: translateY(0);
+			}
+		}
+
+		.btn-shadow {
+			box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+		}
+
+		.btn-shadow-hover {
+			box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+		}
+
+		.disabled-btn-shadow {
+			box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+		}
+	</style>
+</head>
+
+<body class="bg-gray-50 text-gray-700">
+
+	<main class="min-h-screen w-full flex flex-col items-center justify-center p-4 lg:p-8">
+		<div class="text-center mb-8 fade-in">
+			<h1 class="text-3xl md:text-5xl font-bold text-gray-800 tracking-tight">
+				<i class="fas fa-wave-square text-sky-500"></i>
+				フーリエ変換ドローイング
+			</h1>
+			<p class="mt-3 text-md md:text-lg text-gray-500 max-w-2xl mx-auto">
+				描いた線をフーリエ級数に変換し、エピサイクル（円の周りを回る円）で再現します。
+			</p>
+		</div>
+
+		<div class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-6 fade-in"
+			style="animation-delay: 0.2s;">
+			<div class="bg-white p-4 rounded-2xl shadow-lg border border-gray-200">
+				<div class="flex items-center justify-between mb-3 px-2">
+					<h2 class="text-lg font-bold text-gray-800">
+						<span
+							class="text-base font-semibold bg-sky-100 text-sky-600 rounded-full px-3 py-1 mr-2">1</span>入力
+					</h2>
+					<p class="text-sm text-gray-400">ここに描画してください</p>
+				</div>
+				<canvas id="drawingCanvas"
+					class="w-full h-auto aspect-square rounded-lg bg-white border border-gray-200"></canvas>
+			</div>
+			<div class="bg-white p-4 rounded-2xl shadow-lg border border-gray-200">
+				<div class="flex items-center justify-between mb-3 px-2">
+					<h2 class="text-lg font-bold text-gray-800">
+						<span
+							class="text-base font-semibold bg-sky-100 text-sky-600 rounded-full px-3 py-1 mr-2">2</span>出力
+					</h2>
+					<p class="text-sm text-gray-400">解析結果のアニメーション</p>
+				</div>
+				<canvas id="fftCanvas" class="w-full h-auto aspect-square rounded-lg bg-gray-900"></canvas>
+			</div>
+		</div>
+
+		<div class="flex items-center space-x-4 mt-4 fade-in" style="animation-delay: 0.4s;">
+			<button id="analyzeButton" disabled
+				class="px-8 py-3 bg-sky-500 text-white font-bold rounded-full disabled-btn-shadow hover:btn-shadow-hover transition-all duration-300 transform hover:scale-105 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-md">
+				<i class="fas fa-cogs mr-2"></i>
+				解析する
+			</button>
+			<button id="clearButton"
+				class="px-8 py-3 bg-red-500 text-white font-bold rounded-full btn-shadow hover:btn-shadow-hover hover:bg-red-600 transition-all duration-300 transform hover:scale-105">
+				<i class="fas fa-trash-alt mr-2"></i>
+				クリア
+			</button>
+		</div>
+		<p id="loadingMessage" class="mt-4 text-gray-500 h-6"></p>
+	</main>
+
+	<script>
+		const FftJs = module.exports;
+
+		const drawingCanvas = document.getElementById('drawingCanvas');
+		const fftCanvas = document.getElementById('fftCanvas');
+		const analyzeButton = document.getElementById('analyzeButton');
+		const clearButton = document.getElementById('clearButton');
+		const loadingMessage = document.getElementById('loadingMessage');
+
+		const drawingCtx = drawingCanvas.getContext('2d');
+		const fftCtx = fftCanvas.getContext('2d');
+
+		const CANVAS_SIZE = 512;
+		drawingCanvas.width = CANVAS_SIZE;
+		drawingCanvas.height = CANVAS_SIZE;
+		fftCanvas.width = CANVAS_SIZE;
+		fftCanvas.height = CANVAS_SIZE;
+
+		let isDrawing = false;
+		let userPath = [];
+		let fourierCoefficients = [];
+		let animationFrameId;
+		let animationTime = 0;
+		let tracedPath = [];
+
+		const NUM_SAMPLES = 512;
+
+		function initialize() {
+			drawingCtx.strokeStyle = '#222';
+			drawingCtx.lineWidth = 4;
+			drawingCtx.lineCap = 'round';
+			drawingCtx.lineJoin = 'round';
+
+			fftCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+			fftCtx.lineWidth = 1;
+
+			drawPlaceholder();
+		}
+
+		function drawPlaceholder() {
+			drawingCtx.save();
+			drawingCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+			drawingCtx.font = '24px "Noto Sans JP", sans-serif';
+			drawingCtx.textAlign = 'center';
+			drawingCtx.textBaseline = 'middle';
+			drawingCtx.fillText('ここに自由に線を描いてください',CANVAS_SIZE / 2,CANVAS_SIZE / 2);
+			drawingCtx.restore();
+		}
+
+		function getEventPos(canvas,evt) {
+			const rect = canvas.getBoundingClientRect();
+			const scaleX = canvas.width / rect.width;
+			const scaleY = canvas.height / rect.height;
+			const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+			const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+			return {
+				x: (clientX - rect.left) * scaleX,
+				y: (clientY - rect.top) * scaleY
+			};
+		}
+
+		function startDrawing(e) {
+			e.preventDefault();
+			if(userPath.length === 0) {
+				drawingCtx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+			}
+			isDrawing = true;
+			const pos = getEventPos(drawingCanvas,e);
+			userPath.push(pos);
+			drawingCtx.beginPath();
+			drawingCtx.moveTo(pos.x,pos.y);
+		}
+
+		function draw(e) {
+			if(!isDrawing) return;
+			e.preventDefault();
+			const pos = getEventPos(drawingCanvas,e);
+			userPath.push(pos);
+			drawingCtx.lineTo(pos.x,pos.y);
+			drawingCtx.stroke();
+		}
+
+		function stopDrawing() {
+			if(!isDrawing) return;
+			isDrawing = false;
+			drawingCtx.closePath();
+			if(userPath.length > 1) {
+				analyzeButton.disabled = false;
+			}
+		}
+
+		function clearAll() {
+			cancelAnimationFrame(animationFrameId);
+			animationFrameId = null;
+			userPath = [];
+			fourierCoefficients = [];
+			tracedPath = [];
+			animationTime = 0;
+
+			drawingCtx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+			fftCtx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+
+			analyzeButton.disabled = true;
+			loadingMessage.textContent = '';
+			drawPlaceholder();
+		}
+
+		function resamplePath(path,numPoints) {
+			if(path.length < 2) return [];
+
+			const totalLength = path.slice(1).reduce((acc,p,i) => {
+				const prev = path[i];
+				return acc + Math.hypot(p.x - prev.x,p.y - prev.y);
+			},0);
+
+			const interval = totalLength / (numPoints - 1);
+			const newPath = [path[0]];
+			let currentDist = 0;
+			let pathIndex = 0;
+
+			for(let i = 1;i < numPoints;i++) {
+				const targetDist = i * interval;
+				while(pathIndex < path.length - 2) {
+					const p1 = path[pathIndex];
+					const p2 = path[pathIndex + 1];
+					const segmentLength = Math.hypot(p2.x - p1.x,p2.y - p1.y);
+					if(currentDist + segmentLength >= targetDist) {
+						const ratio = segmentLength === 0 ? 0 : (targetDist - currentDist) / segmentLength;
+						const newX = p1.x + ratio * (p2.x - p1.x);
+						const newY = p1.y + ratio * (p2.y - p1.y);
+						newPath.push({x: newX,y: newY});
+						break;
+					}
+					currentDist += segmentLength;
+					pathIndex++;
+				}
+				if(newPath.length <= i) {
+					newPath.push(path[path.length - 1]);
+				}
+			}
+			return newPath;
+		}
+
+		function analyzePath() {
+			if(userPath.length < 2) return;
+
+			loadingMessage.textContent = '解析中...';
+			analyzeButton.disabled = true;
+			clearButton.disabled = true;
+
+			setTimeout(() => {
+				const sampledPath = resamplePath(userPath,NUM_SAMPLES);
+
+				const complexSignal = [];
+				for(let i = 0;i < NUM_SAMPLES;i++) {
+					complexSignal.push(sampledPath[i].x - CANVAS_SIZE / 2);
+					complexSignal.push(sampledPath[i].y - CANVAS_SIZE / 2);
+				}
+
+				const fft = new FftJs(NUM_SAMPLES);
+				const fourier = new Float64Array(NUM_SAMPLES * 2);
+				fft.transform(fourier,complexSignal);
+
+				fourierCoefficients = [];
+				for(let k = 0;k < NUM_SAMPLES;k++) {
+					const re = fourier[2 * k] / NUM_SAMPLES;
+					const im = fourier[2 * k + 1] / NUM_SAMPLES;
+					const freq = k > NUM_SAMPLES / 2 ? k - NUM_SAMPLES : k;
+					const amp = Math.hypot(re,im);
+					const phase = Math.atan2(im,re);
+					fourierCoefficients.push({re,im,freq,amp,phase});
+				}
+
+				fourierCoefficients.sort((a,b) => b.amp - a.amp);
+
+				loadingMessage.textContent = '';
+				clearButton.disabled = false;
+				startAnimation();
+			},50);
+		}
+
+		function startAnimation() {
+			cancelAnimationFrame(animationFrameId);
+			animationTime = 0;
+			tracedPath = [];
+			animate();
+		}
+
+		function animate() {
+			fftCtx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+
+			let x = CANVAS_SIZE / 2;
+			let y = CANVAS_SIZE / 2;
+
+			for(let i = 0;i < fourierCoefficients.length;i++) {
+				const epi = fourierCoefficients[i];
+				const prevX = x;
+				const prevY = y;
+
+				const angle = epi.freq * animationTime + epi.phase;
+
+				x += epi.amp * Math.cos(angle);
+				y += epi.amp * Math.sin(angle);
+
+				if(epi.amp > 0.5) {
+					fftCtx.beginPath();
+					fftCtx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+					fftCtx.lineWidth = 1;
+					fftCtx.arc(prevX,prevY,epi.amp,0,2 * Math.PI);
+					fftCtx.stroke();
+
+					fftCtx.beginPath();
+					fftCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+					fftCtx.moveTo(prevX,prevY);
+					fftCtx.lineTo(x,y);
+					fftCtx.stroke();
+				}
+			}
+
+			tracedPath.unshift({x,y});
+			if(tracedPath.length > NUM_SAMPLES * 1.5) {
+				tracedPath.pop();
+			}
+
+			fftCtx.beginPath();
+			const gradient = fftCtx.createLinearGradient(0,0,CANVAS_SIZE,CANVAS_SIZE);
+			gradient.addColorStop(0,'#38bdf8');
+			gradient.addColorStop(1,'#a78bfa');
+			fftCtx.strokeStyle = gradient;
+			fftCtx.lineWidth = 3;
+			if(tracedPath.length > 0) {
+				fftCtx.moveTo(tracedPath[0].x,tracedPath[0].y);
+				for(let i = 1;i < tracedPath.length;i++) {
+					fftCtx.lineTo(tracedPath[i].x,tracedPath[i].y);
+				}
+			}
+			fftCtx.stroke();
+
+			const dt = (2 * Math.PI) / NUM_SAMPLES;
+			animationTime += dt;
+
+			if(animationTime >= 2 * Math.PI) {
+				animationTime -= 2 * Math.PI;
+				tracedPath = [];
+			}
+
+			animationFrameId = requestAnimationFrame(animate);
+		}
+
+		drawingCanvas.addEventListener('mousedown',startDrawing);
+		drawingCanvas.addEventListener('mousemove',draw);
+		drawingCanvas.addEventListener('mouseup',stopDrawing);
+		drawingCanvas.addEventListener('mouseleave',stopDrawing);
+
+		drawingCanvas.addEventListener('touchstart',startDrawing,{passive: false});
+		drawingCanvas.addEventListener('touchmove',draw,{passive: false});
+		drawingCanvas.addEventListener('touchend',stopDrawing);
+
+		analyzeButton.addEventListener('click',analyzePath);
+		clearButton.addEventListener('click',clearAll);
+
+		initialize();
+	</script>
+</body>
+
+</html>
