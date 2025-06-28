@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scroll-Driven Hero Section Generator</title>
+    <meta name="description" content="An interactive tool to generate catchy, scroll-animated web sections. Customize images, text, colors, and animations with a live preview.">
+    <meta name="page:icon" content="fas fa-palette">
+    <meta name="page:color" content="#4338ca">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        :root {
+            --theme-color: #4338ca;
+        }
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--theme-color);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 2px rgba(0,0,0,0.2);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: var(--theme-color);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 2px rgba(0,0,0,0.2);
+        }
+        input[type="range"]:disabled {
+            background: #f1f5f9;
+        }
+        input[type="range"]:disabled::-webkit-slider-thumb {
+            background: #9ca3af;
+        }
+        input[type="range"]:disabled::-moz-range-thumb {
+            background: #9ca3af;
+        }
+        #crop-selection {
+            position: absolute;
+            border: 2px dashed rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            cursor: move;
+        }
+        .fade-in {
+            animation: fadeIn var(--anim-speed, 1s) ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .text-panel-container, .image-container {
+            transition: transform var(--anim-speed, 1.2s) cubic-bezier(0.22, 1, 0.36, 1), opacity var(--anim-speed, 1.2s) cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .text-panel-container[data-panel-animation="slide-in"],
+        .text-panel-container[data-panel-animation="slide-in-staggered"] { transform: var(--panel-slide-out); }
+        .text-panel-container[data-panel-animation="fade-in"] { opacity: 0; }
+        .text-panel-container[data-panel-animation="slide-up"] { transform: translateY(30px); opacity: 0; }
+        .text-panel-container[data-panel-animation="rotate-fade-in"] { opacity: 0; transform-origin: center; transform: rotate(-4deg) scale(0.95); }
+        .text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > * { opacity: 0; transform: translateY(20px); transition: opacity 0.7s ease-out, transform 0.7s ease-out; }
+        .image-container[data-image-animation="slide-in"] { transform: var(--image-slide-out); }
+        .image-container[data-image-animation="slide-in-top"] { transform: translateY(-101%); }
+        .image-container[data-image-animation="fade-scale-up"] { transform: scale(0.9); opacity: 0; }
+        .image-container[data-image-animation="fade-in"] { opacity: 0; }
+        .image-container[data-image-animation="parallax-on-scroll"] { opacity: 0; transform: scale(1.1); }
+        .image-container[data-image-animation="parallax-on-scroll"] .main-image { transition: transform 0.2s ease-out; }
+        .content-section.is-visible .text-panel-container,
+        .content-section.is-visible .image-container { transform: translate(0, 0) scale(1); opacity: 1; }
+        .content-section.is-visible .image-container[data-image-animation="parallax-on-scroll"] { transform: scale(1); }
+        .content-section.is-visible .text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > * { opacity: 1; transform: translateY(0); }
+        .content-section.is-visible .text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > .sub-heading { transition-delay: 0.2s; }
+        .content-section.is-visible .text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > .body-text { transition-delay: 0.4s; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+
+    <div class="flex h-screen w-full">
+        <aside id="editor" class="w-[380px] h-full bg-white shadow-lg overflow-y-auto flex-shrink-0">
+            <div class="p-6 space-y-8">
+                <header class="border-b pb-4 border-slate-200">
+                    <h1 class="text-2xl font-bold text-slate-900 flex items-center">
+                        <i class="fas fa-palette mr-3 text-indigo-600"></i> Hero Section Generator
+                    </h1>
+                    <p class="text-sm text-slate-500 mt-1">Customize your scroll-animated section below.</p>
+                </header>
+
+                <section class="space-y-4">
+                    <h2 class="text-lg font-semibold text-slate-700 border-l-4 border-indigo-500 pl-3">Image</h2>
+                    <div class="space-y-2">
+                        <label for="image-upload" class="block text-sm font-medium text-slate-600">Upload Image (PNG recommended)</label>
+                        <input type="file" id="image-upload" accept="image/png, image/jpeg" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+                    </div>
+                </section>
+                
+                <section class="space-y-4">
+                    <h2 class="text-lg font-semibold text-slate-700 border-l-4 border-indigo-500 pl-3">Layout & Stacking</h2>
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-slate-600">Content Placement</label>
+                        <div class="flex gap-2">
+                            <label class="flex-1 p-2 border rounded-md cursor-pointer has-[:checked]:bg-indigo-50 has-[:checked]:border-indigo-500 text-center">
+                                <input type="radio" name="layout-order" value="text-image" class="sr-only" checked> Text | Image
+                            </label>
+                            <label class="flex-1 p-2 border rounded-md cursor-pointer has-[:checked]:bg-indigo-50 has-[:checked]:border-indigo-500 text-center">
+                                <input type="radio" name="layout-order" value="image-text" class="sr-only"> Image | Text
+                            </label>
+                        </div>
+                    </div>
+                     <div class="space-y-2">
+                        <label class="block text-sm font-medium text-slate-600">Stacking Order</label>
+                        <div class="flex gap-2">
+                            <label class="flex-1 p-2 border rounded-md cursor-pointer has-[:checked]:bg-indigo-50 has-[:checked]:border-indigo-500 text-center">
+                                <input type="radio" name="stacking-order" value="text-on-top" class="sr-only" checked> Text on Top
+                            </label>
+                            <label class="flex-1 p-2 border rounded-md cursor-pointer has-[:checked]:bg-indigo-50 has-[:checked]:border-indigo-500 text-center">
+                                <input type="radio" name="stacking-order" value="image-on-top" class="sr-only"> Image on Top
+                            </label>
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <label for="panel-width" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>Text Panel Width</span>
+                            <span id="panel-width-value">50%</span>
+                        </label>
+                        <input type="range" id="panel-width" min="30" max="70" value="50">
+                    </div>
+                    <div id="overlap-controls" class="space-y-2 opacity-40 transition-opacity">
+                        <label for="overlap-width" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>Overlap Width</span>
+                            <span id="overlap-width-value">0%</span>
+                        </label>
+                        <input type="range" id="overlap-width" min="0" max="30" value="0" disabled>
+                    </div>
+                    <div class="space-y-2 pt-2 border-t mt-4">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="clip-path-toggle" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            <label for="clip-path-toggle" class="ml-2 block text-sm font-medium text-slate-600">Enable Skewed Clip Effect</label>
+                        </div>
+                        <div id="clip-path-controls" class="space-y-2 opacity-40 transition-opacity">
+                             <label for="clip-path-top" class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>Top Skew</span>
+                                <span id="clip-path-top-value">0%</span>
+                            </label>
+                            <input type="range" id="clip-path-top" min="0" max="50" value="0" disabled>
+                             <label for="clip-path-bottom" class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>Bottom Skew</span>
+                                <span id="clip-path-bottom-value">0%</span>
+                            </label>
+                            <input type="range" id="clip-path-bottom" min="0" max="50" value="0" disabled>
+                        </div>
+                    </div>
+                </section>
+                
+                <section class="space-y-4">
+                    <h2 class="text-lg font-semibold text-slate-700 border-l-4 border-indigo-500 pl-3">Content & Color</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label for="panel-bg-color" class="block text-sm font-medium text-slate-600">Panel BG</label>
+                            <input type="color" id="panel-bg-color" value="#4338ca" class="w-full h-10 p-1 bg-white border border-gray-300 rounded-md cursor-pointer">
+                        </div>
+                        <div class="space-y-2">
+                            <label for="text-color" class="block text-sm font-medium text-slate-600">Text Color</label>
+                            <input type="color" id="text-color" value="#ffffff" class="w-full h-10 p-1 bg-white border border-gray-300 rounded-md cursor-pointer">
+                        </div>
+                    </div>
+                     <div class="space-y-2">
+                        <label for="section-bg-color" class="block text-sm font-medium text-slate-600">Section BG</label>
+                        <input type="color" id="section-bg-color" value="#ffffff" class="w-full h-10 p-1 bg-white border border-gray-300 rounded-md cursor-pointer">
+                    </div>
+                    <div class="space-y-2">
+                        <label for="heading-text" class="block text-sm font-medium text-slate-600">Heading</label>
+                        <input type="text" id="heading-text" value="Creative Canvas" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                     <div class="space-y-2">
+                        <label for="subheading-text" class="block text-sm font-medium text-slate-600">Sub-heading</label>
+                        <input type="text" id="subheading-text" value="Powered by Modern Web Tech" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <div class="space-y-2">
+                        <label for="body-text" class="block text-sm font-medium text-slate-600">Body Text</label>
+                        <textarea id="body-text" rows="4" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">An interactive drawing application built with the HTML5 Canvas API. Explore different brushes, colors, and generate beautiful, scroll-animated sections for your website with ease.</textarea>
+                    </div>
+                     <div class="pt-4 mt-4 border-t border-slate-200 space-y-4">
+                        <h3 class="text-md font-semibold text-slate-600 -mb-2">Typography</h3>
+                        <div class="space-y-2">
+                            <label for="heading-size" class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>Heading Size</span>
+                                <span id="heading-size-value">3rem</span>
+                            </label>
+                            <input type="range" id="heading-size" min="2" max="6" step="0.1" value="3">
+                        </div>
+                        <div class="space-y-2">
+                            <label for="subheading-size" class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>Sub-heading Size</span>
+                                <span id="subheading-size-value">1.5rem</span>
+                            </label>
+                            <input type="range" id="subheading-size" min="1" max="3" step="0.05" value="1.5">
+                        </div>
+                        <div class="space-y-2">
+                            <label for="body-size" class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>Body Text Size</span>
+                                <span id="body-size-value">1.125rem</span>
+                            </label>
+                            <input type="range" id="body-size" min="0.8" max="2" step="0.025" value="1.125">
+                        </div>
+                    </div>
+                </section>
+                
+                <section class="space-y-4">
+                     <h2 class="text-lg font-semibold text-slate-700 border-l-4 border-indigo-500 pl-3">Animation</h2>
+                     <div class="space-y-2">
+                         <label for="panel-animation" class="block text-sm font-medium text-slate-600">Panel Entrance Effect</label>
+                         <select id="panel-animation" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                             <option value="slide-in" selected>Slide In</option>
+                             <option value="slide-in-staggered">Slide In (Staggered Text)</option>
+                             <option value="fade-in">Fade In</option>
+                             <option value="slide-up">Slide Up</option>
+                             <option value="rotate-fade-in">Rotate & Fade In</option>
+                         </select>
+                     </div>
+                     <div class="space-y-2">
+                         <label for="image-animation" class="block text-sm font-medium text-slate-600">Image Entrance Effect</label>
+                         <select id="image-animation" class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                             <option value="fade-scale-up" selected>Fade & Scale Up</option>
+                             <option value="slide-in">Slide In</option>
+                             <option value="slide-in-top">Slide In From Top</option>
+                             <option value="fade-in">Fade In</option>
+                             <option value="parallax-on-scroll">Parallax on Scroll</option>
+                         </select>
+                     </div>
+                     <div class="space-y-2">
+                        <label for="animation-speed" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>Animation Speed</span>
+                            <span id="animation-speed-value">1.2s</span>
+                        </label>
+                        <input type="range" id="animation-speed" min="0.5" max="3" step="0.1" value="1.2">
+                    </div>
+                </section>
+                
+                <section class="pt-4 border-t border-slate-200">
+                    <button id="export-btn" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors duration-300 flex items-center justify-center gap-2">
+                        <i class="fas fa-code"></i>
+                        Export HTML Code
+                    </button>
+                </section>
+            </div>
+        </aside>
+
+        <main id="preview-container" class="flex-grow h-full overflow-y-auto bg-slate-200">
+            <div class="h-[80vh] flex items-center justify-center bg-slate-200">
+                <div class="text-center text-slate-500">
+                    <h3 class="text-2xl font-light">Scroll Down To See The Magic</h3>
+                    <i class="fas fa-chevron-down mt-4 text-3xl animate-bounce"></i>
+                </div>
+            </div>
+            <div id="preview-wrapper">
+            </div>
+            <div class="h-[80vh] flex items-center justify-center bg-slate-200">
+                 <div class="text-center text-slate-500">
+                    <h3 class="text-2xl font-light">End of preview area</h3>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="crop-modal" class="hidden fixed inset-0 z-50 bg-black/70 items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full p-4 flex flex-col h-[90vh] fade-in">
+            <h3 class="text-xl font-bold mb-4 flex-shrink-0">Crop Image to Square</h3>
+            <div id="crop-image-container" class="relative flex-grow bg-gray-200 flex items-center justify-center select-none overflow-hidden">
+                <img id="crop-image-preview" class="max-w-full max-h-full block" style="object-fit: contain;">
+                <div id="crop-selection"></div>
+            </div>
+            <div class="my-4 space-y-2 flex-shrink-0">
+                <label for="crop-size-slider" class="flex justify-between text-sm font-medium text-slate-600">
+                    <span>Crop Size</span>
+                    <span id="crop-size-value">200px</span>
+                </label>
+                <input type="range" id="crop-size-slider" min="50" max="500" value="200">
+            </div>
+            <div class="mt-4 flex justify-end gap-3 flex-shrink-0">
+                <button id="cancel-crop-btn" class="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">Cancel</button>
+                <button id="confirm-crop-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Crop & Use Image</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="export-modal" class="hidden fixed inset-0 z-50 bg-black/70 items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full p-6 flex flex-col h-[90vh] fade-in">
+            <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-xl font-bold">Exported HTML Code</h3>
+                 <button id="close-export-btn" class="text-slate-500 hover:text-slate-800">×</button>
+            </div>
+            <p class="text-sm text-slate-600 mb-2">This is a self-contained HTML file. Copy the code below and save it as an `.html` file.</p>
+            <textarea id="exported-code" readonly class="w-full flex-grow font-mono text-sm border bg-slate-50 p-3 rounded-md resize-none"></textarea>
+            <div class="mt-4 flex justify-end">
+                <button id="copy-code-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 flex items-center gap-2"><i class="far fa-copy"></i>Copy to Clipboard</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            const config = {
+                image: {
+                    base64: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWluWU1pbiBtZWV0Ij48cGF0aCBkPSJNNTAsMi41QTI1LDQwLDAsMSwwLDUwLDk3LjVjMjcuNiwwLDM3LjUtMzcsNTAuNS0zN2MyMi42LDAsMTcuOSwzNywzMywzN2MxMy4zLDAsMjEuMi0yMC4zLDIxLjItMzcuN0E0Ny41LDQ3LjUsMCwwLDAsNTAsMi41WiIgZmlsbD0icmdiYSgyMDAsIDIwMCwgMjQwLCAwLjgpIi8+PHBhdGggZD0iTTUwLDEyLjVBMzUsMzAsMCwxLDAsNTAsODcuNWMxNy42LDAsMjcuNS0yNyw0MC41LTI3YzIyLjYsMCwxNy45LDI3LDMzLDI3YzMuMywwLDE3LjItMTIuMywxNy4yLTI3LjdBNDcuNSw0Ny41LDAsMCwwLDYwLDEyLjVaIiBmaWxsPSJyZ2JhKDE1MCU_LCAxNTAsIDIzMCwgMC44KSIvPjwvc3ZnPg==',
+                },
+                layout: {
+                    order: 'text-image',
+                    stackingOrder: 'text-on-top',
+                    panelWidth: 50,
+                    overlap: 0,
+                    clipPath: { enabled: false, top: 0, bottom: 0 }
+                },
+                content: {
+                    panelBg: '#4338ca',
+                    textColor: '#ffffff',
+                    sectionBg: '#ffffff',
+                    heading: 'Creative Canvas',
+                    subheading: 'Powered by Modern Web Tech',
+                    body: 'An interactive drawing application built with the HTML5 Canvas API. Explore different brushes, colors, and generate beautiful, scroll-animated sections for your website with ease.',
+                    headingSize: 3,
+                    subheadingSize: 1.5,
+                    bodySize: 1.125
+                },
+                animation: {
+                    panelEffect: 'slide-in',
+                    imageEffect: 'fade-scale-up',
+                    speed: 1.2
+                }
+            };
+            
+            const controls = {
+                imageUpload: document.getElementById('image-upload'),
+                layoutOrder: document.querySelectorAll('input[name="layout-order"]'),
+                stackingOrder: document.querySelectorAll('input[name="stacking-order"]'),
+                panelWidth: document.getElementById('panel-width'),
+                panelWidthValue: document.getElementById('panel-width-value'),
+                overlapControls: document.getElementById('overlap-controls'),
+                overlapWidth: document.getElementById('overlap-width'),
+                overlapWidthValue: document.getElementById('overlap-width-value'),
+                clipPathToggle: document.getElementById('clip-path-toggle'),
+                clipPathControls: document.getElementById('clip-path-controls'),
+                clipPathTop: document.getElementById('clip-path-top'),
+                clipPathTopValue: document.getElementById('clip-path-top-value'),
+                clipPathBottom: document.getElementById('clip-path-bottom'),
+                clipPathBottomValue: document.getElementById('clip-path-bottom-value'),
+                panelBgColor: document.getElementById('panel-bg-color'),
+                textColor: document.getElementById('text-color'),
+                sectionBgColor: document.getElementById('section-bg-color'),
+                headingText: document.getElementById('heading-text'),
+                subheadingText: document.getElementById('subheading-text'),
+                bodyText: document.getElementById('body-text'),
+                headingSize: document.getElementById('heading-size'),
+                headingSizeValue: document.getElementById('heading-size-value'),
+                subheadingSize: document.getElementById('subheading-size'),
+                subheadingSizeValue: document.getElementById('subheading-size-value'),
+                bodySize: document.getElementById('body-size'),
+                bodySizeValue: document.getElementById('body-size-value'),
+                panelAnimation: document.getElementById('panel-animation'),
+                imageAnimation: document.getElementById('image-animation'),
+                animationSpeed: document.getElementById('animation-speed'),
+                animationSpeedValue: document.getElementById('animation-speed-value'),
+                exportBtn: document.getElementById('export-btn'),
+                previewWrapper: document.getElementById('preview-wrapper'),
+                previewContainer: document.getElementById('preview-container'),
+            };
+
+            const cropModal = {
+                modal: document.getElementById('crop-modal'),
+                container: document.getElementById('crop-image-container'),
+                img: document.getElementById('crop-image-preview'),
+                selection: document.getElementById('crop-selection'),
+                sizeSlider: document.getElementById('crop-size-slider'),
+                sizeValue: document.getElementById('crop-size-value'),
+                confirmBtn: document.getElementById('confirm-crop-btn'),
+                cancelBtn: document.getElementById('cancel-crop-btn')
+            };
+
+            const exportModal = {
+                modal: document.getElementById('export-modal'),
+                closeBtn: document.getElementById('close-export-btn'),
+                textarea: document.getElementById('exported-code'),
+                copyBtn: document.getElementById('copy-code-btn')
+            };
+
+            let currentObserver = null;
+            let cropData = { x: 0, y: 0, displaySize: 0, scale: 1, img: null };
+
+            function getSafePaddingStyle() {
+                const isTextImage = config.layout.order === 'text-image';
+                const basePaddingRem = 6;
+                let finalPaddingLeft = `${basePaddingRem}rem`;
+                let finalPaddingRight = `${basePaddingRem}rem`;
+                const extraPaddingCalc = [];
+                if (config.layout.clipPath.enabled) {
+                    const maxSkew = Math.max(config.layout.clipPath.top, config.layout.clipPath.bottom);
+                    if (maxSkew > 0) extraPaddingCalc.push(`${maxSkew}%`);
+                }
+                if (config.layout.stackingOrder === 'image-on-top' && config.layout.overlap > 0) {
+                    const overlapPercent = config.layout.overlap;
+                    const panelWidthPercent = config.layout.panelWidth;
+                    const totalPanelWidthPercent = panelWidthPercent + overlapPercent;
+                    if (totalPanelWidthPercent > 0) {
+                        const hiddenRatio = (overlapPercent / totalPanelWidthPercent) * 100;
+                        extraPaddingCalc.push(`${hiddenRatio}%`);
+                    }
+                }
+                if (extraPaddingCalc.length > 0) {
+                    const extraPaddingValue = extraPaddingCalc.join(' + ');
+                    if (isTextImage) {
+                        finalPaddingRight = `calc(${basePaddingRem}rem + ${extraPaddingValue})`;
+                    } else {
+                        finalPaddingLeft = `calc(${basePaddingRem}rem + ${extraPaddingValue})`;
+                    }
+                }
+                return `padding: ${basePaddingRem / 2}rem ${finalPaddingRight} ${basePaddingRem / 2}rem ${finalPaddingLeft};`;
+            }
+
+            function getClipPathStyle() {
+                if (!config.layout.clipPath.enabled) return '';
+                const isTextImage = config.layout.order === 'text-image';
+                const { top, bottom } = config.layout.clipPath; 
+                let polygon;
+                if (isTextImage) {
+                    polygon = `polygon(0% 0%, ${100 - top}% 0%, ${100 - bottom}% 100%, 0% 100%)`;
+                } else {
+                    polygon = `polygon(${top}% 0%, 100% 0%, 100% 100%, ${bottom}% 100%)`;
+                }
+                return `clip-path: ${polygon};`;
+            }
+
+            function updatePreview() {
+                const isTextImage = config.layout.order === 'text-image';
+                const textPanelWidth = config.layout.panelWidth;
+                const imagePanelWidth = 100 - textPanelWidth;
+                const textZIndex = config.layout.stackingOrder === 'text-on-top' ? 10 : 1;
+                const imageZIndex = config.layout.stackingOrder === 'image-on-top' ? 10 : 1;
+                let textPanelWidthStyle = `width: ${textPanelWidth}%;`;
+                if (config.layout.stackingOrder === 'image-on-top' && config.layout.overlap > 0) {
+                    textPanelWidthStyle = `width: calc(${textPanelWidth}% + ${config.layout.overlap}%);`;
+                }
+                const clipPathStyle = getClipPathStyle();
+                const textContentStyle = getSafePaddingStyle();
+                const isParallax = config.animation.imageEffect === 'parallax-on-scroll';
+
+                const html = `
+                    <section id="generated-section" class="content-section flex" style="min-height: 100vh; width: 100%; position: relative; overflow: hidden; background-color: ${config.content.sectionBg}; --anim-speed: ${config.animation.speed}s; --panel-slide-out: translateX(${isTextImage ? '-101%' : '101%'}); --image-slide-out: translateX(${isTextImage ? '101%' : '-101%'});">
+                        
+                        <div class="text-panel-container" style="${textPanelWidthStyle} z-index: ${textZIndex}; position: absolute; height: 100%; ${isTextImage ? 'left: 0;' : 'right: 0;'}" data-panel-animation="${config.animation.panelEffect}">
+                            <div class="text-panel flex items-center" style="background-color: ${config.content.panelBg}; height: 100%; ${clipPathStyle}">
+                                <div class="text-content" style="color: ${config.content.textColor}; ${textContentStyle} box-sizing: border-box; width: 100%;">
+                                    <h1 class="main-heading font-bold mb-4" style="font-size: ${config.content.headingSize}rem;">${config.content.heading}</h1>
+                                    <h2 class="sub-heading font-light mb-6 opacity-80" style="font-size: ${config.content.subheadingSize}rem;">${config.content.subheading}</h2>
+                                    <p class="body-text leading-relaxed" style="font-size: ${config.content.bodySize}rem;">${config.content.body}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="image-container" style="width: ${imagePanelWidth}%; z-index: ${imageZIndex}; position: absolute; height: 100%; ${isTextImage ? 'right: 0;' : 'left: 0;'}" data-image-animation="${config.animation.imageEffect}">
+                            <img src="${config.image.base64}" alt="User uploaded image" class="main-image" ${isParallax ? 'data-parallax-active="true"' : ''} style="width: 100%; height: 100%; object-fit: cover;">
+                        </div>
+                    </section>
+                `;
+                controls.previewWrapper.innerHTML = html;
+                setupIntersectionObserver();
+                handlePreviewParallax();
+            }
+            
+            function handlePreviewParallax() {
+                const image = controls.previewContainer.querySelector('.main-image[data-parallax-active="true"]');
+                if (!image) return;
+                const section = image.closest('.content-section');
+                if (!section) return;
+                const rect = section.getBoundingClientRect();
+                const viewportHeight = controls.previewContainer.clientHeight;
+                if (rect.top < viewportHeight && rect.bottom > 0) {
+                    const scrollProgress = (viewportHeight - rect.top) / (viewportHeight + rect.height);
+                    const moveY = (scrollProgress - 0.5) * 100;
+                    image.style.transform = `translateY(${moveY}px)`;
+                }
+            }
+            controls.previewContainer.addEventListener('scroll', () => {
+                window.requestAnimationFrame(handlePreviewParallax);
+            });
+
+            function setupIntersectionObserver() {
+                if (currentObserver) currentObserver.disconnect();
+                const target = document.getElementById('generated-section');
+                if (!target) return;
+                const options = { root: controls.previewContainer, rootMargin: '0px', threshold: 0.4 };
+                currentObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) entry.target.classList.add('is-visible');
+                        else entry.target.classList.remove('is-visible');
+                    });
+                }, options);
+                currentObserver.observe(target);
+            }
+            
+            function updateConfig(key, value, subkey = null, isNumeric = false) {
+                const parsedValue = isNumeric ? parseFloat(value) : value;
+                if (subkey) {
+                    let parent = config[key];
+                    const keys = subkey.split('.');
+                    const lastKey = keys.pop();
+                    for (const k of keys) { parent = parent[k]; }
+                    parent[lastKey] = parsedValue;
+                } else {
+                    config[key] = parsedValue;
+                }
+                updatePreview();
+            };
+
+            controls.layoutOrder.forEach(radio => radio.addEventListener('change', (e) => updateConfig('layout', e.target.value, 'order')));
+            controls.stackingOrder.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const isImageOnTop = e.target.value === 'image-on-top';
+                    controls.overlapWidth.disabled = !isImageOnTop;
+                    controls.overlapControls.style.opacity = isImageOnTop ? '1' : '0.4';
+                    updateConfig('layout', e.target.value, 'stackingOrder');
+                });
+            });
+            controls.panelWidth.addEventListener('input', (e) => {
+                controls.panelWidthValue.textContent = `${e.target.value}%`;
+                updateConfig('layout', e.target.value, 'panelWidth', true);
+            });
+            controls.overlapWidth.addEventListener('input', (e) => {
+                controls.overlapWidthValue.textContent = `${e.target.value}%`;
+                updateConfig('layout', e.target.value, 'overlap', true);
+            });
+            controls.clipPathToggle.addEventListener('change', (e) => {
+                const enabled = e.target.checked;
+                controls.clipPathTop.disabled = !enabled;
+                controls.clipPathBottom.disabled = !enabled;
+                controls.clipPathControls.style.opacity = enabled ? '1' : '0.4';
+                updateConfig('layout', enabled, 'clipPath.enabled');
+            });
+            controls.clipPathTop.addEventListener('input', (e) => {
+                controls.clipPathTopValue.textContent = `${e.target.value}%`;
+                updateConfig('layout', e.target.value, 'clipPath.top', true);
+            });
+            controls.clipPathBottom.addEventListener('input', (e) => {
+                controls.clipPathBottomValue.textContent = `${e.target.value}%`;
+                updateConfig('layout', e.target.value, 'clipPath.bottom', true);
+            });
+            controls.panelBgColor.addEventListener('input', (e) => updateConfig('content', e.target.value, 'panelBg'));
+            controls.textColor.addEventListener('input', (e) => updateConfig('content', e.target.value, 'textColor'));
+            controls.sectionBgColor.addEventListener('input', (e) => updateConfig('content', e.target.value, 'sectionBg'));
+            controls.headingText.addEventListener('input', (e) => updateConfig('content', e.target.value, 'heading'));
+            controls.subheadingText.addEventListener('input', (e) => updateConfig('content', e.target.value, 'subheading'));
+            controls.bodyText.addEventListener('input', (e) => updateConfig('content', e.target.value, 'body'));
+            controls.headingSize.addEventListener('input', (e) => {
+                controls.headingSizeValue.textContent = `${e.target.value}rem`;
+                updateConfig('content', e.target.value, 'headingSize', true);
+            });
+            controls.subheadingSize.addEventListener('input', (e) => {
+                controls.subheadingSizeValue.textContent = `${e.target.value}rem`;
+                updateConfig('content', e.target.value, 'subheadingSize', true);
+            });
+            controls.bodySize.addEventListener('input', (e) => {
+                controls.bodySizeValue.textContent = `${e.target.value}rem`;
+                updateConfig('content', e.target.value, 'bodySize', true);
+            });
+            controls.panelAnimation.addEventListener('change', (e) => updateConfig('animation', e.target.value, 'panelEffect'));
+            controls.imageAnimation.addEventListener('change', (e) => updateConfig('animation', e.target.value, 'imageEffect'));
+            controls.animationSpeed.addEventListener('input', (e) => {
+                controls.animationSpeedValue.textContent = `${e.target.value}s`;
+                updateConfig('animation', e.target.value, 'speed', true);
+            });
+
+            controls.imageUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        cropModal.img.src = event.target.result;
+                        cropModal.modal.style.display = 'flex';
+                        cropModal.img.onload = () => setupCropper();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            function setupCropper() {
+                const img = cropModal.img;
+                cropData.img = img;
+                img.style.width = '';
+                img.style.height = '';
+                const imgRect = img.getBoundingClientRect();
+                cropData.scale = img.naturalWidth / imgRect.width;
+                const maxNaturalSize = Math.min(img.naturalWidth, img.naturalHeight);
+                cropModal.sizeSlider.max = maxNaturalSize;
+                cropModal.sizeSlider.min = 50; 
+                const initialNaturalSize = Math.max(50, maxNaturalSize * 0.8);
+                cropModal.sizeSlider.value = initialNaturalSize;
+                const initialDisplaySize = initialNaturalSize / cropData.scale;
+                cropData.displaySize = initialDisplaySize;
+                cropData.x = (imgRect.width - initialDisplaySize) / 2;
+                cropData.y = (imgRect.height - initialDisplaySize) / 2;
+                updateSelectionBox();
+            }
+            function updateSelectionBox() {
+                const imgRect = cropData.img.getBoundingClientRect();
+                const containerRect = cropModal.container.getBoundingClientRect();
+                cropData.x = Math.max(0, Math.min(cropData.x, imgRect.width - cropData.displaySize));
+                cropData.y = Math.max(0, Math.min(cropData.y, imgRect.height - cropData.displaySize));
+                cropModal.selection.style.width = `${cropData.displaySize}px`;
+                cropModal.selection.style.height = `${cropData.displaySize}px`;
+                cropModal.selection.style.left = `${imgRect.left - containerRect.left + cropData.x}px`;
+                cropModal.selection.style.top = `${imgRect.top - containerRect.top + cropData.y}px`;
+                cropModal.sizeValue.textContent = `${Math.round(cropModal.sizeSlider.value)}px`;
+            }
+            cropModal.sizeSlider.addEventListener('input', (e) => {
+                const naturalSize = parseFloat(e.target.value);
+                const newDisplaySize = naturalSize / cropData.scale;
+                const oldDisplaySize = cropData.displaySize;
+                cropData.x += (oldDisplaySize - newDisplaySize) / 2;
+                cropData.y += (oldDisplaySize - newDisplaySize) / 2;
+                cropData.displaySize = newDisplaySize;
+                updateSelectionBox();
+            });
+            cropModal.selection.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const initialX = cropData.x;
+                const initialY = cropData.y;
+                function onMouseMove(moveEvent) {
+                    const dx = moveEvent.clientX - startX;
+                    const dy = moveEvent.clientY - startY;
+                    cropData.x = initialX + dx;
+                    cropData.y = initialY + dy;
+                    updateSelectionBox();
+                }
+                function onMouseUp() {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+            cropModal.cancelBtn.addEventListener('click', () => {
+                cropModal.modal.style.display = 'none';
+                controls.imageUpload.value = '';
+            });
+            cropModal.confirmBtn.addEventListener('click', () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const img = cropData.img;
+                const sourceX = cropData.x * cropData.scale;
+                const sourceY = cropData.y * cropData.scale;
+                const sourceSize = parseFloat(cropModal.sizeSlider.value);
+                canvas.width = Math.min(1024, sourceSize);
+                canvas.height = Math.min(1024, sourceSize);
+                ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, canvas.width, canvas.height);
+                config.image.base64 = canvas.toDataURL('image/png');
+                cropModal.modal.style.display = 'none';
+                updatePreview();
+            });
+            
+            controls.exportBtn.addEventListener('click', () => {
+                exportModal.textarea.value = generateExportHTML();
+                exportModal.modal.style.display = 'flex';
+            });
+            exportModal.closeBtn.addEventListener('click', () => exportModal.modal.style.display = 'none');
+            exportModal.copyBtn.addEventListener('click', () => {
+                exportModal.textarea.select();
+                document.execCommand('copy');
+                const originalText = exportModal.copyBtn.innerHTML;
+                exportModal.copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                setTimeout(() => { exportModal.copyBtn.innerHTML = originalText; }, 2000);
+            });
+            
+            function generateExportHTML() {
+                const { order, stackingOrder, panelWidth, overlap } = config.layout;
+                const isTextImage = order === 'text-image';
+                const imagePanelWidth = 100 - panelWidth;
+                const textZIndex = stackingOrder === 'text-on-top' ? 10 : 1;
+                const imageZIndex = stackingOrder === 'image-on-top' ? 10 : 1;
+                const isParallax = config.animation.imageEffect === 'parallax-on-scroll';
+                let textPanelWidthRule = `width: ${panelWidth}%;`;
+                if (stackingOrder === 'image-on-top' && overlap > 0) {
+                    textPanelWidthRule = `width: calc(${panelWidth}% + ${overlap}%);`;
+                }
+                const clipPathRule = getClipPathStyle();
+                const textContentPaddingRule = getSafePaddingStyle();
+                const panelSlideOut = `translateX(${isTextImage ? '-101%' : '101%'})`;
+                const imageSlideOut = `translateX(${isTextImage ? '101%' : '-101%'})`;
+                const cssStyles = `
+body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; margin: 0; line-height: 1.5; }
+.content-section { position: relative; width: 100%; min-height: 100vh; display: flex; overflow: hidden; background-color: ${config.content.sectionBg}; --anim-speed: ${config.animation.speed}s; --panel-slide-out: ${panelSlideOut}; --image-slide-out: ${imageSlideOut}; }
+.text-panel { width: 100%; height: 100%; display: flex; align-items: center; background-color: ${config.content.panelBg}; ${clipPathRule} }
+.text-panel-container { ${textPanelWidthRule} z-index: ${textZIndex}; ${isTextImage ? 'left: 0;' : 'right: 0;'} }
+.image-container { width: ${imagePanelWidth}%; z-index: ${imageZIndex}; ${isTextImage ? 'right: 0;' : 'left: 0;'} }
+.text-content { color: ${config.content.textColor}; ${textContentPaddingRule} box-sizing: border-box; width: 100%; }
+.main-heading { font-size: ${config.content.headingSize}rem; font-weight: 700; margin-bottom: 1rem; }
+.sub-heading { font-size: ${config.content.subheadingSize}rem; font-weight: 300; margin-bottom: 1.5rem; opacity: 0.8; }
+.body-text { font-size: ${config.content.bodySize}rem; line-height: 1.75; }
+.main-image { width: 100%; height: 100%; object-fit: cover; }
+.text-panel-container, .image-container { position: absolute; top: 0; height: 100%; transition: transform var(--anim-speed) cubic-bezier(0.22, 1, 0.36, 1), opacity var(--anim-speed) cubic-bezier(0.22, 1, 0.36, 1); }
+.text-panel-container[data-panel-animation="slide-in"], .text-panel-container[data-panel-animation="slide-in-staggered"] { transform: var(--panel-slide-out); }
+.text-panel-container[data-panel-animation="fade-in"] { opacity: 0; }
+.text-panel-container[data-panel-animation="slide-up"] { transform: translateY(30px); opacity: 0; }
+.text-panel-container[data-panel-animation="rotate-fade-in"] { opacity: 0; transform-origin: center; transform: rotate(-4deg) scale(0.95); }
+.text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > * { opacity: 0; transform: translateY(20px); transition: opacity 0.7s ease-out, transform 0.7s ease-out; }
+.image-container[data-image-animation="slide-in"] { transform: var(--image-slide-out); }
+.image-container[data-image-animation="slide-in-top"] { transform: translateY(-101%); }
+.image-container[data-image-animation="fade-scale-up"] { transform: scale(0.9); opacity: 0; }
+.image-container[data-image-animation="fade-in"] { opacity: 0; }
+.image-container[data-image-animation="parallax-on-scroll"] { opacity: 0; transform: scale(1.1); }
+.image-container[data-image-animation="parallax-on-scroll"] .main-image { transition: transform 0.2s ease-out; }
+.content-section.is-visible .text-panel-container, .content-section.is-visible .image-container { transform: translate(0, 0) scale(1); opacity: 1; }
+.content-section.is-visible .image-container[data-image-animation="parallax-on-scroll"] { transform: scale(1); }
+.content-section.is-visible .text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > * { opacity: 1; transform: translateY(0); }
+.content-section.is-visible .text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > .sub-heading { transition-delay: 0.2s; }
+.content-section.is-visible .text-panel-container[data-panel-animation="slide-in-staggered"] .text-content > .body-text { transition-delay: 0.4s; }
+@media (max-width: 768px) { .content-section { flex-direction: column; } .text-panel-container, .image-container { position: relative; width: 100% !important; left: 0 !important; right: 0 !important; min-height: 50vh; } .text-panel-container { order: ${isTextImage ? 1 : 2}; } .image-container { order: ${isTextImage ? 2 : 1}; } .text-panel { clip-path: none !important; } .text-content { padding: 2rem !important; } .main-heading { font-size: 2rem; } .sub-heading { font-size: 1.25rem; } .body-text { font-size: 1rem; } }`;
+                const jsScript = `
+document.addEventListener('DOMContentLoaded', () => {
+    const section = document.getElementById('generated-section');
+    if (!section) return;
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) { entry.target.classList.add('is-visible'); } 
+            else { entry.target.classList.remove('is-visible'); }
+        });
+    }, { threshold: 0.4 });
+    observer.observe(section);
+
+    const parallaxImage = document.querySelector('.main-image[data-parallax-active="true"]');
+    if (parallaxImage) {
+        window.addEventListener('scroll', () => {
+            const rect = section.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+            if (rect.top < viewportHeight && rect.bottom > 0) {
+                const scrollProgress = (viewportHeight - rect.top) \/ (viewportHeight + rect.height);
+                const moveY = (scrollProgress - 0.5) * 100;
+                window.requestAnimationFrame(() => {
+                    parallaxImage.style.transform = \`translateY(\${moveY}px)\`;
+                });
+            }
+        }, { passive: true });
+    }
+});`;
+                return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Generated Hero Section<\/title><style>${cssStyles.trim()}<\/style><\/head><body><div style="height: 50vh; display: flex; align-items: center; justify-content: center; background-color: #f0f2f5;"><h2 style="font-size: 2rem; color: #555; font-weight: 300;">Scroll Down<\/h2><\/div><section id="generated-section" class="content-section"><div class="text-panel-container" data-panel-animation="${config.animation.panelEffect}"><div class="text-panel"><div class="text-content"><h1 class="main-heading">${config.content.heading}<\/h1><h2 class="sub-heading">${config.content.subheading}<\/h2><p class="body-text">${config.content.body}<\/p><\/div><\/div><\/div><div class="image-container" data-image-animation="${config.animation.imageEffect}"><img src="${config.image.base64}" alt="Generated hero image" class="main-image" ${isParallax ? 'data-parallax-active="true"' : ''}><\/div><\/section><div style="height: 100vh; background-color: #f0f2f5;"><\/div><script>${jsScript.trim()}<\/script><\/body><\/html>`;
+            }
+            
+            updatePreview();
+        });
+    </script>
+
+</body>
+</html>
