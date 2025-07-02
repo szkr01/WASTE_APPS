@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-100">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CuteR - Advanced QR Code Generator</title>
+    <meta name="description"
+        content="A modern, single-page application to generate artistic QR codes by blending them with images, featuring advanced customization options.">
+    <meta name="page:icon" content="fas fa-qrcode">
+    <meta name="page:color" content="#0ea5e9">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+        rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .controls-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .controls-panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .controls-panel::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 10px;
+            border: 2px solid #f9fafb;
+        }
+
+        .controls-panel::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-in-out, opacity 0.3s ease-in-out;
+            opacity: 0;
+        }
+
+        .accordion-content.open {
+            max-height: 500px;
+            opacity: 1;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.toggle-slider {
+            background-color: #0ea5e9;
+        }
+
+        input:checked+.toggle-slider:before {
+            transform: translateX(20px);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border: 2px solid #0ea5e9;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform .2s ease;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border: 2px solid #0ea5e9;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        input[type="range"]:active::-webkit-slider-thumb {
+            transform: scale(1.2);
+        }
+
+        select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+        }
+
+        .loader {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body class="h-full flex items-center justify-center bg-slate-100 p-4">
+
+    <main
+        class="w-full max-w-[1400px] h-[95vh] max-h-[900px] mx-auto bg-white rounded-2xl shadow-xl shadow-slate-200/80 flex overflow-hidden">
+
+        <aside class="w-[450px] flex-shrink-0 bg-slate-50 border-r border-slate-200 p-6 flex flex-col">
+            <header class="flex items-center gap-3 mb-6">
+                <div class="w-11 h-11 bg-sky-100 text-sky-500 flex items-center justify-center rounded-lg">
+                    <i class="fas fa-qrcode fa-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-slate-800">CuteR</h1>
+                    <p class="text-sm text-slate-500">Artistic QR Code Generator</p>
+                </div>
+            </header>
+
+            <div class="flex-grow overflow-y-auto controls-panel pr-2 -mr-4 space-y-5">
+
+                <div class="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+                    <label for="qr-text" class="text-sm font-semibold text-slate-700">1. Content</label>
+                    <textarea id="qr-text" placeholder="Enter URL or text..." rows="3"
+                        class="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-300 focus:border-sky-400 transition-all text-sm resize-none"></textarea>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+                    <label class="text-sm font-semibold text-slate-700">2. Background Image</label>
+                    <div id="image-drop-zone"
+                        class="relative block w-full border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-sky-400 hover:bg-sky-50 transition-all duration-200">
+                        <input type="file" id="image-input" accept="image/*"
+                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        <div class="flex flex-col items-center justify-center space-y-2 text-slate-500">
+                            <i class="fas fa-cloud-arrow-up text-3xl text-slate-400"></i>
+                            <p class="text-sm font-medium">Drag & drop or click to upload</p>
+                            <p class="text-xs text-slate-400">PNG, JPG, WEBP</p>
+                        </div>
+                    </div>
+                    <div id="file-info" class="hidden items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                        <img id="file-preview" src="" alt="Preview"
+                            class="w-10 h-10 rounded-md object-cover border border-slate-200">
+                        <span id="file-name" class="flex-grow text-sm text-slate-700 truncate"></span>
+                        <button id="remove-image-btn" type="button"
+                            class="flex-shrink-0 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-100 rounded-full transition-colors">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl border border-slate-200">
+                    <div class="accordion-header flex items-center justify-between cursor-pointer">
+                        <h3 class="text-sm font-semibold text-slate-700">3. QR Code Settings</h3>
+                        <i class="fas fa-chevron-down text-slate-400 transition-transform"></i>
+                    </div>
+                    <div class="accordion-content mt-4 space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="box-size" class="block text-xs font-medium text-slate-600 mb-1.5">Module
+                                    Size</label>
+                                <select id="box-size"
+                                    class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-300 focus:border-sky-400 transition-all text-sm">
+                                    <option value="1">1x1</option>
+                                    <option value="3" selected>3x3</option>
+                                    <option value="5">5x5</option>
+                                    <option value="7">7x7</option>
+                                    <option value="9">9x9</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="error-correction"
+                                    class="block text-xs font-medium text-slate-600 mb-1.5">Error Correction</label>
+                                <select id="error-correction"
+                                    class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-300 focus:border-sky-400 transition-all text-sm">
+                                    <option value="L">Low (~7%)</option>
+                                    <option value="M" selected>Medium (~15%)</option>
+                                    <option value="Q">Quartile (~25%)</option>
+                                    <option value="H">High (~30%)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl border border-slate-200">
+                    <div class="accordion-header flex items-center justify-between cursor-pointer">
+                        <h3 class="text-sm font-semibold text-slate-700">4. Style & Effects</h3>
+                        <i class="fas fa-chevron-down text-slate-400 transition-transform"></i>
+                    </div>
+                    <div class="accordion-content mt-4 space-y-6">
+                        <div>
+                            <label for="brightness"
+                                class="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
+                                <span>Brightness</span>
+                                <span
+                                    class="text-xs font-mono bg-slate-100 text-slate-500 px-2 py-0.5 rounded">1.0</span>
+                            </label>
+                            <input type="range" id="brightness" min="0.1" max="3" step="0.1" value="1">
+                        </div>
+                        <div>
+                            <label for="contrast"
+                                class="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
+                                <span>Contrast</span>
+                                <span
+                                    class="text-xs font-mono bg-slate-100 text-slate-500 px-2 py-0.5 rounded">1.0</span>
+                            </label>
+                            <input type="range" id="contrast" min="0.1" max="3" step="0.1" value="1">
+                        </div>
+                        <hr class="border-slate-100">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-medium text-slate-600">Colorful Mode</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="colorful-mode">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="color-options" class="hidden pl-4 border-l-2 border-slate-200 space-y-4">
+                            <div class="flex items-center gap-4">
+                                <input type="color" id="qr-color" value="#000000"
+                                    class="w-10 h-10 p-1 bg-white border border-slate-300 rounded-lg cursor-pointer flex-shrink-0">
+                                <div class="flex-grow">
+                                    <label for="qr-alpha"
+                                        class="flex justify-between items-center text-xs font-medium text-slate-600 mb-1">
+                                        <span>Opacity</span>
+                                        <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded">255</span>
+                                    </label>
+                                    <input type="range" id="qr-alpha" min="0" max="255" value="255" class="w-full">
+                                </div>
+                            </div>
+                        </div>
+                        <hr class="border-slate-100">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-medium text-slate-600">Pixelate Effect</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="pixelate-mode">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <hr class="border-slate-100">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-medium text-slate-600">Pattern Removal</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="pattern-removal-mode">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="pattern-removal-options" class="hidden pl-4 border-l-2 border-slate-200 space-y-4">
+                            <div>
+                                <label for="removal-ratio"
+                                    class="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
+                                    <span>Removal Ratio</span>
+                                    <span
+                                        class="text-xs font-mono bg-slate-100 text-slate-500 px-2 py-0.5 rounded">50%</span>
+                                </label>
+                                <input type="range" id="removal-ratio" min="0" max="100" step="5" value="50">
+                            </div>
+                            <div id="removal-info" class="text-xs text-slate-500 bg-slate-100 p-3 rounded-md space-y-1">
+                                <i class="fas fa-info-circle mr-1 text-slate-400"></i>Enter text to see removable module
+                                info.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <section class="flex-grow p-8 flex flex-col bg-white">
+            <div class="flex-grow flex items-center justify-center p-4 bg-slate-100 rounded-xl">
+                <div id="preview-wrapper"
+                    class="relative w-full max-w-lg aspect-square bg-white rounded-lg shadow-inner border border-slate-200">
+                    <div id="canvas-overlay"
+                        class="absolute inset-0 flex flex-col items-center justify-center text-center p-8 text-slate-400 transition-opacity duration-300">
+                        <i class="fas fa-palette text-6xl mb-4 text-slate-300"></i>
+                        <h3 class="text-lg font-medium text-slate-500">Preview Area</h3>
+                        <p class="text-sm">Your generated QR code will appear here.</p>
+                    </div>
+                    <canvas id="output-canvas"
+                        class="w-full h-full rounded-lg transition-opacity duration-300 opacity-100"></canvas>
+                </div>
+            </div>
+
+            <div class="w-full max-w-lg mx-auto mt-6 flex items-center justify-between gap-4">
+                <div class="text-sm text-slate-500">
+                    <span id="output-size">Size: -</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="download-btn" disabled
+                        class="px-5 py-2.5 bg-white border border-slate-300 text-slate-400 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center gap-2 cursor-not-allowed disabled:opacity-50 enabled:text-slate-700 enabled:hover:bg-slate-50">
+                        <i class="fas fa-download"></i>
+                        Download
+                    </button>
+                    <button id="generate-btn"
+                        class="px-6 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-semibold text-sm shadow-lg shadow-sky-500/20 hover:shadow-xl hover:shadow-sky-600/20 transform hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center justify-center gap-2 w-36">
+                        <span class="btn-text">Generate</span>
+                        <i class="fas fa-circle-notch loader hidden"></i>
+                    </button>
+                </div>
+            </div>
+
+            <footer class="mt-auto pt-4 text-center text-xs text-slate-400">
+                <p>© 2025 CuteR HTML Remake - Original: <a href="https://github.com/chinuno-usami/CuteR" target="_blank"
+                        rel="noopener noreferrer" class="text-sky-600 hover:underline">chinuno-usami/CuteR</a></p>
+            </footer>
+        </section>
+
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script>
+        /**
+         * CuteR HTML版 - JavaScript実装
+         * 元のPython版CuteRをJavaScriptに完全移植
+         * SOLID原則に従ったリファクタリング版
+         */
+
+        // 設定クラス - Single Responsibility Principle
+        class CuteRSettings {
+            constructor(boxSize = 3) {
+                // 可変box_size - 奇数のみ許可
+                this.BOX_SIZE = this.validateBoxSize(boxSize);  // L69: box_size=n (n: 奇数)
+                this.QUIET_ZONE = 4; // 4モジュール
+                this.BRIGHTNESS_THRESHOLD_HIGH = 185; // L106-L108
+                this.BRIGHTNESS_THRESHOLD_LOW = 70;   // L106-L108
+                this.HIGH_RES_SCALE = 10; // L95, L124: 10倍解像度
+            }
+
+            // box_sizeの検証 - 奇数のみ許可
+            validateBoxSize(size) {
+                const boxSize = parseInt(size);
+                if (isNaN(boxSize) || boxSize < 1) {
+                    console.warn(`無効なbox_size: ${size}. デフォルトの3を使用します。`);
+                    return 3;
+                }
+                if (boxSize % 2 === 0) {
+                    console.warn(`box_sizeは奇数である必要があります: ${boxSize}. ${boxSize + 1}を使用します。`);
+                    return boxSize + 1;
+                }
+                return boxSize;
+            }
+
+            // box_sizeの中心座標を計算
+            getBoxCenter() {
+                return Math.floor(this.BOX_SIZE / 2);
+            }
+
+            getUserSettings() {
+                const elements = DOMManager.getElements();
+
+                // 必須要素の存在チェック
+                if (!elements.qrText || !elements.errorCorrection) {
+                    throw new Error('必須のDOM要素が見つかりません');
+                }
+
+                const settings = {
+                    text: elements.qrText.value.trim(),
+                    // version: QRコードライブラリが自動決定
+                    errorCorrection: elements.errorCorrection.value,
+                    brightness: elements.brightness ? parseFloat(elements.brightness.value) : 1.0,
+                    contrast: elements.contrast ? parseFloat(elements.contrast.value) : 1.0,
+                    colorful: elements.colorfulMode ? elements.colorfulMode.checked : false,
+                    qrColor: elements.qrColor ? elements.qrColor.value : '#000000',
+                    qrAlpha: elements.qrAlpha ? parseInt(elements.qrAlpha.value) : 255,
+                    pixelate: elements.pixelateMode ? elements.pixelateMode.checked : false,
+                    // パターン除去設定
+                    patternRemoval: elements.patternRemovalMode ? elements.patternRemovalMode.checked : false,
+                    removalRatio: elements.removalRatio ? parseFloat(elements.removalRatio.value) : 50
+                };
+
+                // RGBAタプルの生成
+                if (settings.colorful) {
+                    const r = parseInt(settings.qrColor.substr(1, 2), 16);
+                    const g = parseInt(settings.qrColor.substr(3, 2), 16);
+                    const b = parseInt(settings.qrColor.substr(5, 2), 16);
+                    settings.rgba = [r, g, b, settings.qrAlpha];
+                } else {
+                    settings.rgba = [0, 0, 0, 255]; // デフォルト黒
+                }
+
+                return settings;
+            }
+        }
+
+        // DOM管理クラス - Single Responsibility Principle
+        class DOMManager {
+            static elements = null;
+
+            static getElements() {
+                if (!this.elements) {
+                    this.elements = {
+                        qrText: document.getElementById('qr-text'),
+                        imageInput: document.getElementById('image-input'),
+                        boxSize: document.getElementById('box-size'),
+                        errorCorrection: document.getElementById('error-correction'),
+                        brightness: document.getElementById('brightness'),
+                        contrast: document.getElementById('contrast'),
+                        colorfulMode: document.getElementById('colorful-mode'),
+                        colorOptions: document.getElementById('color-options'),
+                        qrColor: document.getElementById('qr-color'),
+                        qrAlpha: document.getElementById('qr-alpha'),
+                        pixelateMode: document.getElementById('pixelate-mode'),
+                        // パターン除去機能
+                        patternRemovalMode: document.getElementById('pattern-removal-mode'),
+                        patternRemovalOptions: document.getElementById('pattern-removal-options'),
+                        removalRatio: document.getElementById('removal-ratio'),
+                        removalInfo: document.getElementById('removal-info'),
+                        generateBtn: document.getElementById('generate-btn'),
+                        downloadBtn: document.getElementById('download-btn'),
+                        canvasOverlay: document.getElementById('canvas-overlay'),
+                        outputSize: document.getElementById('output-size'),
+                        outputCanvas: document.getElementById('output-canvas')
+                    };
+
+                    // DOM要素の存在確認
+                    this.validateElements();
+                }
+                return this.elements;
+            }
+
+            static validateElements() {
+                const requiredElements = [
+                    'qrText', 'imageInput', 'boxSize', 'errorCorrection',
+                    'brightness', 'contrast', 'colorfulMode', 'colorOptions',
+                    'qrColor', 'qrAlpha', 'pixelateMode', 'generateBtn',
+                    'downloadBtn', 'canvasOverlay', 'outputSize', 'outputCanvas'
+                ];
+
+                const optionalElements = [
+                    'patternRemovalMode', 'patternRemovalOptions', 'removalRatio', 'removalInfo'
+                ];
+
+                const missingElements = [];
+                for (const key of requiredElements) {
+                    if (!this.elements[key]) {
+                        missingElements.push(key);
+                        console.error(`Required DOM element not found: ${key} (ID: ${this.getElementId(key)})`);
+                    }
+                }
+
+                for (const key of optionalElements) {
+                    if (!this.elements[key]) {
+                        console.warn(`Optional DOM element not found: ${key} (ID: ${this.getElementId(key)})`);
+                    }
+                }
+
+                if (missingElements.length > 0) {
+                    console.warn(`Missing DOM elements: ${missingElements.join(', ')}`);
+                } else {
+                    console.log('All required DOM elements found successfully');
+                }
+            }
+
+            static getElementId(key) {
+                const idMap = {
+                    qrText: 'qr-text',
+                    imageInput: 'image-input',
+                    boxSize: 'box-size',
+                    errorCorrection: 'error-correction',
+                    brightness: 'brightness',
+                    contrast: 'contrast',
+                    colorfulMode: 'colorful-mode',
+                    colorOptions: 'color-options',
+                    qrColor: 'qr-color',
+                    qrAlpha: 'qr-alpha',
+                    pixelateMode: 'pixelate-mode',
+                    patternRemovalMode: 'pattern-removal-mode',
+                    patternRemovalOptions: 'pattern-removal-options',
+                    removalRatio: 'removal-ratio',
+                    removalInfo: 'removal-info',
+                    generateBtn: 'generate-btn',
+                    downloadBtn: 'download-btn',
+                    canvasOverlay: 'canvas-overlay',
+                    outputSize: 'output-size',
+                    outputCanvas: 'output-canvas'
+                };
+                return idMap[key] || key;
+            }
+
+            static setupEventListeners(eventHandler) {
+                const elements = this.getElements();
+
+                // レンジスライダーの値表示更新
+                if (elements.brightness && elements.brightness.nextElementSibling) {
+                    elements.brightness.addEventListener('input', (e) => {
+                        e.target.nextElementSibling.textContent = parseFloat(e.target.value).toFixed(1);
+                    });
+                }
+
+                if (elements.contrast && elements.contrast.nextElementSibling) {
+                    elements.contrast.addEventListener('input', (e) => {
+                        e.target.nextElementSibling.textContent = parseFloat(e.target.value).toFixed(1);
+                    });
+                }
+
+                if (elements.qrAlpha && elements.qrAlpha.nextElementSibling) {
+                    elements.qrAlpha.addEventListener('input', (e) => {
+                        e.target.nextElementSibling.textContent = e.target.value;
+                    });
+                }
+
+                // box_size変更時のイベント
+                if (elements.boxSize) {
+                    elements.boxSize.addEventListener('change', (e) => {
+                        const boxSize = parseInt(e.target.value);
+                        console.log(`Box Size changed to: ${boxSize}x${boxSize}`);
+                        eventHandler.onBoxSizeChange(boxSize);
+                    });
+                }
+
+                // カラフルモードの切り替え
+                if (elements.colorfulMode && elements.colorOptions) {
+                    elements.colorfulMode.addEventListener('change', (e) => {
+                        elements.colorOptions.style.display = e.target.checked ? 'block' : 'none';
+                    });
+                }
+
+                // パターン除去モードの切り替え
+                if (elements.patternRemovalMode && elements.patternRemovalOptions) {
+                    elements.patternRemovalMode.addEventListener('change', (e) => {
+                        elements.patternRemovalOptions.style.display = e.target.checked ? 'block' : 'none';
+                        if (e.target.checked) {
+                            eventHandler.updateRemovalInfo();
+                        }
+                    });
+                }
+
+                // 除去割合の変更
+                if (elements.removalRatio) {
+                    elements.removalRatio.addEventListener('input', (e) => {
+                        if (e.target.nextElementSibling) {
+                            e.target.nextElementSibling.textContent = e.target.value + '%';
+                        }
+                        eventHandler.updateRemovalInfo();
+                    });
+                }
+
+                // 誤り訂正レベルの変更時も情報を更新
+                if (elements.errorCorrection) {
+                    elements.errorCorrection.addEventListener('change', () => {
+                        eventHandler.updateRemovalInfo();
+                    });
+                }
+
+                // ファイル読み込み
+                if (elements.imageInput) {
+                    elements.imageInput.addEventListener('change', (e) => {
+                        eventHandler.onImageInputChange(e.target.files[0]);
+                    });
+                }
+
+                // QRコード生成
+                if (elements.generateBtn) {
+                    elements.generateBtn.addEventListener('click', () => {
+                        eventHandler.onGenerateClick();
+                    });
+                }
+
+                // ダウンロード
+                if (elements.downloadBtn) {
+                    elements.downloadBtn.addEventListener('click', () => {
+                        eventHandler.onDownloadClick();
+                    });
+                }
+            }
+
+            static setLoading(loading) {
+                const elements = this.getElements();
+                if (!elements.generateBtn) return;
+
+                const btnText = elements.generateBtn.querySelector('.btn-text');
+                const loader = elements.generateBtn.querySelector('.loader');
+
+                if (loading) {
+                    if (btnText) btnText.textContent = '生成中...';
+                    if (loader) loader.style.display = 'inline-block';
+                    elements.generateBtn.disabled = true;
+                } else {
+                    if (btnText) btnText.textContent = 'QRコードを生成';
+                    if (loader) loader.style.display = 'none';
+                    elements.generateBtn.disabled = false;
+                }
+            }
+
+            static displayResult(resultCanvas) {
+                const elements = this.getElements();
+                const outputCanvas = elements.outputCanvas;
+
+                if (!outputCanvas) {
+                    console.error('Output canvas not found');
+                    return;
+                }
+
+                const ctx = outputCanvas.getContext('2d');
+
+                // キャンバスサイズを調整
+                const maxSize = 400;
+                const scale = Math.min(maxSize / resultCanvas.width, maxSize / resultCanvas.height);
+
+                outputCanvas.width = resultCanvas.width * scale;
+                outputCanvas.height = resultCanvas.height * scale;
+
+                // 結果を描画
+                ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+                ctx.drawImage(
+                    resultCanvas,
+                    0, 0, resultCanvas.width, resultCanvas.height,
+                    0, 0, outputCanvas.width, outputCanvas.height
+                );
+
+                // UI更新
+                if (elements.canvasOverlay) {
+                    elements.canvasOverlay.style.display = 'none';
+                }
+                if (elements.downloadBtn) {
+                    elements.downloadBtn.disabled = false;
+                }
+                if (elements.outputSize) {
+                    elements.outputSize.textContent = `サイズ: ${resultCanvas.width} x ${resultCanvas.height}`;
+                }
+            }
+
+            static downloadImage(resultCanvas) {
+                if (!resultCanvas) {
+                    alert('ダウンロードする画像がありません');
+                    return;
+                }
+
+                resultCanvas.toBlob((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'cute-qr-code.png';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }, 'image/png');
+            }
+        }
+
+        // 誤り訂正情報管理クラス - Single Responsibility Principle
+        class ErrorCorrectionCalculator {
+            constructor() {
+                // 各誤り訂正レベルでの復元可能データ割合
+                this.ERROR_CORRECTION_CAPACITY = {
+                    'L': 0.07,  // 約7%
+                    'M': 0.15,  // 約15%
+                    'Q': 0.25,  // 約25%
+                    'H': 0.30   // 約30%
+                };
+            }
+
+            // 誤り訂正レベルに基づく削除可能ドット数を計算
+            calculateRemovableModules(qr, errorCorrectionLevel) {
+                const totalModules = qr.moduleCount * qr.moduleCount;
+                const capacity = this.ERROR_CORRECTION_CAPACITY[errorCorrectionLevel] || 0.07;
+
+                // ファインダーパターン、タイミングパターン、アライメントパターンを除外
+                const functionalModules = this.calculateFunctionalModules(qr.version);
+                const dataModules = totalModules - functionalModules;
+
+                // 削除可能なデータモジュール数
+                const removableModules = Math.floor(dataModules * capacity);
+
+                return {
+                    totalModules,
+                    dataModules,
+                    functionalModules,
+                    removableModules,
+                    capacity: capacity * 100
+                };
+            }
+
+            // 機能的なモジュール数を計算（削除してはいけない領域）
+            calculateFunctionalModules(version) {
+                let functionalModules = 0;
+
+                // ファインダーパターン: 3個 × (7×7 + セパレータ8×8)
+                functionalModules += 3 * 64; // 8×8の領域
+
+                // タイミングパターン: 2本の線
+                const size = 17 + 4 * version;
+                functionalModules += (size - 16) * 2; // 重複部分を除く
+
+                // アライメントパターン
+                const alignmentPositions = this.getAlignmentPatternCount(version);
+                functionalModules += alignmentPositions * 25; // 5×5パターン
+
+                // フォーマット情報とバージョン情報
+                functionalModules += 31; // フォーマット情報
+                if (version >= 7) {
+                    functionalModules += 36; // バージョン情報
+                }
+
+                return functionalModules;
+            }
+
+            // アライメントパターンの数を取得
+            getAlignmentPatternCount(version) {
+                if (version === 1) return 0;
+
+                const alignmentCount = Math.floor(version / 7) + 2;
+                return alignmentCount * alignmentCount - 3; // ファインダーパターンとの重複を除く
+            }
+        }
+
+        // パターン除去処理クラス - Single Responsibility Principle
+        class PatternRemover {
+            constructor(settings, errorCorrectionCalculator) {
+                this.settings = settings;
+                this.errorCorrectionCalculator = errorCorrectionCalculator;
+            }
+
+            // 指定された割合でランダムにドットを削除
+            removePatternsByRatio(imgFrame, qr, errorCorrectionLevel, removalRatio) {
+                const correctionInfo = this.errorCorrectionCalculator.calculateRemovableModules(qr, errorCorrectionLevel);
+                const maxRemovable = correctionInfo.removableModules;
+                const actualRemoval = Math.floor(maxRemovable * (removalRatio / 100));
+
+                console.log(`誤り訂正情報:`, correctionInfo);
+                console.log(`削除対象ドット数: ${actualRemoval} / ${maxRemovable} (${removalRatio}%)`);
+
+                if (actualRemoval <= 0) return 0;
+
+                const candidates = this.getRemovalCandidates(qr);
+                const selectedForRemoval = this.selectRandomModules(candidates, actualRemoval);
+
+                return this.applyRemoval(imgFrame, selectedForRemoval);
+            }
+
+            // 削除候補のモジュールを取得（機能的なパターンを除外）
+            getRemovalCandidates(qr) {
+                const candidates = [];
+                const modules = qr.moduleCount;
+
+                for (let row = 0; row < modules; row++) {
+                    for (let col = 0; col < modules; col++) {
+                        // 黒いモジュールのみが削除対象
+                        if (!qr.isDark(row, col)) continue;
+
+                        // 機能的なパターンを除外
+                        if (this.isFunctionalPattern(row, col, qr.version, modules)) continue;
+
+                        candidates.push({ row, col });
+                    }
+                }
+
+                return candidates;
+            }
+
+            // 機能的なパターン（削除禁止領域）の判定
+            isFunctionalPattern(row, col, version, modules) {
+                // ファインダーパターン（8×8の領域）
+                if ((row < 8 && col < 8) || // 左上
+                    (row < 8 && col >= modules - 8) || // 右上
+                    (row >= modules - 8 && col < 8)) { // 左下
+                    return true;
+                }
+
+                // タイミングパターン
+                if (row === 6 || col === 6) return true;
+
+                // アライメントパターン
+                if (this.isAlignmentPattern(row, col, version)) return true;
+
+                // フォーマット情報
+                if (this.isFormatInformation(row, col, modules)) return true;
+
+                // バージョン情報（バージョン7以上）
+                if (version >= 7 && this.isVersionInformation(row, col, modules)) return true;
+
+                return false;
+            }
+
+            // アライメントパターンの判定
+            isAlignmentPattern(row, col, version) {
+                const positions = this.getAlignmentPositions(version);
+
+                for (const pos of positions) {
+                    if (Math.abs(row - pos) <= 2 && Math.abs(col - pos) <= 2) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            // アライメントパターンの位置を取得
+            getAlignmentPositions(version) {
+                const positions = {
+                    1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30],
+                    6: [6, 34], 7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46],
+                    10: [6, 28, 50], 11: [6, 30, 54], 12: [6, 32, 58],
+                    13: [6, 34, 62], 14: [6, 26, 46, 66], 15: [6, 26, 48, 70]
+                };
+
+                return positions[version] || [];
+            }
+
+            // フォーマット情報の判定
+            isFormatInformation(row, col, modules) {
+                // 左上のファインダー周辺
+                if ((row === 8 && (col < 9 || col === modules - 8)) ||
+                    (col === 8 && (row < 8 || row > modules - 8))) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            // バージョン情報の判定
+            isVersionInformation(row, col, modules) {
+                // 右上と左下の角
+                if ((row < 6 && col >= modules - 11 && col < modules - 8) ||
+                    (row >= modules - 11 && row < modules - 8 && col < 6)) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            // ランダムにモジュールを選択
+            selectRandomModules(candidates, count) {
+                const shuffled = [...candidates].sort(() => Math.random() - 0.5);
+                return shuffled.slice(0, count);
+            }
+
+            // 選択されたモジュールを削除（透明化）
+            applyRemoval(imgFrame, modulesToRemove) {
+                const ctx = imgFrame.getContext('2d');
+                const imageData = ctx.getImageData(0, 0, imgFrame.width, imgFrame.height);
+                const data = imageData.data;
+
+                const quietZone = this.settings.QUIET_ZONE * this.settings.BOX_SIZE;
+                let removedCount = 0;
+
+                for (const module of modulesToRemove) {
+                    // モジュール座標をピクセル座標に変換
+                    const startX = module.col * this.settings.BOX_SIZE + quietZone;
+                    const startY = module.row * this.settings.BOX_SIZE + quietZone;
+
+                    // BOX_SIZE × BOX_SIZE の領域を透明化
+                    for (let y = startY; y < startY + this.settings.BOX_SIZE; y++) {
+                        for (let x = startX; x < startX + this.settings.BOX_SIZE; x++) {
+                            if (x >= 0 && x < imgFrame.width && y >= 0 && y < imgFrame.height) {
+                                const index = (y * imgFrame.width + x) * 4;
+                                data[index + 3] = 0; // Alpha = 0 (透明)
+                            }
+                        }
+                    }
+                    removedCount++;
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+                return removedCount;
+            }
+        }
+
+        // QRコード生成クラス - Single Responsibility Principle
+        class QRCodeGenerator {
+            constructor(settings) {
+                this.settings = settings;
+            }
+
+            // Python qrcode.QRCode クラスの再現
+            create(userSettings) {
+                const errorCorrectionMap = {
+                    'L': 'L', 'M': 'M', 'Q': 'Q', 'H': 'H'
+                };
+
+                const qr = qrcode(0, errorCorrectionMap[userSettings.errorCorrection]);
+                qr.addData(userSettings.text);
+                qr.make();
+
+                // box_sizeとバージョン情報を追加
+                qr.boxSize = this.settings.BOX_SIZE;
+                qr.version = qr.getModuleCount() === 21 ? 1 : Math.ceil((qr.getModuleCount() - 17) / 4);
+                qr.moduleCount = qr.getModuleCount();
+
+                return qr;
+            }
+
+            // L72: make_image().convert('RGBA') の実装 - nxnモジュール対応
+            makeImage(qr) {
+                const modules = qr.moduleCount;
+                const quietZone = this.settings.QUIET_ZONE * this.settings.BOX_SIZE; // QUIET_ZONE * BOX_SIZE ピクセル
+                const totalSize = modules * this.settings.BOX_SIZE + quietZone * 2;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = totalSize;
+                canvas.height = totalSize;
+                const ctx = canvas.getContext('2d');
+
+                // 白背景で初期化
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, totalSize, totalSize);
+
+                // 黒でQRコードモジュールを描画
+                ctx.fillStyle = 'black';
+                for (let row = 0; row < modules; row++) {
+                    for (let col = 0; col < modules; col++) {
+                        if (qr.isDark(row, col)) {
+                            const x = col * this.settings.BOX_SIZE + quietZone;
+                            const y = row * this.settings.BOX_SIZE + quietZone;
+                            ctx.fillRect(x, y, this.settings.BOX_SIZE, this.settings.BOX_SIZE);
+                        }
+                    }
+                }
+
+                return canvas;
+            }
+
+            // qrcode.util.pattern_position の正確な再現
+            getPatternPosition(version) {
+                const positions = {
+                    1: [],
+                    2: [6, 18],
+                    3: [6, 22],
+                    4: [6, 26],
+                    5: [6, 30],
+                    6: [6, 34],
+                    7: [6, 22, 38],
+                    8: [6, 24, 42],
+                    9: [6, 26, 46],
+                    10: [6, 28, 50],
+                    11: [6, 30, 54],
+                    12: [6, 32, 58],
+                    13: [6, 34, 62],
+                    14: [6, 26, 46, 66],
+                    15: [6, 26, 48, 70],
+                    16: [6, 26, 50, 74],
+                    17: [6, 30, 54, 78],
+                    18: [6, 30, 56, 82],
+                    19: [6, 30, 58, 86],
+                    20: [6, 34, 62, 90],
+                    21: [6, 28, 50, 72, 94],
+                    22: [6, 26, 50, 74, 98],
+                    23: [6, 30, 54, 78, 102],
+                    24: [6, 28, 54, 80, 106],
+                    25: [6, 32, 58, 84, 110],
+                    26: [6, 30, 58, 86, 114],
+                    27: [6, 34, 62, 90, 118],
+                    28: [6, 26, 50, 74, 98, 122],
+                    29: [6, 30, 54, 78, 102, 126],
+                    30: [6, 26, 52, 78, 104, 130],
+                    31: [6, 30, 56, 82, 108, 134],
+                    32: [6, 34, 60, 86, 112, 138],
+                    33: [6, 30, 58, 86, 114, 142],
+                    34: [6, 34, 62, 90, 118, 146],
+                    35: [6, 30, 54, 78, 102, 126, 150],
+                    36: [6, 24, 50, 76, 102, 128, 154],
+                    37: [6, 28, 54, 80, 106, 132, 158],
+                    38: [6, 32, 58, 84, 110, 136, 162],
+                    39: [6, 26, 54, 82, 110, 138, 166],
+                    40: [6, 30, 58, 86, 114, 142, 170]
+                };
+
+                return positions[version] || [];
+            }
+        }
+
+        // 画像処理クラス - Single Responsibility Principle
+        class ImageProcessor {
+            constructor(settings) {
+                this.settings = settings;
+            }
+
+            // L73-L74: color_replace関数の実装
+            colorReplace(imageData, color) {
+                const data = imageData.data;
+                const [r, g, b, a] = color;
+
+                // L18-L26: ピクセル単位の色置換処理
+                for (let i = 0; i < data.length; i += 4) {
+                    // L23-L24: 完全な黒 (0,0,0,255) を検出して置換
+                    if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0 && data[i + 3] === 255) {
+                        data[i] = r;     // R
+                        data[i + 1] = g; // G
+                        data[i + 2] = b; // B
+                        data[i + 3] = a; // A
+                    } else {
+                        // L25-L26: 非黒ピクセルはアルファ値のみ調整
+                        data[i + 3] = a;
+                    }
+                }
+            }
+
+            async convertToRGBA(image) {
+                const canvas = document.createElement('canvas');
+                canvas.width = image.width;
+                canvas.height = image.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(image, 0, 0);
+                return canvas;
+            }
+
+            cloneImage(canvas) {
+                const newCanvas = document.createElement('canvas');
+                newCanvas.width = canvas.width;
+                newCanvas.height = canvas.height;
+                const ctx = newCanvas.getContext('2d');
+                ctx.drawImage(canvas, 0, 0);
+                return newCanvas;
+            }
+
+            // L84: 正方形切り抜き
+            cropToSquare(image, size) {
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(image, 0, 0, size, size, 0, 0, size, size);
+                return canvas;
+            }
+
+            // L85-L86: PIL ImageEnhance.Contrast の正確な実装
+            enhanceContrast(canvas, factor) {
+                const ctx = canvas.getContext('2d');
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    // PIL Contrast アルゴリズム: (pixel - 128) * factor + 128
+                    data[i] = Math.max(0, Math.min(255, (data[i] - 128) * factor + 128));       // R
+                    data[i + 1] = Math.max(0, Math.min(255, (data[i + 1] - 128) * factor + 128)); // G
+                    data[i + 2] = Math.max(0, Math.min(255, (data[i + 2] - 128) * factor + 128)); // B
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+            }
+
+            // L87-L88: PIL ImageEnhance.Brightness の正確な実装
+            enhanceBrightness(canvas, factor) {
+                const ctx = canvas.getContext('2d');
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    // PIL Brightness アルゴリズム: pixel * factor
+                    data[i] = Math.max(0, Math.min(255, data[i] * factor));       // R
+                    data[i + 1] = Math.max(0, Math.min(255, data[i + 1] * factor)); // G
+                    data[i + 2] = Math.max(0, Math.min(255, data[i + 2] * factor)); // B
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+            }
+
+            // L90-L91: convert('1') - 2値化処理
+            convertTo1Bit(canvas) {
+                const ctx = canvas.getContext('2d');
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+
+                // まずグレースケール化
+                for (let i = 0; i < data.length; i += 4) {
+                    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    const binary = gray > 128 ? 255 : 0; // 2値化
+                    data[i] = binary;     // R
+                    data[i + 1] = binary; // G
+                    data[i + 2] = binary; // B
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+            }
+
+            // L92-L93: convert('L') - グレースケール変換
+            convertToGrayscale(canvas) {
+                const ctx = canvas.getContext('2d');
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    data[i] = gray;     // R
+                    data[i + 1] = gray; // G
+                    data[i + 2] = gray; // B
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+            }
+
+            // L95: Image.NEAREST でのリサイズ
+            resizeImage(canvas, newWidth, newHeight, interpolation = 'NEAREST') {
+                const newCanvas = document.createElement('canvas');
+                newCanvas.width = newWidth;
+                newCanvas.height = newHeight;
+                const ctx = newCanvas.getContext('2d');
+
+                if (interpolation === 'NEAREST') {
+                    ctx.imageSmoothingEnabled = false;
+                }
+
+                ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
+                return newCanvas;
+            }
+
+            // L96: グレースケール化してからリサイズ
+            resizeImageGrayscale(canvas, newWidth, newHeight, interpolation = 'NEAREST') {
+                // まずグレースケール化
+                const grayCanvas = this.cloneImage(canvas);
+                this.convertToGrayscale(grayCanvas);
+
+                // リサイズ
+                return this.resizeImage(grayCanvas, newWidth, newHeight, interpolation);
+            }
+
+            // L97: 画像をグレースケールに変換（新しいキャンバスを返す）
+            convertImageToGrayscale(canvas) {
+                const grayCanvas = this.cloneImage(canvas);
+                this.convertToGrayscale(grayCanvas);
+                return grayCanvas;
+            }
+
+            getImageData(canvas) {
+                const ctx = canvas.getContext('2d');
+                return ctx.getImageData(0, 0, canvas.width, canvas.height);
+            }
+
+            putImageData(canvas, imageData) {
+                const ctx = canvas.getContext('2d');
+                ctx.putImageData(imageData, 0, 0);
+            }
+
+            getGrayscaleValue(data, index) {
+                // 配列境界チェック
+                if (index < 0 || index + 2 >= data.length) {
+                    return 0;
+                }
+                // ITU-R BT.709 standard for RGB to grayscale conversion
+                return Math.round(data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722);
+            }
+
+            convertToRGB(canvas) {
+                const rgbCanvas = document.createElement('canvas');
+                rgbCanvas.width = canvas.width;
+                rgbCanvas.height = canvas.height;
+                const ctx = rgbCanvas.getContext('2d');
+
+                // 白背景で塗りつぶしてからRGBA画像を描画
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, rgbCanvas.width, rgbCanvas.height);
+                ctx.drawImage(canvas, 0, 0);
+
+                return rgbCanvas;
+            }
+
+            // ユーティリティ関数
+            isDefaultBlack(rgba) {
+                return rgba[0] === 0 && rgba[1] === 0 && rgba[2] === 0 && rgba[3] === 255;
+            }
+
+            isDefaultTransparent(rgba) {
+                return rgba[0] === 0 && rgba[1] === 0 && rgba[2] === 0 && rgba[3] === 0;
+            }
+        }
+
+        // 透明化処理専門クラス - Single Responsibility Principle
+        class TransparencyProcessor {
+            constructor(settings) {
+                this.settings = settings;
+            }
+
+            // L99-L109: 透明化処理のコアアルゴリズム
+            applyTransparencyProcessing(imgFrame, imgFrameL, imgEnhL, imgSize) {
+                const frameCtx = imgFrame.getContext('2d');
+                const frameImageData = frameCtx.getImageData(0, 0, imgFrame.width, imgFrame.height);
+                const frameData = frameImageData.data;
+
+                const frameLCtx = imgFrameL.getContext('2d');
+                const frameLImageData = frameLCtx.getImageData(0, 0, imgFrameL.width, imgFrameL.height);
+
+                const enhLCtx = imgEnhL.getContext('2d');
+                const enhLImageData = enhLCtx.getImageData(0, 0, imgEnhL.width, imgEnhL.height);
+
+                const dataOffset = this.settings.QUIET_ZONE * this.settings.BOX_SIZE; // QUIET_ZONE * BOX_SIZE ピクセル
+
+                // L99-L100: データ領域の全ピクセルをループ
+                for (let x = 0; x < imgSize; x++) {
+                    for (let y = 0; y < imgSize; y++) {
+                        // L101-L104: ファインダーパターンの保護
+                        if (this.isInFinderPatternExact(x, y, imgSize)) {
+                            continue;
+                        }
+
+                        // L105: nxnモジュールの中心ピクセル判定 (n=BOX_SIZE)
+                        const boxCenter = this.settings.getBoxCenter();
+                        if (x % this.settings.BOX_SIZE === boxCenter && y % this.settings.BOX_SIZE === boxCenter) {
+                            // L106-L108: 輝度コントラスト判定
+                            const qrPixelX = x + dataOffset;
+                            const qrPixelY = y + dataOffset;
+
+                            // インデックス境界チェック
+                            if (qrPixelX >= imgFrameL.width || qrPixelY >= imgFrameL.height ||
+                                x >= imgEnhL.width || y >= imgEnhL.height) {
+                                continue;
+                            }
+
+                            const qrIndex = (qrPixelY * imgFrameL.width + qrPixelX) * 4;
+                            const bgIndex = (y * imgEnhL.width + x) * 4;
+
+                            const qrGray = this.getGrayscaleValue(frameLImageData.data, qrIndex);
+                            const bgGray = this.getGrayscaleValue(enhLImageData.data, bgIndex);
+
+                            // 元のPython判定ロジック完全再現
+                            const hasContrast = (qrGray > this.settings.BRIGHTNESS_THRESHOLD_LOW && bgGray < this.settings.BRIGHTNESS_THRESHOLD_HIGH) ||
+                                (qrGray < this.settings.BRIGHTNESS_THRESHOLD_HIGH && bgGray > this.settings.BRIGHTNESS_THRESHOLD_LOW);
+
+                            if (hasContrast) {
+                                continue; // コントラストが十分 → そのまま
+                            }
+                        }
+
+                        // L109: コントラスト不足 → 透明化
+                        const framePixelX = x + dataOffset;
+                        const framePixelY = y + dataOffset;
+
+                        // インデックス境界チェック
+                        if (framePixelX >= imgFrame.width || framePixelY >= imgFrame.height) {
+                            continue;
+                        }
+
+                        const framePixelIndex = (framePixelY * imgFrame.width + framePixelX) * 4;
+                        frameData[framePixelIndex + 3] = 0; // Alpha = 0
+                    }
+                }
+
+                frameCtx.putImageData(frameImageData, 0, 0);
+            }
+
+            // L101-L104: ファインダーパターンの正確な領域判定 (nxnモジュール対応)
+            isInFinderPatternExact(x, y, imgSize) {
+                const finderSize = 7 * this.settings.BOX_SIZE; // 7モジュール = 7n ピクセル
+                const separatorSize = 8 * this.settings.BOX_SIZE; // セパレータ含む8モジュール = 8n ピクセル
+
+                // 左上 (L101-L102の一部)
+                if (x < separatorSize && y < separatorSize) return true;
+
+                // 左下 (L101-L102の一部) 
+                if (x < separatorSize && y >= imgSize - separatorSize) return true;
+
+                // 右上 (L103-L104)
+                if (x >= imgSize - separatorSize && y < separatorSize) return true;
+
+                return false;
+            }
+
+            getGrayscaleValue(data, index) {
+                // 配列境界チェック
+                if (index < 0 || index + 2 >= data.length) {
+                    return 0;
+                }
+                // ITU-R BT.709 standard for RGB to grayscale conversion
+                return Math.round(data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722);
+            }
+        }
+
+        // アライメントパターン復元クラス - Single Responsibility Principle
+        class AlignmentPatternRestorer {
+            constructor(settings, qrGenerator) {
+                this.settings = settings;
+                this.qrGenerator = qrGenerator;
+            }
+
+            // L110-L122: アライメントパターンの復元
+            restore(imgFrame, imgQr2, version) {
+                // L110: pattern_position の取得
+                const pos = this.qrGenerator.getPatternPosition(version);
+                if (pos.length === 0) return;
+
+                const frameCtx = imgFrame.getContext('2d');
+
+                // L114-L115: 二重ループ
+                for (const i of pos) {
+                    for (const j of pos) {
+                        // L116-L118: ファインダーパターンとの重複を除外
+                        if ((i === 6 && j === pos[pos.length - 1]) ||
+                            (j === 6 && i === pos[pos.length - 1]) ||
+                            (i === 6 && j === 6)) {
+                            continue;
+                        }
+
+                        // L120: 矩形領域の計算 (nxnモジュール対応)
+                        const rect = {
+                            x: (i - 2) * this.settings.BOX_SIZE + this.settings.QUIET_ZONE * this.settings.BOX_SIZE,
+                            y: (j - 2) * this.settings.BOX_SIZE + this.settings.QUIET_ZONE * this.settings.BOX_SIZE,
+                            width: 5 * this.settings.BOX_SIZE,  // 5モジュール = 5n ピクセル
+                            height: 5 * this.settings.BOX_SIZE  // 5モジュール = 5n ピクセル
+                        };
+
+                        // L121-L122: 新品QRコードから切り抜いて貼り付け
+                        frameCtx.drawImage(
+                            imgQr2,
+                            rect.x, rect.y, rect.width, rect.height,
+                            rect.x, rect.y, rect.width, rect.height
+                        );
+                    }
+                }
+            }
+        }
+
+        // 最終合成クラス - Single Responsibility Principle
+        class ImageComposer {
+            constructor(settings, imageProcessor) {
+                this.settings = settings;
+                this.imageProcessor = imageProcessor;
+            }
+
+            // L124-L127: 最終合成
+            compose(imgFrame, imgEnhHighRes, imgSize) {
+                // L124: 10倍解像度の最終キャンバス作成
+                const finalSize = imgFrame.width * this.settings.HIGH_RES_SCALE;
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = finalSize;
+                finalCanvas.height = finalSize;
+                const ctx = finalCanvas.getContext('2d');
+
+                // 白背景
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, finalSize, finalSize);
+
+                // L125: 背景画像を中央に配置 (オフセット = QUIET_ZONE * BOX_SIZE * HIGH_RES_SCALE)
+                const bgOffset = this.settings.QUIET_ZONE * this.settings.BOX_SIZE * this.settings.HIGH_RES_SCALE;
+                ctx.drawImage(
+                    imgEnhHighRes,
+                    0, 0, imgEnhHighRes.width, imgEnhHighRes.height,
+                    bgOffset, bgOffset, imgEnhHighRes.width, imgEnhHighRes.height
+                );
+
+                // L126: QRコードを10倍にリサイズ
+                const imgFrameHighRes = this.imageProcessor.resizeImage(imgFrame, finalSize, finalSize, 'NEAREST');
+
+                // L127: QRコードを重ね合わせ（透明部分は背景が透ける）
+                ctx.drawImage(imgFrameHighRes, 0, 0);
+
+                // L128: RGBモードに変換（アルファチャンネルを削除）
+                return this.imageProcessor.convertToRGB(finalCanvas);
+            }
+
+            // L129-L130: ピクセル化処理（2段階リサイズ）
+            applyPixelateEffect(imgRes, qrSize, finalSize) {
+                // 段階1: 高解像度 → QRサイズ
+                const step1Canvas = this.imageProcessor.resizeImage(imgRes, qrSize, qrSize, 'NEAREST');
+
+                // 段階2: QRサイズ → 最終サイズ
+                const step2Canvas = this.imageProcessor.resizeImage(step1Canvas, finalSize, finalSize, 'NEAREST');
+
+                return step2Canvas;
+            }
+        }
+
+        // メインアプリケーションクラス - Dependency Inversion Principle
+        class CuteR {
+            constructor(boxSize = 3) {
+                try {
+                    console.log(`Creating CuteR with box size: ${boxSize}`);
+
+                    // 依存性の注入 - box_sizeを可変に
+                    this.settings = new CuteRSettings(boxSize);
+                    this.qrGenerator = new QRCodeGenerator(this.settings);
+                    this.imageProcessor = new ImageProcessor(this.settings);
+                    this.transparencyProcessor = new TransparencyProcessor(this.settings);
+                    this.alignmentRestorer = new AlignmentPatternRestorer(this.settings, this.qrGenerator);
+                    this.imageComposer = new ImageComposer(this.settings, this.imageProcessor);
+
+                    // 新機能: パターン除去
+                    this.errorCorrectionCalculator = new ErrorCorrectionCalculator();
+                    this.patternRemover = new PatternRemover(this.settings, this.errorCorrectionCalculator);
+
+                    this.backgroundImage = null;
+                    this.resultCanvas = null;
+
+                    // デバッグ情報の出力
+                    console.log(`CuteR initialized with BOX_SIZE: ${this.settings.BOX_SIZE}x${this.settings.BOX_SIZE}`);
+
+                    // イベントハンドラのセットアップ
+                    DOMManager.setupEventListeners(this);
+
+                    console.log('CuteR constructor completed successfully');
+
+                } catch (error) {
+                    console.error('Error in CuteR constructor:', error);
+                    throw error;
+                }
+            }
+
+            // box_size変更時のイベントハンドラ
+            onBoxSizeChange(newBoxSize) {
+                // 新しいbox_sizeで設定を更新
+                const validatedBoxSize = this.settings.validateBoxSize(newBoxSize);
+                if (validatedBoxSize !== newBoxSize) {
+                    // UIを更新された値に戻す
+                    const elements = DOMManager.getElements();
+                    elements.boxSize.value = validatedBoxSize;
+                }
+
+                // 設定クラスを再初期化
+                this.settings = new CuteRSettings(validatedBoxSize);
+
+                // 全ての依存クラスを再初期化
+                this.qrGenerator = new QRCodeGenerator(this.settings);
+                this.imageProcessor = new ImageProcessor(this.settings);
+                this.transparencyProcessor = new TransparencyProcessor(this.settings);
+                this.alignmentRestorer = new AlignmentPatternRestorer(this.settings, this.qrGenerator);
+                this.imageComposer = new ImageComposer(this.settings, this.imageProcessor);
+
+                // パターン除去クラスも再初期化
+                this.errorCorrectionCalculator = new ErrorCorrectionCalculator();
+                this.patternRemover = new PatternRemover(this.settings, this.errorCorrectionCalculator);
+
+                console.log(`Box Size updated to: ${this.settings.BOX_SIZE}x${this.settings.BOX_SIZE}`);
+
+                // 既に背景画像がある場合は、新しい設定で即座に再生成を促す
+                if (this.backgroundImage) {
+                    console.log('背景画像があります。新しいbox_sizeで再生成してください。');
+                }
+            }
+
+            // イベントハンドラ群 - Interface Segregation Principle
+            onImageInputChange(file) {
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        this.backgroundImage = img;
+                        console.log('画像が読み込まれました:', img.width, 'x', img.height);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            async onGenerateClick() {
+                const userSettings = this.settings.getUserSettings();
+                if (!userSettings.text.trim()) {
+                    alert('QRコードのテキストを入力してください');
+                    return;
+                }
+
+                DOMManager.setLoading(true);
+
+                try {
+                    console.log('QRコード生成開始');
+                    console.log('入力テキスト:', userSettings.text);
+
+                    // 背景画像がない場合は、デフォルトの背景を作成
+                    if (!this.backgroundImage) {
+                        console.log('背景画像がないため、デフォルト背景を作成します');
+                        this.backgroundImage = this.createDefaultBackground();
+                    }
+
+                    console.log('背景画像サイズ:', this.backgroundImage.width, 'x', this.backgroundImage.height);
+
+                    const result = await this.produceQRCode(userSettings);
+                    this.resultCanvas = result;
+                    DOMManager.displayResult(result);
+
+                    console.log('QRコード生成完了');
+                } catch (error) {
+                    console.error('QRコード生成エラー:', error);
+                    console.error('エラースタック:', error.stack);
+                    alert('QRコードの生成中にエラーが発生しました: ' + error.message);
+                } finally {
+                    DOMManager.setLoading(false);
+                }
+            }
+
+            // デフォルト背景画像を作成
+            createDefaultBackground() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 400;
+                canvas.height = 400;
+                const ctx = canvas.getContext('2d');
+
+                // グラデーション背景
+                const gradient = ctx.createLinearGradient(0, 0, 400, 400);
+                gradient.addColorStop(0, '#ff9a9e');
+                gradient.addColorStop(0.3, '#fecfef');
+                gradient.addColorStop(0.6, '#fecfef');
+                gradient.addColorStop(1, '#a8edea');
+
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 400, 400);
+
+                // 装飾的な円
+                for (let i = 0; i < 10; i++) {
+                    ctx.beginPath();
+                    const x = Math.random() * 400;
+                    const y = Math.random() * 400;
+                    const radius = Math.random() * 30 + 10;
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.3 + 0.1})`;
+                    ctx.fill();
+                }
+
+                // Canvasをそのまま返す（convertToRGBAで処理される）
+                return canvas;
+            }
+
+            onDownloadClick() {
+                DOMManager.downloadImage(this.resultCanvas);
+            }
+
+            // パターン除去情報の更新
+            updateRemovalInfo() {
+                const elements = DOMManager.getElements();
+                if (!elements.removalInfo || !elements.qrText || !elements.errorCorrection) return;
+
+                try {
+                    const text = elements.qrText.value.trim();
+                    if (!text) {
+                        elements.removalInfo.innerHTML = '<small>テキストを入力してください</small>';
+                        return;
+                    }
+
+                    // 一時的なQRコードを生成して情報を取得
+                    const errorCorrectionLevel = elements.errorCorrection.value;
+                    const qr = this.qrGenerator.create({ text, errorCorrection: errorCorrectionLevel });
+                    const correctionInfo = this.errorCorrectionCalculator.calculateRemovableModules(qr, errorCorrectionLevel);
+
+                    const removalRatio = elements.removalRatio ? parseFloat(elements.removalRatio.value) : 50;
+                    const actualRemoval = Math.floor(correctionInfo.removableModules * (removalRatio / 100));
+
+                    elements.removalInfo.innerHTML = `
+                <div class="removal-stats">
+                    <div><strong>QRコード情報:</strong></div>
+                    <div>・バージョン: ${qr.version}</div>
+                    <div>・全モジュール数: ${correctionInfo.totalModules}</div>
+                    <div>・データモジュール数: ${correctionInfo.dataModules}</div>
+                    <div>・削除可能上限: ${correctionInfo.removableModules} (${correctionInfo.capacity.toFixed(1)}%)</div>
+                    <div><strong>・実際の削除数: ${actualRemoval} ドット</strong></div>
+                </div>
+            `;
+                } catch (error) {
+                    elements.removalInfo.innerHTML = '<small style="color: #e74c3c;">エラー: QRコード情報を取得できませんでした</small>';
+                    console.error('Error updating removal info:', error);
+                }
+            }
+
+            async produceQRCode(userSettings) {
+                // L44-L50: produce関数のロジックを再現
+                // 単一フレーム処理（GIFの複数フレーム対応は後で実装）
+                return await this.produceImpl(userSettings);
+            }
+
+            // L53-L131: produce_impl関数の完全実装
+            async produceImpl(userSettings) {
+                // L69-L71: QRコード生成（box_size=3が重要）
+                const qr = this.qrGenerator.create(userSettings);
+                const imgQr = this.qrGenerator.makeImage(qr); // L72: make_image().convert('RGBA')
+
+                // L73-L74: カラフルモード時の色置換
+                if (userSettings.colorful && !this.imageProcessor.isDefaultBlack(userSettings.rgba)) {
+                    const qrImageData = this.imageProcessor.getImageData(imgQr);
+                    this.imageProcessor.colorReplace(qrImageData, userSettings.rgba);
+                    this.imageProcessor.putImageData(imgQr, qrImageData);
+                }
+
+                // L75: 背景画像をRGBAに変換
+                const imgImg = await this.imageProcessor.convertToRGBA(this.backgroundImage);
+
+                // L77-L82: 正方形切り抜きサイズの計算
+                const imgImgSize = Math.min(imgImg.width, imgImg.height);
+
+                // L78: データ領域サイズの計算（重要な式）- nxnモジュール対応
+                const imgSize = imgQr.width - (this.settings.QUIET_ZONE * this.settings.BOX_SIZE * 2); // QUIET_ZONE * BOX_SIZE * 2 ピクセル
+
+                // L84: 正方形切り抜き
+                const imgEnh = this.imageProcessor.cropToSquare(imgImg, imgImgSize);
+
+                // L85-L88: ImageEnhance相当の処理
+                this.imageProcessor.enhanceContrast(imgEnh, userSettings.contrast);
+                this.imageProcessor.enhanceBrightness(imgEnh, userSettings.brightness);
+
+                // L89-L93: モード別画像変換
+                if (!userSettings.colorful) {
+                    if (userSettings.pixelate) {
+                        this.imageProcessor.convertTo1Bit(imgEnh); // convert('1')
+                    } else {
+                        this.imageProcessor.convertToGrayscale(imgEnh); // convert('L')
+                    }
+                }
+
+                // L95: 高解像度背景画像の準備
+                const imgEnhHighRes = this.imageProcessor.resizeImage(imgEnh, imgSize * this.settings.HIGH_RES_SCALE, imgSize * this.settings.HIGH_RES_SCALE, 'NEAREST');
+
+                // L96: 輝度判定用の低解像度グレースケール画像
+                const imgEnhL = this.imageProcessor.resizeImageGrayscale(imgEnh, imgSize, imgSize, 'NEAREST');
+
+                // L97: QRコードのグレースケール版
+                const imgFrameL = this.imageProcessor.convertImageToGrayscale(imgQr);
+
+                // L94: 加工対象のQRコード
+                let imgFrame = this.imageProcessor.cloneImage(imgQr);
+
+                // L99-L109: 透明化処理のコアアルゴリズム
+                this.transparencyProcessor.applyTransparencyProcessing(imgFrame, imgFrameL, imgEnhL, imgSize);
+
+                // L110-L122: アライメントパターンの復元
+                const imgQr2 = this.qrGenerator.makeImage(qr); // L111: 新品QRコード生成
+                if (userSettings.colorful && !this.imageProcessor.isDefaultTransparent(userSettings.rgba)) {
+                    const qr2ImageData = this.imageProcessor.getImageData(imgQr2);
+                    this.imageProcessor.colorReplace(qr2ImageData, userSettings.rgba);
+                    this.imageProcessor.putImageData(imgQr2, qr2ImageData);
+                }
+                this.alignmentRestorer.restore(imgFrame, imgQr2, qr.version);
+
+                // 新機能: パターン除去処理
+                if (userSettings.patternRemoval && userSettings.removalRatio > 0) {
+                    const removedCount = this.patternRemover.removePatternsByRatio(
+                        imgFrame, qr, userSettings.errorCorrection, userSettings.removalRatio
+                    );
+                    console.log(`パターン除去完了: ${removedCount}個のドットを削除しました`);
+                }
+
+                // L124-L127: 最終合成
+                const imgRes = this.imageComposer.compose(imgFrame, imgEnhHighRes, imgSize);
+
+                // L129-L131: ピクセル化処理
+                if (userSettings.pixelate) {
+                    return this.imageComposer.applyPixelateEffect(imgRes, imgQr.width, imgImgSize);
+                }
+
+                return imgRes;
+            }
+        }
+
+        // アプリケーションの初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                console.log('DOM content loaded, initializing CuteR...');
+
+                // URLパラメータからbox_sizeを取得（例: ?boxSize=5）
+                const urlParams = new URLSearchParams(window.location.search);
+                let boxSize = urlParams.get('boxSize');
+
+                // URLパラメータがない場合、HTMLのselectから取得
+                if (!boxSize) {
+                    const boxSizeElement = document.getElementById('box-size');
+                    boxSize = boxSizeElement ? boxSizeElement.value : 3;
+                    console.log(`Box size from HTML select: ${boxSize}`);
+                } else {
+                    console.log(`Box size from URL parameter: ${boxSize}`);
+                }
+
+                const finalBoxSize = parseInt(boxSize) || 3;
+                console.log(`Initializing CuteR with BOX_SIZE: ${finalBoxSize}x${finalBoxSize}`);
+
+                const app = new CuteR(finalBoxSize);
+
+                // HTMLのselectをURLパラメータ値に同期
+                const boxSizeElement = document.getElementById('box-size');
+                if (boxSizeElement && urlParams.get('boxSize')) {
+                    boxSizeElement.value = app.settings.BOX_SIZE;
+                }
+
+                console.log('CuteR initialization completed successfully');
+
+            } catch (error) {
+                console.error('Error during CuteR initialization:', error);
+                alert('アプリケーションの初期化に失敗しました。ページを再読み込みしてください。');
+            }
+        });
+
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const dropZone = document.getElementById('image-drop-zone');
+            const fileInput = document.getElementById('image-input');
+            const fileInfo = document.getElementById('file-info');
+            const fileName = document.getElementById('file-name');
+            const filePreview = document.getElementById('file-preview');
+            const removeImageBtn = document.getElementById('remove-image-btn');
+
+            const handleFile = (file) => {
+                if (file && file.type.startsWith('image/')) {
+                    fileName.textContent = file.name.length > 30 ? `${file.name.substring(0, 27)}...` : file.name;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        filePreview.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+
+                    dropZone.classList.add('hidden');
+                    fileInfo.classList.remove('hidden');
+                    fileInfo.classList.add('flex');
+                }
+            };
+
+            if (dropZone) {
+                dropZone.addEventListener('click', () => fileInput.click());
+                dropZone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('border-sky-400', 'bg-sky-50');
+                });
+                dropZone.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-sky-400', 'bg-sky-50');
+                });
+                dropZone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-sky-400', 'bg-sky-50');
+                    if (e.dataTransfer.files.length) {
+                        fileInput.files = e.dataTransfer.files;
+                        handleFile(e.dataTransfer.files[0]);
+                        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            }
+
+            if (fileInput) {
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length) {
+                        handleFile(e.target.files[0]);
+                    }
+                });
+            }
+
+            if (removeImageBtn) {
+                removeImageBtn.addEventListener('click', () => {
+                    fileInput.value = '';
+                    fileInfo.classList.add('hidden');
+                    fileInfo.classList.remove('flex');
+                    dropZone.classList.remove('hidden');
+                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            }
+
+            document.querySelectorAll('.accordion-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const content = header.nextElementSibling;
+                    const icon = header.querySelector('i');
+                    content.classList.toggle('open');
+                    icon.classList.toggle('rotate-180');
+                });
+            });
+
+            const colorfulToggle = document.getElementById('colorful-mode');
+            const colorfulOptions = document.getElementById('color-options');
+            if (colorfulToggle && colorfulOptions) {
+                colorfulToggle.addEventListener('change', () => {
+                    colorfulOptions.style.display = colorfulToggle.checked ? 'block' : 'none';
+                });
+            }
+
+            const patternRemovalToggle = document.getElementById('pattern-removal-mode');
+            const patternRemovalOptions = document.getElementById('pattern-removal-options');
+            if (patternRemovalToggle && patternRemovalOptions) {
+                patternRemovalToggle.addEventListener('change', () => {
+                    patternRemovalOptions.style.display = patternRemovalToggle.checked ? 'block' : 'none';
+                });
+            }
+        });
+    </script>
+</body>
+
+</html>
