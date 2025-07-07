@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>和声進行ジェネレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Roboto+Mono:wght@400;600&display=swap');
+
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #111827;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: #E5E7EB;
+        }
+
+        .font-roboto-mono {
+            font-family: 'Roboto Mono', monospace;
+        }
+        
+        .card-container > div {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        .fade-out {
+            animation: fadeOut 0.3s ease-in forwards;
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-10px) scale(0.98);
+            }
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 180px;
+            background-color: #1F2937;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -90px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.8rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        select, .length-btn {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="min-h-screen flex flex-col items-center justify-center p-4">
+
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-white tracking-wider">
+                <i class="fa-solid fa-infinity text-indigo-400"></i>
+                Chord Progression Generator
+            </h1>
+            <p class="text-gray-400 mt-2 text-lg">音楽理論の禁則を回避した、自然な和声進行を生成します。</p>
+        </header>
+
+        <main class="bg-gray-800/50 backdrop-blur-sm p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-5xl border border-gray-700">
+            
+            <div id="controls" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="flex flex-col">
+                    <label for="key" class="text-sm font-medium text-gray-400 mb-2">キー (Key)</label>
+                    <div class="relative">
+                        <select id="key" class="w-full bg-gray-700 border border-gray-600 rounded-lg py-3 px-4 text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none transition duration-200">
+                            <option>C</option> <option>C# / D♭</option> <option>D</option>
+                            <option>D# / E♭</option> <option>E</option> <option>F</option>
+                            <option>F# / G♭</option> <option>G</option> <option>G# / A♭</option>
+                            <option>A</option> <option>A# / B♭</option> <option>B</option>
+                        </select>
+                        <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                    </div>
+                </div>
+
+                <div class="flex flex-col">
+                    <label class="text-sm font-medium text-gray-400 mb-2">モード (Mode)</label>
+                    <div class="relative">
+                        <select id="mode" class="w-full bg-gray-700 border border-gray-600 rounded-lg py-3 px-4 text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none transition duration-200">
+                            <option value="major">メジャー (Major)</option>
+                            <option value="minor">マイナー (Minor)</option>
+                        </select>
+                        <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                    </div>
+                </div>
+
+                <div class="flex flex-col">
+                    <label class="text-sm font-medium text-gray-400 mb-2">進行の長さ (Length)</label>
+                    <div id="length-selector" class="grid grid-cols-3 gap-2">
+                        <button class="length-btn bg-gray-700 py-3 rounded-lg text-white border border-gray-600 transition duration-200 hover:bg-gray-600" data-length="4">4</button>
+                        <button class="length-btn bg-indigo-600 py-3 rounded-lg text-white border border-indigo-500 transition duration-200 hover:bg-indigo-700" data-length="8">8</button>
+                        <button class="length-btn bg-gray-700 py-3 rounded-lg text-white border border-gray-600 transition duration-200 hover:bg-gray-600" data-length="16">16</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mb-8">
+                <button id="generate-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-8 rounded-lg text-xl shadow-lg transform hover:scale-105 transition-all duration-300 ease-in-out">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-3"></i>
+                    進行を生成
+                </button>
+            </div>
+
+            <div id="progression-display" class="bg-gray-900/70 p-4 min-h-[160px] rounded-xl border border-gray-700 flex items-center justify-center">
+                <div id="card-container" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-4 w-full">
+                </div>
+                <p id="placeholder-text" class="text-gray-500">上のボタンを押してコード進行を生成してください</p>
+            </div>
+            
+            <div id="legend" class="mt-6 flex justify-center items-center gap-6 text-sm text-gray-400 opacity-0 transition-opacity duration-500">
+                <div class="flex items-center gap-2 tooltip">
+                    <span class="w-3 h-3 rounded-full bg-blue-500"></span> トニック (T)
+                    <span class="tooltip-text">安定した響き。物語の始まりや終わり。</span>
+                </div>
+                <div class="flex items-center gap-2 tooltip">
+                    <span class="w-3 h-3 rounded-full bg-yellow-500"></span> サブドミナント (SD)
+                    <span class="tooltip-text">やや展開する響き。物語の発展。</span>
+                </div>
+                <div class="flex items-center gap-2 tooltip">
+                    <span class="w-3 h-3 rounded-full bg-red-500"></span> ドミナント (D)
+                    <span class="tooltip-text">緊張感のある響き。クライマックス。</span>
+                </div>
+            </div>
+
+        </main>
+        
+        <footer class="text-center mt-8 text-gray-500 text-sm">
+            <p>© 2024 Harmonic Progression Generator. All Rights Reserved.</p>
+            <p class="mt-1">このジェネレーターは一般的な機能和声のルール (例: V→IVの禁止) に基づいています。</p>
+        </footer>
+
+    </div>
+
+    <script>
+        const keySelect = document.getElementById('key');
+        const modeSelect = document.getElementById('mode');
+        const lengthSelector = document.getElementById('length-selector');
+        const generateBtn = document.getElementById('generate-btn');
+        const cardContainer = document.getElementById('card-container');
+        const placeholderText = document.getElementById('placeholder-text');
+        const legend = document.getElementById('legend');
+        
+        let progressionLength = 8;
+
+        const chordData = {
+            major: {
+                chords: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
+                functions: { 'I': 'T', 'ii': 'SD', 'iii': 'T', 'IV': 'SD', 'V': 'D', 'vi': 'T', 'vii°': 'D' },
+                transitions: {
+                    'I':    ['ii', 'iii', 'IV', 'V', 'vi'],
+                    'ii':   ['V', 'vii°'],
+                    'iii':  ['IV', 'vi'],
+                    'IV':   ['I', 'ii', 'V', 'vii°'],
+                    'V':    ['I', 'vi'],
+                    'vi':   ['ii', 'IV'],
+                    'vii°': ['I']
+                }
+            },
+            minor: {
+                chords: ['i', 'ii°', 'III', 'iv', 'V', 'VI', 'vii°'],
+                functions: { 'i': 'T', 'ii°': 'SD', 'III': 'T', 'iv': 'SD', 'V': 'D', 'VI': 'SD', 'vii°': 'D' },
+                transitions: {
+                    'i':    ['ii°', 'III', 'iv', 'V', 'VI', 'vii°'],
+                    'ii°':  ['V', 'vii°'],
+                    'III':  ['VI', 'iv'],
+                    'iv':   ['V', 'vii°', 'i'],
+                    'V':    ['i', 'VI'],
+                    'VI':   ['ii°', 'iv'],
+                    'vii°': ['i']
+                }
+            }
+        };
+
+        const functionColors = {
+            'T': 'border-blue-500',
+            'SD': 'border-yellow-500',
+            'D': 'border-red-500'
+        };
+
+        function getRandomElement(arr) {
+            if (!arr || arr.length === 0) return null;
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        function generateProgression() {
+            const mode = modeSelect.value;
+            const data = chordData[mode];
+            const progression = [mode === 'major' ? 'I' : 'i'];
+
+            while (progression.length < progressionLength) {
+                const lastChord = progression[progression.length - 1];
+                let possibleNextChords = data.transitions[lastChord];
+                
+                if (progression.length === progressionLength - 2) {
+                    possibleNextChords = possibleNextChords.filter(c => data.functions[c] === 'D');
+                    if (possibleNextChords.length === 0) {
+                         possibleNextChords = ['V'];
+                    }
+                }
+                
+                if (progression.length === progressionLength - 1) {
+                    if (data.functions[lastChord] === 'D') {
+                        possibleNextChords = data.transitions[lastChord];
+                    } else {
+                        possibleNextChords = [mode === 'major' ? 'I' : 'i'];
+                    }
+                }
+
+                let nextChord = getRandomElement(possibleNextChords);
+
+                if (!nextChord) {
+                     nextChord = (lastChord === 'V') ? (mode === 'major' ? 'I' : 'i') : getRandomElement(data.chords.filter(c => c !== lastChord));
+                }
+
+                progression.push(nextChord);
+            }
+            
+            if (data.functions[progression[progression.length - 1]] !== 'T') {
+                const lastChord = progression[progression.length - 2];
+                if (data.functions[lastChord] === 'D') {
+                     progression[progression.length - 1] = getRandomElement(data.transitions[lastChord]);
+                } else {
+                     progression[progression.length - 1] = mode === 'major' ? 'I' : 'i';
+                }
+            }
+
+
+            return progression;
+        }
+
+        function renderProgression(progression) {
+            placeholderText.style.display = 'none';
+            legend.classList.remove('opacity-0');
+            
+            const existingCards = Array.from(cardContainer.children);
+            existingCards.forEach((card, index) => {
+                card.classList.add('fade-out');
+                card.addEventListener('animationend', () => card.remove(), { once: true });
+            });
+            
+            const renderNewCards = () => {
+                cardContainer.innerHTML = '';
+                progression.forEach((chord, index) => {
+                    const mode = modeSelect.value;
+                    const functionType = chordData[mode].functions[chord];
+                    const colorClass = functionColors[functionType] || 'border-gray-500';
+
+                    const card = document.createElement('div');
+                    card.className = `flex flex-col items-center justify-center bg-gray-800 rounded-lg p-4 h-28 shadow-lg border-b-4 ${colorClass} transition-all duration-300 transform hover:-translate-y-1`;
+                    card.style.animationDelay = `${index * 50}ms`;
+
+                    const chordText = document.createElement('span');
+                    chordText.className = 'font-roboto-mono text-3xl md:text-4xl font-semibold text-white';
+                    chordText.textContent = chord;
+
+                    const functionText = document.createElement('span');
+                    functionText.className = 'text-sm font-medium text-gray-400 mt-1';
+                    functionText.textContent = functionType;
+
+                    card.appendChild(chordText);
+                    card.appendChild(functionText);
+                    cardContainer.appendChild(card);
+                });
+            };
+
+            if (existingCards.length > 0) {
+                setTimeout(renderNewCards, 300);
+            } else {
+                renderNewCards();
+            }
+        }
+
+        generateBtn.addEventListener('click', () => {
+            const progression = generateProgression();
+            renderProgression(progression);
+        });
+
+        lengthSelector.addEventListener('click', (e) => {
+            if (e.target.matches('.length-btn')) {
+                progressionLength = parseInt(e.target.dataset.length, 10);
+
+                lengthSelector.querySelectorAll('.length-btn').forEach(btn => {
+                    btn.classList.remove('bg-indigo-600', 'border-indigo-500', 'hover:bg-indigo-700');
+                    btn.classList.add('bg-gray-700', 'border-gray-600', 'hover:bg-gray-600');
+                });
+                
+                e.target.classList.add('bg-indigo-600', 'border-indigo-500', 'hover:bg-indigo-700');
+                e.target.classList.remove('bg-gray-700', 'border-gray-600', 'hover:bg-gray-600');
+            }
+        });
+        
+    </script>
+</body>
+</html>
