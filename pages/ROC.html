@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<title>ROC演習ジェネレータ</title>
+	<meta name="description"
+		content="ROC曲線とAUC（曲線下面積）をインタラクティブに学習・演習するためのジェネレータ。ランダムなデータセットを生成し、手計算の検証や概念の理解を深めることができます。">
+	<meta name="page:icon" content="fas fa-chart-line">
+	<meta name="page:color" content="#38bdf8">
+
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+
+	<style>
+		@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+		body {
+			font-family: 'Noto Sans JP', sans-serif;
+			background-color: #f8fafc;
+			/* Tailwind's gray-50 */
+		}
+
+		.main-container {
+			max-width: 1400px;
+			margin: auto;
+			padding: 2rem;
+		}
+
+		.card {
+			background-color: white;
+			border-radius: 0.75rem;
+			border: 1px solid #e5e7eb;
+			box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+			transition: all 0.3s ease-in-out;
+		}
+
+		.card-header {
+			border-bottom: 1px solid #e5e7eb;
+			/* gray-200 */
+			padding: 1rem 1.5rem;
+		}
+
+		.card-content {
+			padding: 1.5rem;
+		}
+
+		.results-section {
+			opacity: 0;
+			transform: translateY(20px);
+			transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+			max-height: 0;
+			overflow: hidden;
+		}
+
+		.results-section.visible {
+			opacity: 1;
+			transform: translateY(0);
+			max-height: 2000px;
+			transition: opacity 0.5s ease-out, transform 0.5s ease-out, max-height 0.8s ease-in-out;
+		}
+
+		#roc-canvas {
+			border: 1px solid #e5e7eb;
+			border-radius: 0.5rem;
+			background-image:
+				linear-gradient(to right, #f1f5f9 1px, transparent 1px),
+				linear-gradient(to bottom, #f1f5f9 1px, transparent 1px);
+			background-size: 20px 20px;
+		}
+
+		.tooltip {
+			position: absolute;
+			background: rgba(0, 0, 0, 0.85);
+			color: white;
+			padding: 6px 12px;
+			border-radius: 6px;
+			font-size: 0.8rem;
+			pointer-events: none;
+			opacity: 0;
+			transition: opacity 0.2s;
+			white-space: pre;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+			z-index: 10;
+		}
+
+		input[type="number"] {
+			-moz-appearance: textfield;
+		}
+
+		input[type="number"]::-webkit-inner-spin-button,
+		input[type="number"]::-webkit-outer-spin-button {
+			-webkit-appearance: none;
+			margin: 0;
+		}
+	</style>
+</head>
+
+<body class="antialiased text-gray-800">
+
+	<div class="main-container">
+		<header class="text-center mb-10">
+			<h1 class="text-4xl font-bold text-gray-900">ROC演習ジェネレータ</h1>
+			<p class="mt-2 text-lg text-gray-600">ROC曲線とAUCの計算演習用データを生成し、インタラクティブに解を確認します。</p>
+		</header>
+
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+
+			<div class="flex flex-col gap-8">
+				<div class="card">
+					<div class="card-header">
+						<h2 class="text-xl font-bold text-gray-800 flex items-center">
+							<i class="fas fa-cogs text-sky-500 mr-3"></i>
+							ジェネレータ設定
+						</h2>
+					</div>
+					<div class="card-content">
+						<div class="flex flex-col sm:flex-row items-center gap-4">
+							<div class="w-full sm:w-1/3">
+								<label for="data-count"
+									class="block text-sm font-medium text-gray-700 mb-1">データ数</label>
+								<input type="number" id="data-count" value="8" min="4" max="30"
+									class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-sky-500 focus:border-sky-500">
+							</div>
+							<div class="w-full sm:w-2/3 pt-0 sm:pt-6">
+								<button id="generate-button"
+									class="w-full bg-gray-700 hover:bg-gray-800 text-white font-bold py-2.5 px-4 rounded-lg transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center">
+									<i class="fas fa-sync-alt mr-2"></i> 新しいデータを生成
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="card">
+					<div class="card-header flex justify-between items-center">
+						<h2 class="text-xl font-bold text-gray-800 flex items-center">
+							<i class="fas fa-table text-sky-500 mr-3"></i>
+							評価用データ
+						</h2>
+						<button id="solve-button"
+							class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center text-sm disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none">
+							<i class="fas fa-calculator mr-2"></i> 解を計算
+						</button>
+					</div>
+					<div class="card-content">
+						<div class="overflow-x-auto">
+							<table class="w-full text-left">
+								<thead class="bg-gray-50 border-b-2 border-gray-200">
+									<tr>
+										<th class="p-3 text-sm font-semibold tracking-wide">Index</th>
+										<th class="p-3 text-sm font-semibold tracking-wide">Prediction score</th>
+										<th class="p-3 text-sm font-semibold tracking-wide">True label</th>
+									</tr>
+								</thead>
+								<tbody id="data-table-body" class="divide-y divide-gray-100">
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="flex flex-col gap-8">
+				<div id="results-container" class="results-section">
+					<div class="card">
+						<div class="card-header">
+							<h2 class="text-xl font-bold text-gray-800 flex items-center">
+								<i class="fas fa-chart-area text-sky-500 mr-3"></i>
+								ROC 曲線
+							</h2>
+						</div>
+						<div class="card-content relative">
+							<canvas id="roc-canvas" width="500" height="500"></canvas>
+							<div id="canvas-tooltip" class="tooltip"></div>
+						</div>
+					</div>
+				</div>
+
+				<div id="auc-container" class="results-section">
+					<div class="card">
+						<div class="card-header">
+							<h2 class="text-xl font-bold text-gray-800 flex items-center">
+								<i class="fas fa-ruler-combined text-sky-500 mr-3"></i>
+								AUC (曲線下面積)
+							</h2>
+						</div>
+						<div class="card-content text-center">
+							<p class="text-gray-600 text-lg">計算されたAUC値:</p>
+							<p id="auc-value" class="text-5xl font-bold text-sky-600 my-4"></p>
+						</div>
+					</div>
+				</div>
+
+				<div id="steps-container" class="results-section">
+					<div class="card">
+						<div class="card-header">
+							<h2 class="text-xl font-bold text-gray-800 flex items-center">
+								<i class="fas fa-shoe-prints text-sky-500 mr-3"></i>
+								計算ステップ
+							</h2>
+						</div>
+						<div class="card-content">
+							<div class="overflow-x-auto max-h-96">
+								<table class="w-full text-sm text-left">
+									<thead class="bg-gray-50 sticky top-0">
+										<tr>
+											<th class="p-2">Score</th>
+											<th class="p-2">Label</th>
+											<th class="p-2">TP</th>
+											<th class="p-2">FP</th>
+											<th class="p-2">TPR</th>
+											<th class="p-2">FPR</th>
+										</tr>
+									</thead>
+									<tbody id="steps-table-body" class="divide-y divide-gray-100">
+									</tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		document.addEventListener('DOMContentLoaded',() => {
+			let currentData = [];
+
+			const dataCountInput = document.getElementById('data-count');
+			const generateButton = document.getElementById('generate-button');
+			const solveButton = document.getElementById('solve-button');
+			const dataTableBody = document.getElementById('data-table-body');
+			const stepsTableBody = document.getElementById('steps-table-body');
+
+			const resultsContainer = document.getElementById('results-container');
+			const aucContainer = document.getElementById('auc-container');
+			const stepsContainer = document.getElementById('steps-container');
+			const aucValueEl = document.getElementById('auc-value');
+
+			const generateNewData = () => {
+				const count = parseInt(dataCountInput.value,10);
+				if(isNaN(count) || count < 4 || count > 30) {
+					alert("データ数は4から30の間で指定してください。");
+					return;
+				}
+
+				const data = [];
+				let positiveCount = 0;
+				let negativeCount = 0;
+
+				for(let i = 0;i < count;i++) {
+					const score = Math.round((Math.random() * 20 - 10) * 2) / 2; // -10 to 10, in 0.5 steps
+					let label = Math.random() > 0.5 ? 1 : -1;
+					data.push({index: i + 1,score,label});
+					if(label === 1) positiveCount++;
+					else negativeCount++;
+				}
+
+				if(positiveCount === 0) data[0].label = 1;
+				if(negativeCount === 0) data[1].label = -1;
+
+				currentData = data;
+				renderDataTable(currentData);
+				resetUI();
+			};
+
+			const renderDataTable = (data) => {
+				dataTableBody.innerHTML = '';
+				data.forEach(item => {
+					const row = document.createElement('tr');
+					row.className = 'hover:bg-gray-50 transition-colors duration-200';
+					row.innerHTML = `
+                <td class="p-3 text-sm text-gray-700">${item.index}</td>
+                <td class="p-3 text-sm text-gray-700">${item.score.toFixed(1)}</td>
+                <td class="p-3 text-sm font-medium ${item.label === 1 ? 'text-green-600' : 'text-red-600'}">${item.label === 1 ? '+1' : '−1'}</td>
+            `;
+					dataTableBody.appendChild(row);
+				});
+			};
+
+			const resetUI = () => {
+				resultsContainer.classList.remove('visible');
+				aucContainer.classList.remove('visible');
+				stepsContainer.classList.remove('visible');
+
+				solveButton.disabled = false;
+				solveButton.innerHTML = `<i class="fas fa-calculator mr-2"></i> 解を計算`;
+				solveButton.classList.remove('bg-green-500','cursor-not-allowed');
+				solveButton.classList.add('bg-sky-500','hover:bg-sky-600');
+
+				aucValueEl.textContent = '';
+				stepsTableBody.innerHTML = '';
+				clearCanvas();
+			};
+
+			const clearCanvas = () => {
+				const canvas = document.getElementById('roc-canvas');
+				const ctx = canvas.getContext('2d');
+				const dpr = window.devicePixelRatio || 1;
+				ctx.clearRect(0,0,canvas.width / dpr,canvas.height / dpr);
+			};
+
+			const handleSolve = () => {
+				if(currentData.length === 0) return;
+
+				const sortedData = [...currentData].sort((a,b) => {
+					if(b.score === a.score) return a.label - b.label; // Consistent sort for ties
+					return b.score - a.score;
+				});
+
+				const P = currentData.filter(d => d.label === 1).length;
+				const N = currentData.filter(d => d.label === -1).length;
+
+				if(P === 0 || N === 0) {
+					alert("ROC曲線を計算するには、正例と負例の両方が必要です。新しいデータを生成してください。");
+					return;
+				}
+
+				let tp = 0;
+				let fp = 0;
+				const rocPoints = [{tpr: 0,fpr: 0,score: Infinity}];
+				const calculationSteps = [{score: "Thresh > max",label: "-",tp: 0,fp: 0,tpr: "0.00",fpr: "0.00"}];
+
+				for(let i = 0;i < sortedData.length;i++) {
+					const point = sortedData[i];
+					if(point.label === 1) {
+						tp++;
+					} else {
+						fp++;
+					}
+
+					if(i < sortedData.length - 1 && sortedData[i + 1].score === point.score) {
+						continue;
+					}
+
+					const tpr = P > 0 ? tp / P : 0;
+					const fpr = N > 0 ? fp / N : 0;
+					rocPoints.push({tpr,fpr,score: point.score});
+					calculationSteps.push({score: point.score.toFixed(1),label: point.label > 0 ? '+1' : '−1',tp,fp,tpr: tpr.toFixed(2),fpr: fpr.toFixed(2)});
+				}
+
+				displayCalculationSteps(calculationSteps);
+				const auc = calculateAUC(rocPoints);
+				displayResults(auc);
+				drawRocCurve(rocPoints);
+
+				solveButton.innerHTML = `<i class="fas fa-check-circle mr-2"></i> 計算完了`;
+				solveButton.disabled = true;
+				solveButton.classList.remove('hover:bg-sky-600');
+				solveButton.classList.add('bg-green-500','cursor-not-allowed');
+			};
+
+			function displayCalculationSteps(steps) {
+				stepsTableBody.innerHTML = '';
+				steps.forEach(step => {
+					const row = document.createElement('tr');
+					row.innerHTML = `
+                <td class="p-2">${step.score}</td>
+                <td class="p-2 font-medium ${step.label === '+1' ? 'text-green-600' : step.label === '−1' ? 'text-red-600' : ''}">${step.label}</td>
+                <td class="p-2">${step.tp}</td>
+                <td class="p-2">${step.fp}</td>
+                <td class="p-2">${step.tpr}</td>
+                <td class="p-2">${step.fpr}</td>
+            `;
+					stepsTableBody.appendChild(row);
+				});
+			}
+
+			function calculateAUC(points) {
+				let area = 0;
+				for(let i = 1;i < points.length;i++) {
+					const p1 = points[i - 1];
+					const p2 = points[i];
+					const width = p2.fpr - p1.fpr;
+					if(width > 0) {
+						const height = (p1.tpr + p2.tpr) / 2;
+						area += width * height;
+					}
+				}
+				return area;
+			}
+
+			function displayResults(auc) {
+				aucValueEl.textContent = auc.toFixed(4);
+				setTimeout(() => resultsContainer.classList.add('visible'),0);
+				setTimeout(() => aucContainer.classList.add('visible'),200);
+				setTimeout(() => stepsContainer.classList.add('visible'),400);
+			}
+
+			function drawRocCurve(rocPoints) {
+				const canvas = document.getElementById('roc-canvas');
+				const tooltip = document.getElementById('canvas-tooltip');
+				const ctx = canvas.getContext('2d');
+
+				const dpr = window.devicePixelRatio || 1;
+				const rect = canvas.getBoundingClientRect();
+				canvas.width = rect.width * dpr;
+				canvas.height = rect.height * dpr;
+				ctx.scale(dpr,dpr);
+
+				const width = canvas.clientWidth;
+				const height = canvas.clientHeight;
+				const padding = 50;
+
+				const toCanvasX = (fpr) => padding + fpr * (width - padding * 2);
+				const toCanvasY = (tpr) => (height - padding) - tpr * (height - padding * 2);
+
+				ctx.clearRect(0,0,width,height);
+				ctx.font = '12px "Noto Sans JP", sans-serif';
+				ctx.fillStyle = '#6b7280';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+
+				ctx.fillText('FPR (False Positive Rate)',width / 2,height - 15);
+				ctx.save();
+				ctx.translate(20,height / 2);
+				ctx.rotate(-Math.PI / 2);
+				ctx.fillText('TPR (True Positive Rate)',0,0);
+				ctx.restore();
+
+				for(let i = 0;i <= 5;i++) {
+					const val = i * 0.2;
+					const y = toCanvasY(val);
+					ctx.fillText(val.toFixed(1),padding - 20,y);
+					const x = toCanvasX(val);
+					ctx.fillText(val.toFixed(1),x,height - padding + 20);
+				}
+
+				ctx.strokeStyle = '#9ca3af';
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(padding,padding);
+				ctx.lineTo(padding,height - padding);
+				ctx.lineTo(width - padding,height - padding);
+				ctx.stroke();
+
+				ctx.beginPath();
+				ctx.setLineDash([4,4]);
+				ctx.moveTo(toCanvasX(0),toCanvasY(0));
+				ctx.lineTo(toCanvasX(1),toCanvasY(1));
+				ctx.strokeStyle = '#fb923c';
+				ctx.lineWidth = 1.5;
+				ctx.stroke();
+				ctx.setLineDash([]);
+
+				ctx.beginPath();
+				ctx.moveTo(toCanvasX(rocPoints[0].fpr),toCanvasY(rocPoints[0].tpr));
+				for(let i = 1;i < rocPoints.length;i++) {
+					ctx.lineTo(toCanvasX(rocPoints[i].fpr),toCanvasY(rocPoints[i].tpr));
+				}
+
+				ctx.lineTo(toCanvasX(1),toCanvasY(0));
+				ctx.closePath();
+				ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+				ctx.fill();
+
+				ctx.beginPath();
+				ctx.moveTo(toCanvasX(rocPoints[0].fpr),toCanvasY(rocPoints[0].tpr));
+				for(let i = 1;i < rocPoints.length;i++) {
+					ctx.lineTo(toCanvasX(rocPoints[i].fpr),toCanvasY(rocPoints[i].tpr));
+				}
+				ctx.strokeStyle = '#0284c7';
+				ctx.lineWidth = 3;
+				ctx.lineJoin = 'round';
+				ctx.lineCap = 'round';
+				ctx.stroke();
+
+				const canvasPoints = rocPoints.map(p => ({
+					...p,
+					cx: toCanvasX(p.fpr),
+					cy: toCanvasY(p.tpr),
+				}));
+
+				canvasPoints.forEach(p => {
+					ctx.beginPath();
+					ctx.arc(p.cx,p.cy,5,0,2 * Math.PI);
+					ctx.fillStyle = '#fff';
+					ctx.fill();
+					ctx.strokeStyle = '#0ea5e9';
+					ctx.lineWidth = 2;
+					ctx.stroke();
+				});
+
+				canvas.addEventListener('mousemove',(e) => {
+					const mouseX = e.offsetX;
+					const mouseY = e.offsetY;
+					let foundPoint = null;
+
+					for(const p of canvasPoints) {
+						if(Math.sqrt((mouseX - p.cx) ** 2 + (mouseY - p.cy) ** 2) < 8) {
+							foundPoint = p;
+							break;
+						}
+					}
+
+					if(foundPoint) {
+						tooltip.style.opacity = '1';
+						tooltip.style.left = `${e.pageX + 10}px`;
+						tooltip.style.top = `${e.pageY - tooltip.offsetHeight - 10}px`;
+						tooltip.innerHTML = `Threshold ≤ ${foundPoint.score === Infinity ? 'max' : foundPoint.score.toFixed(1)}\nTPR: ${foundPoint.tpr.toFixed(2)}\nFPR: ${foundPoint.fpr.toFixed(2)}`;
+					} else {
+						tooltip.style.opacity = '0';
+					}
+				});
+
+				canvas.addEventListener('mouseleave',() => {
+					tooltip.style.opacity = '0';
+				});
+			}
+
+			generateButton.addEventListener('click',generateNewData);
+			solveButton.addEventListener('click',handleSolve);
+
+			generateNewData();
+		});
+	</script>
+
+</body>
+
+</html>

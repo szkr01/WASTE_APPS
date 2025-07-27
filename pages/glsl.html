@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Nebula Voyager</title>
+	<meta name="description"
+		content="An interactive 3D scene rendering a volumetric fractal nebula. Built with three.js, allowing users to navigate the space.">
+	<meta name="page:icon" content="fas fa-rocket">
+	<meta name="page:color" content="#ffffff">
+
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+	<style>
+		body {
+			margin: 0;
+			overflow: hidden;
+			background-color: #000;
+			font-family: 'Inter', sans-serif;
+		}
+
+		canvas {
+			display: block;
+		}
+
+		#ui-container {
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+			-webkit-font-smoothing: antialiased;
+			-moz-osx-font-smoothing: grayscale;
+		}
+	</style>
+</head>
+
+<body class="bg-gray-50">
+
+	<div id="webgl-container"></div>
+
+	<div id="ui-container"
+		class="absolute top-4 left-4 md:top-6 md:left-6 max-w-sm p-5 bg-white/80 backdrop-blur-md rounded-2xl shadow-lg border border-gray-200/50 transition-all duration-500 ease-in-out">
+		<div class="flex items-center gap-4">
+			<div
+				class="flex-shrink-0 w-12 h-12 bg-gray-800 text-white rounded-full flex items-center justify-center text-xl">
+				<i class="fas fa-rocket"></i>
+			</div>
+			<div>
+				<h1 class="text-xl font-bold text-gray-900">Nebula Voyager</h1>
+				<p class="text-sm text-gray-600">A Volumetric Fractal Explorer</p>
+			</div>
+		</div>
+		<p class="mt-4 text-sm text-gray-700">
+			This is a real-time rendering of a procedural nebula, generated with a raymarching algorithm. You are inside
+			a vast cosmic cloud.
+		</p>
+		<p class="mt-3 text-xs text-gray-500 bg-gray-100/70 p-2 rounded-lg">
+			<strong>Controls:</strong> Click and drag to look around. Scroll to zoom in and out.
+		</p>
+	</div>
+
+	<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+	<script type="module">
+		import * as THREE from 'three';
+		import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+		let scene,camera,renderer,clock,material;
+		let controls;
+
+		const vertexShader = `
+            varying vec3 vWorldPosition;
+            void main() {
+                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                vWorldPosition = worldPosition.xyz;
+                gl_Position = projectionMatrix * viewMatrix * worldPosition;
+            }
+        `;
+
+		const fragmentShader = `
+            uniform float iTime;
+            varying vec3 vWorldPosition;
+            
+            vec3 tanh_vec3(vec3 x) {
+                vec3 ex = exp(x);
+                vec3 emx = exp(-x);
+                return (ex - emx) / (ex + emx);
+            }
+
+            void main() {
+                vec3 rayOrigin = cameraPosition;
+                vec3 rayDirection = normalize(vWorldPosition - rayOrigin);
+
+                vec3 color_accumulator = vec3(0.0);
+                float z = 0.0;
+                
+                for(int i = 0; i < 100; i++) {
+                    vec3 p = rayOrigin + rayDirection * z;
+                    
+                    vec3 p_transformed = p;
+                    p_transformed.y -= 7.0;
+                    vec3 P = vec3(atan(p_transformed.y, p_transformed.x) * 3.0, p_transformed.z * 0.3, length(p_transformed.xy) - 11.0);
+
+                    for(int j = 1; j < 9; j++) {
+                        float fj = float(j);
+                        P += sin(P.yzx * fj + 0.1 * z - iTime) / fj;
+                    }
+                    
+                    float dist = length(vec4(P.z * 5.0, cos(P) - 1.0)) / 20.0;
+                    
+                    if (dist < 0.001) {
+                       break;
+                    }
+                    
+                    vec3 pattern = 1.2 - sin(iTime + z / vec3(8.0, 7.0, 6.0));
+                    color_accumulator += pattern / dist;
+
+                    z += dist;
+
+                    if (z > 100.0) {
+                        break;
+                    }
+                }
+                
+                vec3 final_color = tanh_vec3(color_accumulator / 1000.0);
+                final_color = clamp(final_color * 1.5, 0.0, 1.0);
+
+                gl_FragColor = vec4(final_color, 1.0);
+            }
+        `;
+
+		function init() {
+			const container = document.getElementById('webgl-container');
+
+			scene = new THREE.Scene();
+			clock = new THREE.Clock();
+
+			camera = new THREE.PerspectiveCamera(75,window.innerWidth / window.innerHeight,0.1,1000);
+			camera.position.z = 5;
+
+			renderer = new THREE.WebGLRenderer({antialias: true});
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth,window.innerHeight);
+			container.appendChild(renderer.domElement);
+
+			material = new THREE.ShaderMaterial({
+				uniforms: {
+					iTime: {value: 0},
+					cameraPosition: {value: camera.position}
+				},
+				vertexShader,
+				fragmentShader,
+				side: THREE.BackSide,
+				depthWrite: false
+			});
+
+			const geometry = new THREE.SphereGeometry(25,64,64);
+			const mesh = new THREE.Mesh(geometry,material);
+			scene.add(mesh);
+
+			controls = new OrbitControls(camera,renderer.domElement);
+			controls.enableDamping = true;
+			controls.dampingFactor = 0.05;
+			controls.screenSpacePanning = false;
+			controls.minDistance = 1;
+			controls.maxDistance = 20;
+			controls.autoRotate = true;
+			controls.autoRotateSpeed = 0.2;
+
+			window.addEventListener('resize',onWindowResize,false);
+		}
+
+		function onWindowResize() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth,window.innerHeight);
+		}
+
+		function animate() {
+			requestAnimationFrame(animate);
+
+			const elapsedTime = clock.getElapsedTime();
+			material.uniforms.iTime.value = elapsedTime;
+
+			controls.update();
+
+			renderer.render(scene,camera);
+		}
+
+		init();
+		animate();
+	</script>
+</body>
+
+</html>
