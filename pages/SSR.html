@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>LyricFlow | Self Sufficiency</title>
+    <meta name="description" content="An immersive, animated lyrics viewer experience exploring the topic of food self-sufficiency, built with HTML, CSS, and JavaScript.">
+    <meta name="page:icon" content="fas fa-leaf">
+    <meta name="page:color" content="#34d399">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .lyrics-container {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .lyrics-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        .lyric-line {
+            transition: transform 0.5s ease-in-out, opacity 0.5s ease-in-out, color 0.5s ease-in-out;
+        }
+
+        .lyric-line.active-line {
+            transform: scale(1.03);
+            opacity: 1;
+            color: #ffffff;
+        }
+
+        .lyric-word {
+            display: inline-block;
+            transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1.5), color 0.3s ease-in-out, text-shadow 0.3s ease-in-out;
+            padding: 0 0.1em;
+            will-change: transform, color, text-shadow;
+        }
+
+        .lyric-word.active-word {
+            transform: translateY(-3px) scale(1.1);
+            color: #a7f3d0;
+            text-shadow: 0 0 8px rgba(167, 243, 208, 0.7), 0 0 20px rgba(52, 211, 153, 0.5);
+        }
+
+        .progress-bar-container:hover .progress-bar-thumb {
+            opacity: 1;
+        }
+
+        .progress-bar-thumb {
+            transition: opacity 0.2s ease-in-out;
+            will-change: left;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white overflow-hidden">
+
+    <div class="fixed inset-0 bg-gradient-to-br from-emerald-900 via-green-900 to-gray-900 -z-10"></div>
+    <div class="fixed inset-0 bg-black/40 backdrop-blur-sm -z-10"></div>
+
+    <main class="w-full h-screen flex flex-col items-center justify-center p-4 md:p-8">
+        
+        <div class="w-full max-w-4xl h-full flex flex-col bg-white/5 backdrop-blur-xl rounded-2xl shadow-2xl overflow-hidden ring-1 ring-white/10">
+
+            <header class="p-6 border-b border-white/10 text-center shrink-0">
+                <h1 class="text-2xl md:text-3xl font-bold tracking-wider text-emerald-300">Self Sufficiency</h1>
+                <p class="text-sm md:text-base text-gray-400">A LyricFlow Experience</p>
+            </header>
+
+            <div id="lyrics-container" class="lyrics-container flex-grow h-full overflow-y-auto p-8 md:p-12 scroll-smooth">
+            </div>
+
+            <footer class="p-4 md:p-6 bg-black/20 backdrop-blur-lg border-t border-white/10 shrink-0">
+                <div class="w-full">
+                    <div class="flex items-center gap-4">
+                        <div id="current-time" class="text-sm font-mono w-12 text-center text-gray-400">0:00</div>
+                        <div id="progress-bar-container" class="relative w-full h-2 bg-white/10 rounded-full cursor-pointer group flex-grow">
+                            <div id="progress-bar" class="h-full bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full"></div>
+                            <div id="progress-bar-thumb" class="absolute top-1/2 -mt-2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100" style="left: 0%;"></div>
+                        </div>
+                        <div id="duration" class="text-sm font-mono w-12 text-center text-gray-400">0:00</div>
+                    </div>
+
+                    <div class="flex items-center justify-center gap-8 mt-4">
+                        <div class="flex items-center gap-3 w-32 justify-end">
+                            <button id="volume-btn" class="text-lg text-gray-300 hover:text-white transition-colors"><i class="fas fa-volume-high"></i></button>
+                            <input id="volume-slider" type="range" min="0" max="1" step="0.01" value="0.8" class="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-emerald-400">
+                        </div>
+
+                        <button id="play-pause-btn" class="w-16 h-16 flex items-center justify-center bg-emerald-500 hover:bg-emerald-400 rounded-full text-white text-3xl shadow-lg hover:shadow-emerald-500/50 transition-all duration-300 transform hover:scale-105">
+                            <i id="play-pause-icon" class="fas fa-play"></i>
+                        </button>
+                        
+                        <div class="w-32"></div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+
+    </main>
+
+    <audio id="audio-player" src="../Assets/self sufficiency.mp3" preload="metadata"></audio>
+
+    <script>
+        const lyricsData = [
+            { line: "First, please look at this graph.", words: [{ text: "First,", time: 0.0 }, { text: "please", time: 0.8 }, { text: "look", time: 1.2 }, { text: "at", time: 1.4 }, { text: "this", time: 1.6 }, { text: "graph.", time: 1.9 }] },
+            { line: "It compares the food self-sufficiency rates of several countries,", words: [{ text: "It", time: 2.8 }, { text: "compares", time: 3.1 }, { text: "the", time: 3.5 }, { text: "food", time: 3.7 }, { text: "self-sufficiency", time: 4.2 }, { text: "rates", time: 5.0 }, { text: "of", time: 5.2 }, { text: "several", time: 5.4 }, { text: "countries,", time: 5.8 }] },
+            { line: "and as you can see, Japan's rate of 39% is one of the lowest among these developed nations.", words: [{ text: "and", time: 6.7 }, { text: "as", time: 6.9 }, { text: "you", time: 7.1 }, { text: "can", time: 7.3 }, { text: "see,", time: 7.5 }, { text: "Japan's", time: 8.2 }, { text: "rate", time: 8.5 }, { text: "of", time: 8.7 }, { text: "39%", time: 9.3 }, { text: "is", time: 9.6 }, { text: "one", time: 9.8 }, { text: "of", time: 10.0 }, { text: "the", time: 10.1 }, { text: "lowest", time: 10.5 }, { text: "among", time: 10.9 }, { text: "these", time: 11.1 }, { text: "developed", time: 11.5 }, { text: "nations.", time: 12.1 }] },
+            { line: "Japan faces the problem of low food self-sufficiency.", words: [{ text: "Japan", time: 14.2 }, { text: "faces", time: 14.6 }, { text: "the", time: 14.8 }, { text: "problem", time: 15.2 }, { text: "of", time: 15.4 }, { text: "low", time: 15.7 }, { text: "food", time: 16.0 }, { text: "self-sufficiency.", time: 16.8 }] },
+            { line: "The self-sufficiency rate for rice, the staple food, is almost 100%,", words: [{ text: "The", time: 17.6 }, { text: "self-sufficiency", time: 18.2 }, { text: "rate", time: 18.5 }, { text: "for", time: 18.7 }, { text: "rice,", time: 19.1 }, { text: "the", time: 19.5 }, { text: "staple", time: 19.8 }, { text: "food,", time: 20.1 }, { text: "is", time: 20.3 }, { text: "almost", time: 20.6 }, { text: "100%,", time: 21.2 }] },
+            { line: "but any problems with the supply of rice can have a major impact on our diet.", words: [{ text: "but", time: 21.9 }, { text: "any", time: 22.1 }, { text: "problems", time: 22.5 }, { text: "with", time: 22.7 }, { text: "the", time: 22.8 }, { text: "supply", time: 23.2 }, { text: "of", time: 23.4 }, { text: "rice", time: 23.7 }, { text: "can", time: 23.9 }, { text: "have", time: 24.1 }, { text: "a", time: 24.2 }, { text: "major", time: 24.5 }, { text: "impact", time: 25.0 }, { text: "on", time: 25.2 }, { text: "our", time: 25.4 }, { text: "diet.", time: 25.8 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 29.2 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 33.2 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 37.0 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 40.8 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 48.5 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 52.5 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 56.5 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 60.0 }] },
+            { line: "Next, let's talk about how to get young people into agriculture.", words: [{ text: "Next,", time: 61.8 }, { text: "let's", time: 62.2 }, { text: "talk", time: 62.5 }, { text: "about", time: 62.8 }, { text: "how", time: 63.0 }, { text: "to", time: 63.1 }, { text: "get", time: 63.3 }, { text: "young", time: 63.5 }, { text: "people", time: 63.9 }, { text: "into", time: 64.2 }, { text: "agriculture.", time: 64.8 }] },
+            { line: "In Japan, the number of farmers is going down, and the average age is high.", words: [{ text: "In", time: 65.6 }, { text: "Japan,", time: 66.0 }, { text: "the", time: 66.2 }, { text: "number", time: 66.5 }, { text: "of", time: 66.7 }, { text: "farmers", time: 67.1 }, { text: "is", time: 67.3 }, { text: "going", time: 67.6 }, { text: "down,", time: 68.0 }, { text: "and", time: 68.2 }, { text: "the", time: 68.3 }, { text: "average", time: 68.6 }, { text: "age", time: 69.0 }, { text: "is", time: 69.1 }, { text: "high.", time: 69.4 }] },
+            { line: "So, We need to attract young people to farming.", words: [{ text: "So,", time: 69.8 }, { text: "We", time: 70.2 }, { text: "need", time: 70.5 }, { text: "to", time: 70.6 }, { text: "attract", time: 71.0 }, { text: "young", time: 71.3 }, { text: "people", time: 71.7 }, { text: "to", time: 72.0 }, { text: "farming.", time: 72.5 }] },
+            { line: "Fortunately, Some people are interested in starting to farm about 30%.", words: [{ text: "Fortunately,", time: 73.6 }, { text: "Some", time: 74.4 }, { text: "people", time: 74.7 }, { text: "are", time: 74.9 }, { text: "interested", time: 75.4 }, { text: "in", time: 75.6 }, { text: "starting", time: 76.0 }, { text: "to", time: 76.2 }, { text: "farm", time: 76.5 }, { text: "about", time: 76.9 }, { text: "30%.", time: 77.5 }] },
+            { line: "At the same time, current farmers are often satisfied with their jobs, feeling it's rewarding and good for their work-life balance.", words: [{ text: "At", time: 78.0 }, { text: "the", time: 78.1 }, { text: "same", time: 78.3 }, { text: "time,", time: 78.6 }, { text: "current", time: 79.1 }, { text: "farmers", time: 79.6 }, { text: "are", time: 79.8 }, { text: "often", time: 80.1 }, { text: "satisfied", time: 80.7 }, { text: "with", time: 80.9 }, { text: "their", time: 81.1 }, { text: "jobs,", time: 81.5 }, { text: "feeling", time: 82.2 }, { text: "it's", time: 82.4 }, { text: "rewarding", time: 82.9 }, { text: "and", time: 83.1 }, { text: "good", time: 83.4 }, { text: "for", time: 83.6 }, { text: "their", time: 83.7 }, { text: "work-life", time: 84.1 }, { text: "balance.", time: 84.7 }] },
+            { line: "So, to encourage new farmers, we propose three ideas.", words: [{ text: "So,", time: 125.1 }, { text: "to", time: 125.4 }, { text: "encourage", time: 125.9 }, { text: "new", time: 126.4 }, { text: "farmers,", time: 126.9 }, { text: "we", time: 127.2 }, { text: "propose", time: 127.6 }, { text: "three", time: 128.0 }, { text: "ideas.", time: 128.6 }] },
+            { line: "First, provide training for modern farming technology.", words: [{ text: "First,", time: 129.8 }, { text: "provide", time: 130.6 }, { text: "training", time: 131.1 }, { text: "for", time: 131.4 }, { text: "modern", time: 131.8 }, { text: "farming", time: 132.2 }, { text: "technology.", time: 133.0 }] },
+            { line: "Second, organize talks by successful farmers.", words: [{ text: "Second,", time: 133.9 }, { text: "organize", time: 134.6 }, { text: "talks", time: 135.0 }, { text: "by", time: 135.2 }, { text: "successful", time: 135.8 }, { text: "farmers.", time: 136.4 }] },
+            { line: "Third, build a network to share knowledge and skills.", words: [{ text: "Third,", time: 137.1 }, { text: "build", time: 137.7 }, { text: "a", time: 137.8 }, { text: "network", time: 138.3 }, { text: "to", time: 138.5 }, { text: "share", time: 138.8 }, { text: "knowledge", time: 139.2 }, { text: "and", time: 139.4 }, { text: "skills.", time: 140.0 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 146.2 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 150.0 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 153.8 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 157.8 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 205.5 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 209.2 }] },
+            { line: "self-sufficiency", words: [{ text: "self-sufficiency", time: 213.2 }] },
+        ];
+
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const audio = document.getElementById('audio-player');
+            const lyricsContainer = document.getElementById('lyrics-container');
+            const playPauseBtn = document.getElementById('play-pause-btn');
+            const playPauseIcon = document.getElementById('play-pause-icon');
+            const currentTimeEl = document.getElementById('current-time');
+            const durationEl = document.getElementById('duration');
+            const progressBar = document.getElementById('progress-bar');
+            const progressBarContainer = document.getElementById('progress-bar-container');
+            const progressBarThumb = document.getElementById('progress-bar-thumb');
+            const volumeSlider = document.getElementById('volume-slider');
+            const volumeBtn = document.getElementById('volume-btn');
+            const volumeIcon = volumeBtn.querySelector('i');
+
+            let flatLyrics = [];
+            let animationFrameId = null;
+            let lastRenderedWordIndex = -1;
+            let currentLineEl = null;
+            let isSeeking = false;
+            
+            function init() {
+                audio.volume = volumeSlider.value;
+                populateLyrics();
+                setupEventListeners();
+            }
+            
+            function populateLyrics() {
+                lyricsContainer.innerHTML = '';
+                let wordCounter = 0;
+                lyricsData.forEach((line, lineIndex) => {
+                    const lineEl = document.createElement('p');
+                    lineEl.id = `line-${lineIndex}`;
+                    lineEl.className = 'lyric-line text-xl md:text-2xl font-semibold p-2 my-2 text-center text-gray-400 opacity-60';
+                    lineEl.textContent = ' ';
+
+                    line.words.forEach((word) => {
+                        const wordEl = document.createElement('span');
+                        const wordId = `word-${wordCounter}`;
+                        wordEl.id = wordId;
+                        wordEl.className = 'lyric-word';
+                        wordEl.textContent = word.text;
+                        lineEl.appendChild(wordEl);
+                        lineEl.appendChild(document.createTextNode(' '));
+
+                        flatLyrics.push({ ...word, id: wordId, lineId: `line-${lineIndex}` });
+                        wordCounter++;
+                    });
+                    lyricsContainer.appendChild(lineEl);
+                });
+            }
+
+            function setupEventListeners() {
+                audio.addEventListener('loadedmetadata', () => {
+                    durationEl.textContent = formatTime(audio.duration);
+                });
+
+                audio.addEventListener('ended', () => {
+                    playPauseIcon.classList.remove('fa-pause');
+                    playPauseIcon.classList.add('fa-play');
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        animationFrameId = null;
+                    }
+                    setTimeout(resetLyrics, 500);
+                });
+                
+                playPauseBtn.addEventListener('click', togglePlayPause);
+                progressBarContainer.addEventListener('mousedown', handleSeekStart);
+                volumeSlider.addEventListener('input', handleVolumeChange);
+                volumeBtn.addEventListener('click', toggleMute);
+            }
+            
+            function togglePlayPause() {
+                if (audio.paused) {
+                    audio.play();
+                    playPauseIcon.classList.remove('fa-play');
+                    playPauseIcon.classList.add('fa-pause');
+                    if (!animationFrameId) {
+                        animationFrameId = requestAnimationFrame(tick);
+                    }
+                } else {
+                    audio.pause();
+                    playPauseIcon.classList.remove('fa-pause');
+                    playPauseIcon.classList.add('fa-play');
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        animationFrameId = null;
+                    }
+                }
+            }
+            
+            function tick() {
+                const time = audio.currentTime;
+                updateProgressBar(time);
+                updateLyrics(time, 'smooth');
+                animationFrameId = requestAnimationFrame(tick);
+            }
+
+            function updateProgressBar(time) {
+                if(isSeeking) return;
+                currentTimeEl.textContent = formatTime(time);
+                const progress = (time / audio.duration) || 0;
+                progressBar.style.width = `${progress * 100}%`;
+                progressBarThumb.style.left = `${progress * 100}%`;
+            }
+
+            function updateLyrics(time, scrollBehavior) {
+                time+=0.1;
+                let newWordIndex = -1;
+                for (let i = 0; i < flatLyrics.length; i++) {
+                    if (time >= flatLyrics[i].time) {
+                        newWordIndex = i;
+                    } else {
+                        break; 
+                    }
+                }
+
+                if (newWordIndex !== lastRenderedWordIndex) {
+                    if (lastRenderedWordIndex > -1) {
+                        const oldWordEl = document.getElementById(flatLyrics[lastRenderedWordIndex].id);
+                        if (oldWordEl) oldWordEl.classList.remove('active-word');
+                    }
+                    
+                    if (newWordIndex > -1) {
+                        const newWordEl = document.getElementById(flatLyrics[newWordIndex].id);
+                        if (newWordEl) {
+                            newWordEl.classList.add('active-word');
+                            const newLineEl = document.getElementById(flatLyrics[newWordIndex].lineId);
+                            if (newLineEl !== currentLineEl) {
+                                if (currentLineEl) currentLineEl.classList.remove('active-line');
+                                newLineEl.classList.add('active-line');
+                                newLineEl.scrollIntoView({ behavior: scrollBehavior, block: 'center' });
+                                currentLineEl = newLineEl;
+                            }
+                        }
+                    } else {
+                        if (currentLineEl) {
+                           currentLineEl.classList.remove('active-line');
+                           currentLineEl = null;
+                        }
+                    }
+                    lastRenderedWordIndex = newWordIndex;
+                }
+            }
+            
+            function handleSeekStart(e) {
+                isSeeking = true;
+                handleSeekMove(e);
+                document.addEventListener('mousemove', handleSeekMove);
+                document.addEventListener('mouseup', handleSeekEnd);
+            }
+
+            function handleSeekMove(e) {
+                if (!isSeeking) return;
+                const rect = progressBarContainer.getBoundingClientRect();
+                const percent = Math.min(Math.max(0, (e.clientX - rect.left) / rect.width), 1);
+                
+                progressBar.style.width = `${percent * 100}%`;
+                progressBarThumb.style.left = `${percent * 100}%`;
+                currentTimeEl.textContent = formatTime(percent * audio.duration);
+            }
+
+            function handleSeekEnd(e) {
+                const rect = progressBarContainer.getBoundingClientRect();
+                const percent = Math.min(Math.max(0, (e.clientX - rect.left) / rect.width), 1);
+                const newTime = percent * audio.duration;
+                audio.currentTime = newTime;
+                
+                updateLyrics(newTime, 'auto');
+                
+                isSeeking = false;
+                document.removeEventListener('mousemove', handleSeekMove);
+                document.removeEventListener('mouseup', handleSeekEnd);
+            }
+
+            function handleVolumeChange(e) {
+                audio.muted = false;
+                audio.volume = e.target.value;
+                updateVolumeIcon(audio.volume);
+            }
+            
+            let lastVolume = audio.volume;
+            function toggleMute() {
+                if (audio.muted) {
+                    audio.muted = false;
+                    audio.volume = lastVolume > 0 ? lastVolume : 0.8;
+                    volumeSlider.value = audio.volume;
+                } else {
+                    lastVolume = audio.volume;
+                    audio.muted = true;
+                    volumeSlider.value = 0;
+                }
+                updateVolumeIcon(audio.volume);
+            }
+
+            function updateVolumeIcon(volume) {
+                 const vol = audio.muted ? 0 : volume;
+                 volumeIcon.classList.remove('fa-volume-high', 'fa-volume-low', 'fa-volume-xmark');
+                 if (vol > 0.5) {
+                    volumeIcon.classList.add('fa-volume-high');
+                 } else if (vol > 0) {
+                    volumeIcon.classList.add('fa-volume-low');
+                 } else {
+                    volumeIcon.classList.add('fa-volume-xmark');
+                 }
+            }
+            
+            function resetLyrics() {
+                document.querySelectorAll('.active-word').forEach(el => el.classList.remove('active-word'));
+                document.querySelectorAll('.active-line').forEach(el => el.classList.remove('active-line'));
+                lyricsContainer.scrollTo({ top: 0, behavior: 'smooth' });
+                lastRenderedWordIndex = -1;
+                currentLineEl = null;
+            }
+
+            function formatTime(seconds) {
+                if (isNaN(seconds)) return '0:00';
+                const min = Math.floor(seconds / 60);
+                const sec = Math.floor(seconds % 60).toString().padStart(2, '0');
+                return `${min}:${sec}`;
+            }
+            
+            init();
+        });
+    </script>
+</body>
+</html>
