@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factorio Blueprint Converter</title>
+    <meta name="description" content="An advanced tool to convert Factorio blueprint strings to JSON and back. Uses ACE Editor for a seamless experience.">
+    <meta name="page:icon" content="fas fa-exchange-alt">
+    <meta name="page:color" content="#4f46e5">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.js" integrity="sha512-gqjFRgajJiZM9GmvHEE7vpzPSL/moP+zxpl4F6lRNJDOI3pb2Tvu8k5vUjAzJKsl0ragzWL0/WasKhR430PkCw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js" integrity="sha512-g2TeAWw5GPnX7z0Kn8nFbYfeHcvAu/tx6d6mrLe/90mkCxO+RcptyYpksUz35EO337F83bZwcmUyHiHamspkfg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        .ace_editor {
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            height: 100%;
+            width: 100%;
+            font-family: 'Fira Code', monospace !important;
+            font-size: 14px !important;
+        }
+        .ace_gutter {
+            background: #f8fafc;
+            color: #94a3b8;
+        }
+        #blueprint-output {
+            font-family: 'Fira Code', monospace;
+            word-break: break-all;
+        }
+        #notification {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen w-screen overflow-hidden flex flex-col">
+
+    <header class="p-4 border-b border-slate-200 bg-white shadow-sm flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-exchange-alt text-2xl text-indigo-600"></i>
+            <h1 class="text-xl md:text-2xl font-bold text-slate-700">Factorio Blueprint Converter</h1>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="clear-all-btn" class="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors flex items-center gap-2" title="Clear both fields">
+                <i class="fas fa-broom"></i>
+                <span class="hidden sm:inline">Clear All</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-grow grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 p-4 overflow-hidden">
+        
+        <div class="flex flex-col h-full bg-white p-4 rounded-lg shadow-md min-h-0">
+            <label for="json-editor" class="text-lg font-semibold mb-3 text-slate-600">JSON Input</label>
+            <div class="flex-grow relative">
+                <div id="json-editor"></div>
+            </div>
+        </div>
+
+        <div class="flex lg:flex-col items-center justify-center gap-4 lg:gap-6 px-2">
+            <button id="encode-btn" class="group w-full lg:w-40 flex items-center justify-center gap-3 p-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" title="JSONから設計図文字列へ変換">
+                <span class="font-semibold">Encode</span>
+                <i class="fas fa-arrow-right transform transition-transform group-hover:translate-x-1"></i>
+            </button>
+            <button id="decode-btn" class="group w-full lg:w-40 flex items-center justify-center gap-3 p-3 bg-white text-slate-700 border border-slate-300 rounded-lg shadow-md hover:bg-slate-100 transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400" title="設計図文字列からJSONへ変換">
+                <i class="fas fa-arrow-left transform transition-transform group-hover:-translate-x-1"></i>
+                <span class="font-semibold">Decode</span>
+            </button>
+        </div>
+
+        <div class="flex flex-col h-full bg-white p-4 rounded-lg shadow-md min-h-0">
+            <div class="flex justify-between items-center mb-3">
+                <label for="blueprint-output" class="text-lg font-semibold text-slate-600">Blueprint String</label>
+                <button id="copy-btn" class="px-3 py-1 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors flex items-center gap-2" title="Copy to Clipboard">
+                    <i class="far fa-copy"></i>
+                    <span class="hidden sm:inline">Copy</span>
+                </button>
+            </div>
+            <textarea id="blueprint-output" class="flex-grow w-full p-3 bg-slate-50 border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="Paste your blueprint string here... (starts with '0')"></textarea>
+        </div>
+    </main>
+
+    <div id="notification" class="fixed bottom-5 right-5 text-white py-2 px-5 rounded-lg shadow-xl opacity-0 translate-y-3 pointer-events-none">
+        <span id="notification-text"></span>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const jsonEditorElement = document.getElementById('json-editor');
+            const blueprintOutput = document.getElementById('blueprint-output');
+            const encodeBtn = document.getElementById('encode-btn');
+            const decodeBtn = document.getElementById('decode-btn');
+            const copyBtn = document.getElementById('copy-btn');
+            const clearAllBtn = document.getElementById('clear-all-btn');
+            const notification = document.getElementById('notification');
+            const notificationText = document.getElementById('notification-text');
+
+            const editor = ace.edit(jsonEditorElement);
+            editor.setTheme("ace/theme/chrome");
+            editor.session.setMode("ace/mode/json");
+            editor.setOptions({
+                useWorker: false,
+                tabSize: 2,
+                showPrintMargin: false,
+                autoScrollEditorIntoView: true,
+                fadeFoldWidgets: true,
+                showFoldWidgets: true,
+                highlightActiveLine: true,
+            });
+
+            const defaultBlueprint = {
+              "blueprint": {
+                "icons": [
+                  { "signal": { "type": "item", "name": "stone-furnace" }, "index": 1 }
+                ],
+                "entities": [],
+                "item": "blueprint",
+                "label": "My Blueprint",
+                "version": 281479278821376
+              }
+            };
+            editor.setValue(JSON.stringify(defaultBlueprint, null, 2), -1);
+
+            let notificationTimeout;
+            function showNotification(message, isError = false) {
+                clearTimeout(notificationTimeout);
+                notificationText.innerHTML = (isError ? '<i class="fas fa-exclamation-circle mr-2"></i>' : '<i class="fas fa-check-circle mr-2"></i>') + message;
+                
+                notification.classList.remove('bg-green-500', 'bg-red-500', 'opacity-0', 'translate-y-3');
+                notification.classList.add(isError ? 'bg-red-500' : 'bg-green-500', 'opacity-100', 'translate-y-0');
+
+                notificationTimeout = setTimeout(() => {
+                    notification.classList.remove('opacity-100', 'translate-y-0');
+                    notification.classList.add('opacity-0', 'translate-y-3');
+                }, 3000);
+            }
+
+            function uint8ArrayToBase64(bytes) {
+                let binary = '';
+                const len = bytes.byteLength;
+                for (let i = 0; i < len; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return window.btoa(binary);
+            }
+
+            function base64ToUint8Array(base64) {
+                const binary_string = window.atob(base64);
+                const len = binary_string.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binary_string.charCodeAt(i);
+                }
+                return bytes;
+            }
+
+            const BpUtil = {
+                encode: (obj) => {
+                    const jsonString = JSON.stringify(obj);
+                    const deflated = pako.deflate(jsonString, { level: 9 });
+                    const base64 = uint8ArrayToBase64(deflated);
+                    return '0' + base64;
+                },
+                decode: (str) => {
+                    if (!str || typeof str !== 'string' || !str.startsWith('0')) {
+                        throw new Error("Invalid blueprint format: must be a string starting with '0'.");
+                    }
+                    const base64 = str.slice(1);
+                    const inflated = pako.inflate(base64ToUint8Array(base64));
+                    const jsonString = new TextDecoder("utf-8").decode(inflated);
+                    return JSON.parse(jsonString);
+                }
+            };
+
+            encodeBtn.addEventListener('click', () => {
+                try {
+                    const jsonString = editor.getValue();
+                    if (!jsonString.trim()) {
+                        showNotification("JSON input is empty.", true);
+                        return;
+                    }
+                    const jsonObj = JSON.parse(jsonString);
+                    const blueprintString = BpUtil.encode(jsonObj);
+                    blueprintOutput.value = blueprintString;
+                    showNotification("Encoded successfully!");
+                } catch (error) {
+                    console.error("Encoding error:", error);
+                    showNotification("Invalid JSON format.", true);
+                }
+            });
+
+            decodeBtn.addEventListener('click', () => {
+                try {
+                    const blueprintString = blueprintOutput.value.trim();
+                    if (!blueprintString) {
+                        showNotification("Blueprint string is empty.", true);
+                        return;
+                    }
+                    const jsonObj = BpUtil.decode(blueprintString);
+                    const formattedJson = JSON.stringify(jsonObj, null, 2);
+                    editor.setValue(formattedJson, -1);
+                    editor.session.foldAll(2, null, true);
+                    showNotification("Decoded successfully!");
+                } catch (error) {
+                    console.error("Decoding error:", error);
+                    showNotification(error.message || "Invalid Blueprint String.", true);
+                }
+            });
+
+            copyBtn.addEventListener('click', () => {
+                const textToCopy = blueprintOutput.value;
+                if (!textToCopy) {
+                    showNotification("Nothing to copy.", true);
+                    return;
+                }
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    showNotification("Copied to clipboard!");
+                }).catch(err => {
+                    console.error("Copy failed:", err);
+                    showNotification("Could not copy text.", true);
+                });
+            });
+            
+            clearAllBtn.addEventListener('click', () => {
+                editor.setValue(JSON.stringify(defaultBlueprint, null, 2), -1);
+                blueprintOutput.value = '';
+                showNotification("Fields have been cleared.");
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Creative Canvas - AI Tagger</title>
+    <meta name="description" content="An interactive drawing application with real-time AI recognition. Draw on the canvas and see what the AI thinks it is!">
+    <meta name="page:icon" content="fas fa-palette">
+    <meta name="page:color" content="#38bdf8">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap');
+
+        .tool-btn.active {
+            background-color: #38bdf8;
+            color: white;
+            border-color: #38bdf8;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 5px;
+            outline: none;
+            transition: opacity .2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #38bdf8;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #38bdf8;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        
+        #main-canvas {
+            cursor: crosshair;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="loader" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center transition-opacity duration-500">
+        <i class="fas fa-spinner fa-spin text-sky-500 text-5xl"></i>
+        <p id="loader-text" class="mt-4 text-slate-600 text-lg">AIモデルを読み込んでいます...</p>
+    </div>
+
+    <div class="min-h-screen flex flex-col">
+        <header class="bg-white border-b border-slate-200 shadow-sm p-4">
+            <div class="max-w-7xl mx-auto flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-palette text-sky-500 text-2xl"></i>
+                    <h1 class="text-xl font-bold text-slate-700">Creative Canvas AI</h1>
+                </div>
+                 <a href="https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3" target="_blank" rel="noopener noreferrer" class="text-sm text-slate-500 hover:text-sky-500 transition-colors">
+                    Model: wd-eva02-large-tagger-v3
+                </a>
+            </div>
+        </header>
+
+        <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full">
+                
+                <div class="lg:col-span-2 flex flex-col gap-4">
+                    <div class="bg-white rounded-xl shadow-lg border border-slate-200 p-4 flex-grow flex items-center justify-center">
+                        <canvas id="main-canvas" class="rounded-lg shadow-inner border border-slate-200"></canvas>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
+                            
+                            <div class="flex items-center gap-4">
+                                <button id="brush-tool" class="tool-btn active w-12 h-12 flex items-center justify-center text-xl rounded-full border-2 border-slate-300 hover:bg-slate-100 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-400" title="ブラシ">
+                                    <i class="fas fa-paint-brush"></i>
+                                </button>
+                                <button id="eraser-tool" class="tool-btn w-12 h-12 flex items-center justify-center text-xl rounded-full border-2 border-slate-300 hover:bg-slate-100 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-400" title="消しゴム">
+                                    <i class="fas fa-eraser"></i>
+                                </button>
+                                <button id="clear-btn" class="w-12 h-12 flex items-center justify-center text-xl text-red-500 rounded-full border-2 border-slate-300 hover:bg-red-50 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400" title="クリア">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="flex flex-col gap-2">
+                                <label for="size-slider" class="text-sm font-medium text-slate-600 flex justify-between">ブラシサイズ: <span id="size-label">10</span>px</label>
+                                <input id="size-slider" type="range" min="1" max="100" value="10" class="w-full">
+                            </div>
+
+                            <div class="flex flex-col gap-2">
+                                 <label for="color-picker" class="text-sm font-medium text-slate-600">ブラシの色</label>
+                                <div class="relative">
+                                    <input id="color-picker" type="color" value="#000000" class="p-0 h-10 w-full block bg-white border border-slate-300 rounded-lg cursor-pointer">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 flex flex-col">
+                    <h2 class="text-lg font-bold text-slate-700 border-b border-slate-200 pb-3 mb-4 flex items-center gap-2">
+                        <i class="fas fa-brain text-sky-500"></i>
+                        AIによる判定結果
+                    </h2>
+                    <div id="status" class="text-center py-4 text-slate-500 italic">
+                        キャンバスに絵を描いてみましょう！
+                    </div>
+                    <div id="results" class="space-y-3 overflow-y-auto flex-grow">
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const brushToolBtn = document.getElementById('brush-tool');
+        const eraserToolBtn = document.getElementById('eraser-tool');
+        const clearBtn = document.getElementById('clear-btn');
+        const sizeSlider = document.getElementById('size-slider');
+        const sizeLabel = document.getElementById('size-label');
+        const colorPicker = document.getElementById('color-picker');
+        const resultsContainer = document.getElementById('results');
+        const statusEl = document.getElementById('status');
+        const loader = document.getElementById('loader');
+        const loaderText = document.getElementById('loader-text');
+        
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let brushSize = 10;
+        let brushColor = '#000000';
+        let currentTool = 'brush';
+        let debounceTimer;
+
+        let session;
+        let tags = [];
+        const modelUrl = 'https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/model.onnx?download=true';
+        const tagsUrl = 'https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/resolve/main/selected_tags.csv?download=true';
+
+        async function setupCanvas() {
+            const container = canvas.parentElement;
+            const size = Math.min(container.clientWidth, container.clientHeight) - 20;
+            canvas.width = size;
+            canvas.height = size;
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.lineWidth = brushSize;
+            ctx.strokeStyle = brushColor;
+        }
+
+        function startDrawing(e) {
+            clearTimeout(debounceTimer);
+            isDrawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.stroke();
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+
+        function stopDrawing() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                runInference();
+            }, 750);
+        }
+
+        function updateTool() {
+            if (currentTool === 'brush') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = brushColor;
+                brushToolBtn.classList.add('active');
+                eraserToolBtn.classList.remove('active');
+            } else {
+                ctx.globalCompositeOperation = 'destination-out';
+                eraserToolBtn.classList.add('active');
+                brushToolBtn.classList.remove('active');
+            }
+        }
+        
+        function clearCanvas() {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            resultsContainer.innerHTML = '';
+            statusEl.textContent = 'キャンバスに絵を描いてみましょう！';
+            statusEl.style.display = 'block';
+        }
+
+        async function loadModelAndTags() {
+            try {
+                loaderText.textContent = 'ラベルデータを読み込んでいます...';
+                const response = await fetch(tagsUrl);
+                const csvText = await response.text();
+                tags = csvText.split('\n').map(row => {
+                    const columns = row.split(',');
+                    return columns[1]?.replace(/"/g, '').replace(/_/g, ' ');
+                }).filter(Boolean);
+                
+                loaderText.textContent = 'AIモデルを読み込んでいます... (サイズが大きいので時間がかかる場合があります)';
+                session = await ort.InferenceSession.create(modelUrl, {
+                    executionProviders: ['wasm'],
+                    graphOptimizationLevel: 'all'
+                });
+                
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.style.display = 'none', 500);
+
+            } catch (error) {
+                console.error('Failed to load model or tags:', error);
+                loaderText.textContent = 'モデルの読み込みに失敗しました。ページを再読み込みしてください。';
+                loaderText.classList.add('text-red-500');
+            }
+        }
+
+        async function preprocess(canvas) {
+            const modelWidth = 448;
+            const modelHeight = 448;
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = modelWidth;
+            tempCanvas.height = modelHeight;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            tempCtx.fillStyle = '#FFFFFF';
+            tempCtx.fillRect(0, 0, modelWidth, modelHeight);
+            
+            const hRatio = modelWidth / canvas.width;
+            const vRatio = modelHeight / canvas.height;
+            const ratio = Math.min(hRatio, vRatio);
+            const centerShift_x = (modelWidth - canvas.width * ratio) / 2;
+            const centerShift_y = (modelHeight - canvas.height * ratio) / 2;
+            tempCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height,
+                              centerShift_x, centerShift_y, canvas.width * ratio, canvas.height * ratio);
+
+            const imageData = tempCtx.getImageData(0, 0, modelWidth, modelHeight);
+            const { data } = imageData;
+
+            const float32Data = new Float32Array(modelWidth * modelHeight * 3);
+            for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+                float32Data[j] = data[i] / 255.0;
+                float32Data[j + 1] = data[i + 1] / 255.0;
+                float32Data[j + 2] = data[i + 2] / 255.0;
+            }
+            
+            const inputTensor = new ort.Tensor('float32', float32Data, [1, modelHeight, modelWidth, 3]);
+            
+            return inputTensor;
+        }
+
+        function sigmoid(x) {
+            return 1 / (1 + Math.exp(-x));
+        }
+
+        async function runInference() {
+            if (!session || tags.length === 0) {
+                console.warn('Session or tags not ready.');
+                return;
+            }
+            
+            statusEl.textContent = 'AIが判定中です...';
+            statusEl.style.display = 'block';
+            resultsContainer.innerHTML = '';
+
+            try {
+                const inputTensor = await preprocess(canvas);
+                const feeds = { 'input': inputTensor };
+                const results = await session.run(feeds);
+                
+                const outputTensor = results[Object.keys(results)[0]];
+                const outputData = outputTensor.data;
+                
+                let predictions = [];
+                for (let i = 0; i < outputData.length; i++) {
+                    if (tags[i]) {
+                       predictions.push({ tag: tags[i], score: sigmoid(outputData[i]) });
+                    }
+                }
+
+                predictions.sort((a, b) => b.score - a.score);
+                displayResults(predictions.slice(0, 15));
+
+            } catch (error) {
+                console.error('Inference failed:', error);
+                statusEl.textContent = `判定に失敗しました: ${error.message}`;
+                statusEl.classList.add('text-red-500');
+            }
+        }
+        
+        function displayResults(predictions) {
+            statusEl.style.display = 'none';
+            resultsContainer.innerHTML = '';
+            
+            const filteredPredictions = predictions.filter(p => p.score > 0.1);
+
+            if (filteredPredictions.length === 0) {
+                statusEl.textContent = '特徴を認識できませんでした。';
+                statusEl.style.display = 'block';
+                return;
+            }
+
+            filteredPredictions.forEach(pred => {
+                const percentage = (pred.score * 100).toFixed(1);
+                const resultEl = document.createElement('div');
+                resultEl.className = 'text-sm';
+                resultEl.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-medium text-slate-700 capitalize">${pred.tag}</span>
+                        <span class="text-slate-500 font-mono">${percentage}%</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2">
+                        <div class="bg-sky-400 h-2 rounded-full" style="width: ${percentage}%; transition: width 0.5s ease-out;"></div>
+                    </div>
+                `;
+                resultsContainer.appendChild(resultEl);
+            });
+        }
+        
+        window.addEventListener('load', async () => {
+            await setupCanvas();
+            await loadModelAndTags();
+
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); const rect = e.target.getBoundingClientRect(); startDrawing({offsetX: e.touches[0].clientX - rect.left, offsetY: e.touches[0].clientY - rect.top}); });
+            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); const rect = e.target.getBoundingClientRect(); draw({offsetX: e.touches[0].clientX - rect.left, offsetY: e.touches[0].clientY - rect.top}); });
+            canvas.addEventListener('touchend', stopDrawing);
+
+            brushToolBtn.addEventListener('click', () => {
+                currentTool = 'brush';
+                updateTool();
+            });
+
+            eraserToolBtn.addEventListener('click', () => {
+                currentTool = 'eraser';
+                updateTool();
+            });
+            
+            clearBtn.addEventListener('click', clearCanvas);
+
+            sizeSlider.addEventListener('input', (e) => {
+                brushSize = e.target.value;
+                sizeLabel.textContent = brushSize;
+                ctx.lineWidth = brushSize;
+            });
+
+            colorPicker.addEventListener('input', (e) => {
+                brushColor = e.target.value;
+                if (currentTool === 'brush') {
+                    ctx.strokeStyle = brushColor;
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    const currentDrawing = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    setupCanvas();
+                    ctx.putImageData(currentDrawing, 0, 0);
+                }, 250);
+            });
+
+            updateTool();
+        });
+    </script>
+
+</body>
+</html>
