@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Gacha Player</title>
+    <meta name="description" content="MIDIファイルをアップロードし、キーボードを叩くだけで次の音が再生されるインタラクティブな演奏アプリケーションです。">
+    <meta name="page:icon" content="fas fa-sliders-h">
+    <meta name="page:color" content="#8b5cf6">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+    <script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
+
+    <style>
+        :root {
+            --key-width: 50px;
+            --key-height: 240px;
+            --black-key-width: 32px;
+            --black-key-height: 150px;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            overflow: hidden;
+            background: linear-gradient(135deg, #1e3a8a, #4c1d95, #be185d);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .piano-container {
+            user-select: none;
+            -webkit-user-select: none;
+            transform: perspective(1200px) rotateX(20deg);
+            transform-style: preserve-3d;
+            box-shadow: 0 50px 80px rgba(0,0,0,0.4);
+            padding: 10px 10px 0 10px;
+            background: linear-gradient(to right, #2d3748, #1a202c);
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .key {
+            border: 1px solid #333;
+            box-sizing: border-box;
+            transition: all 0.1s ease-out;
+            cursor: pointer;
+            display: inline-block;
+        }
+        
+        .key.white {
+            width: var(--key-width);
+            height: var(--key-height);
+            background: linear-gradient(to bottom, #fff, #e0e0e0);
+            box-shadow: 0 5px 2px rgba(0,0,0,0.2);
+            border-radius: 0 0 8px 8px;
+            position: relative;
+        }
+        
+        .key.black {
+            width: var(--black-key-width);
+            height: var(--black-key-height);
+            background: linear-gradient(to bottom, #333, #000);
+            position: absolute;
+            z-index: 10;
+            top: 10px;
+            box-shadow: 0 5px 5px rgba(0,0,0,0.4);
+            border-radius: 0 0 6px 6px;
+        }
+        
+        .key.active {
+            transform: translateY(2px) scale(0.98);
+            box-shadow: inset 0 0 20px #0ea5e9, 0 2px 0px rgba(0,0,0,0.3);
+            background: linear-gradient(to bottom, #86efac, #22c55e);
+        }
+
+        .key.black.active {
+            background: linear-gradient(to bottom, #86efac, #16a34a);
+        }
+
+        .label-key-name {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            font-weight: 600;
+            color: #555;
+            pointer-events: none;
+        }
+
+        .key.black .label-key-name {
+            color: #aaa;
+            font-size: 10px;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            width: 100%; height: 8px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 5px; outline: none;
+            transition: background 0.3s;
+        }
+        input[type="range"]:hover { background: rgba(0, 0, 0, 0.6); }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 20px; height: 20px;
+            background: #8b5cf6; cursor: pointer;
+            border-radius: 50%; border: 2px solid #fff;
+            box-shadow: 0 0 5px rgba(139, 92, 246, 0.8);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px; height: 20px;
+            background: #8b5cf6; cursor: pointer;
+            border-radius: 50%; border: 2px solid #fff;
+        }
+    </style>
+</head>
+<body class="text-white flex flex-col items-center justify-center h-screen p-2 md:p-4">
+
+    <div id="main-container" class="glass-panel rounded-2xl shadow-2xl p-4 md:p-6 w-full max-w-7xl h-[96vh] flex flex-col transition-opacity duration-500 opacity-0">
+        
+        <header class="text-center mb-2">
+            <h1 class="text-3xl md:text-5xl font-bold tracking-wider">
+                <i class="fas fa-rocket text-purple-400"></i> MIDI Gacha Player
+            </h1>
+            <p class="text-md md:text-lg text-gray-300 mt-1">キーを叩くだけで、名演奏家に。</p>
+        </header>
+        
+        <div id="upload-section" class="w-full max-w-lg mx-auto flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-400 rounded-lg transition-all duration-300 hover:border-purple-400 hover:bg-white/5">
+            <input type="file" id="midi-upload" accept=".mid,.midi" class="hidden">
+            <label for="midi-upload" class="cursor-pointer text-center">
+                <div class="text-4xl text-purple-300 mb-2">
+                    <i class="fas fa-file-audio"></i>
+                </div>
+                <span class="text-lg font-semibold bg-purple-600 px-4 py-2 rounded-lg shadow-lg hover:bg-purple-700 transition-colors duration-300">
+                    MIDIファイルを選択
+                </span>
+                <p id="file-status" class="mt-2 text-gray-300 text-sm">または、ファイルをここにドラッグ＆ドロップ</p>
+            </label>
+        </div>
+
+        <div id="player-section" class="flex-grow flex flex-col items-center justify-between mt-2 h-full relative">
+            
+            <div class="w-full max-w-6xl">
+                <div id="controls-panel" class="glass-panel rounded-lg p-3 w-full mx-auto">
+                    <div class="grid grid-cols-2 md:grid-cols-6 gap-3 items-center">
+                        <div class="flex flex-col col-span-2 md:col-span-1">
+                            <label for="instrument-select" class="text-xs font-semibold mb-1 text-gray-300">INSTRUMENT</label>
+                            <select id="instrument-select" class="bg-gray-700/50 text-white rounded p-2 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500" style="background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 0.7rem center; background-size: 0.65rem; padding-right: 2rem;"></select>
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-xs text-gray-300">ATTACK: <span id="attack-value">0.02</span>s</label>
+                            <input id="attack-slider" type="range" min="0.01" max="1" step="0.01" value="0.02">
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-xs text-gray-300">DECAY: <span id="decay-value">0.10</span>s</label>
+                            <input id="decay-slider" type="range" min="0.01" max="1" step="0.01" value="0.1">
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-xs text-gray-300">SUSTAIN: <span id="sustain-value">0.30</span></label>
+                            <input id="sustain-slider" type="range" min="0" max="1" step="0.01" value="0.3">
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-xs text-gray-300">RELEASE: <span id="release-value">1.00</span>s</label>
+                            <input id="release-slider" type="range" min="0.1" max="3" step="0.01" value="1">
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-xs text-gray-300">VOLUME: <span id="volume-value">-6</span>dB</label>
+                            <input id="volume-slider" type="range" min="-30" max="6" step="1" value="-6">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="info-display" class="w-full text-center text-sm mt-2 bg-black/30 px-4 py-1 rounded-lg backdrop-blur-sm">
+                    <p id="current-song" class="truncate"></p>
+                    <p id="note-progress"></p>
+                </div>
+            </div>
+
+            <div id="piano" class="relative flex h-auto items-center justify-center w-full mt-2">
+                <div id="piano-keys" class="piano-container relative whitespace-nowrap"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const mainContainer = document.getElementById('main-container');
+            const uploadSection = document.getElementById('upload-section');
+            const fileInput = document.getElementById('midi-upload');
+            const fileStatus = document.getElementById('file-status');
+            const pianoKeysContainer = document.getElementById('piano-keys');
+            const currentSongDisplay = document.getElementById('current-song');
+            const noteProgressDisplay = document.getElementById('note-progress');
+            
+            const instrumentSelect = document.getElementById('instrument-select');
+            const attackSlider = document.getElementById('attack-slider');
+            const attackValue = document.getElementById('attack-value');
+            const decaySlider = document.getElementById('decay-slider');
+            const decayValue = document.getElementById('decay-value');
+            const sustainSlider = document.getElementById('sustain-slider');
+            const sustainValue = document.getElementById('sustain-value');
+            const releaseSlider = document.getElementById('release-slider');
+            const releaseValue = document.getElementById('release-value');
+            const volumeSlider = document.getElementById('volume-slider');
+            const volumeValue = document.getElementById('volume-value');
+
+            let playbackSteps = [];
+            let currentStepIndex = 0;
+            let synth, limiter, compressor, masterVolume;
+            let isAudioInitialized = false;
+
+            const OCTAVES_TO_DISPLAY = [3, 4, 5];
+            const NOTE_MAP_FLAT_TO_SHARP = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+
+            const instrumentTypes = [
+                { name: 'Crystal Synth', value: 'fmtriangle' }, { name: 'Warm Synth', value: 'triangle' },
+                { name: 'Pure Sine', value: 'sine' }, { name: 'Retro Game', value: 'square' },
+                { name: 'Aggressive Saw', value: 'sawtooth' }, { name: 'AM Radio', value: 'amsine' },
+                { name: 'Plucky Pulse', value: 'pulse' }
+            ];
+
+            let synthSettings = {
+                maxPolyphony: 64,
+                oscillator: { type: 'sawtooth' },
+                envelope: { attack: 0.02, decay: 0.5, sustain: 0.1, release: 0.01 }
+            };
+
+            function createKeyboard() {
+                pianoKeysContainer.innerHTML = '';
+                const whiteKeyWidth = 50;
+                const blackKeyWidth = 32;
+                const notesWithBlackKeys = { 'C': 'C#', 'D': 'D#', 'F': 'F#', 'G': 'G#', 'A': 'A#' };
+                const allWhiteNotes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+
+                let whiteKeyCount = 0;
+                OCTAVES_TO_DISPLAY.forEach(octave => {
+                    allWhiteNotes.forEach(noteName => {
+                        const whiteKey = document.createElement('div');
+                        whiteKey.className = 'key white';
+                        whiteKey.dataset.note = `${noteName}${octave}`;
+                        const label = document.createElement('span');
+                        label.className = 'label-key-name';
+                        label.textContent = `${noteName}${octave}`;
+                        whiteKey.appendChild(label);
+                        pianoKeysContainer.appendChild(whiteKey);
+
+                        if (notesWithBlackKeys[noteName]) {
+                            const blackNoteName = notesWithBlackKeys[noteName];
+                            const blackKey = document.createElement('div');
+                            blackKey.className = 'key black';
+                            blackKey.dataset.note = `${blackNoteName}${octave}`;
+                            const blackLabel = document.createElement('span');
+                            blackLabel.className = 'label-key-name';
+                            blackLabel.textContent = `${blackNoteName}${octave}`;
+                            blackKey.appendChild(blackLabel);
+
+                            const leftPosition = (whiteKeyCount + 1) * whiteKeyWidth - (blackKeyWidth / 2) + 10;
+                            blackKey.style.left = `${leftPosition}px`;
+                            pianoKeysContainer.appendChild(blackKey);
+                        }
+                        whiteKeyCount++;
+                    });
+                });
+            }
+
+            function setupTone() {
+                if (synth) synth.dispose();
+                if (masterVolume) masterVolume.dispose();
+                if (compressor) compressor.dispose();
+                if (limiter) limiter.dispose();
+
+                masterVolume = new Tone.Volume(-4).toDestination();
+                limiter = new Tone.Limiter(-4).connect(masterVolume);
+                compressor = new Tone.Compressor(-24, 12).connect(limiter);
+                synth = new Tone.PolySynth(Tone.Synth, synthSettings).connect(compressor);
+            }
+            
+            async function initializeAppAudio() {
+                if (isAudioInitialized) return;
+                await Tone.start();
+                setupTone();
+                isAudioInitialized = true;
+            }
+
+            function updateSynth() {
+                if (!synth) return;
+                synth.set({
+                    oscillator: { type: synthSettings.oscillator.type },
+                    envelope: synthSettings.envelope
+                });
+            }
+
+            function initializeControls() {
+                instrumentTypes.forEach(inst => {
+                    const option = document.createElement('option');
+                    option.value = inst.value;
+                    option.textContent = inst.name;
+                    instrumentSelect.appendChild(option);
+                });
+
+                instrumentSelect.value = synthSettings.oscillator.type;
+                attackSlider.value = synthSettings.envelope.attack;
+                decaySlider.value = synthSettings.envelope.decay;
+                sustainSlider.value = synthSettings.envelope.sustain;
+                releaseSlider.value = synthSettings.envelope.release;
+                volumeSlider.value = 0;
+
+                const updateSliderValue = (label, value, decimals = 2) => {
+                    label.textContent = parseFloat(value).toFixed(decimals);
+                };
+
+                updateSliderValue(attackValue, attackSlider.value);
+                updateSliderValue(decayValue, decaySlider.value);
+                updateSliderValue(sustainValue, sustainSlider.value);
+                updateSliderValue(releaseValue, releaseSlider.value);
+                volumeValue.textContent = volumeSlider.value;
+
+                instrumentSelect.addEventListener('change', (e) => {
+                    synthSettings.oscillator.type = e.target.value;
+                    updateSynth();
+                });
+                
+                const setupSliderListener = (slider, valueLabel, property, isDb = false) => {
+                    slider.addEventListener('input', (e) => {
+                        const value = parseFloat(e.target.value);
+                        if (isDb) {
+                            if(masterVolume) masterVolume.volume.value = value;
+                            valueLabel.textContent = value;
+                        } else {
+                            synthSettings.envelope[property] = value;
+                            updateSliderValue(valueLabel, value);
+                            updateSynth();
+                        }
+                    });
+                };
+
+                setupSliderListener(attackSlider, attackValue, 'attack');
+                setupSliderListener(decaySlider, decayValue, 'decay');
+                setupSliderListener(sustainSlider, sustainValue, 'sustain');
+                setupSliderListener(releaseSlider, releaseValue, 'release');
+                setupSliderListener(volumeSlider, volumeValue, null, true);
+            }
+
+            async function loadMidiFile(file) {
+                fileStatus.textContent = '読み込み中...';
+                currentSongDisplay.textContent = `曲名: ${file.name}`;
+                noteProgressDisplay.textContent = '準備中...';
+                
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const midiData = new Midi(arrayBuffer);
+                    
+                    const allNotes = midiData.tracks.flatMap(track => track.notes).sort((a, b) => a.ticks - b.ticks || a.midi - b.midi);
+
+                    if (allNotes.length === 0) throw new Error('MIDIファイルにノート情報が含まれていません。');
+                    
+                    playbackSteps = [];
+                    if (allNotes.length > 0) {
+                        let currentStep = [allNotes[0]];
+                        for (let i = 1; i < allNotes.length; i++) {
+                            if (allNotes[i].ticks === currentStep[0].ticks) {
+                                currentStep.push(allNotes[i]);
+                            } else {
+                                playbackSteps.push(currentStep);
+                                currentStep = [allNotes[i]];
+                            }
+                        }
+                        playbackSteps.push(currentStep);
+                    }
+                    
+                    currentStepIndex = 0;
+                    fileStatus.textContent = `準備完了！ 全${playbackSteps.length}ステップ`;
+                    uploadSection.classList.remove('border-red-500');
+                    uploadSection.classList.add('border-green-500');
+                    updateNoteProgress();
+
+                } catch (error) {
+                    fileStatus.textContent = `エラー: ${error.message}`;
+                    uploadSection.classList.remove('border-green-500');
+                    uploadSection.classList.add('border-red-500');
+                }
+            }
+            
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) loadMidiFile(e.target.files[0]);
+            });
+
+            const uploadArea = document.getElementById('upload-section');
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => uploadArea.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false));
+            uploadArea.addEventListener('dragenter', () => uploadArea.classList.add('bg-purple-500/30'));
+            uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('bg-purple-500/30'));
+            uploadArea.addEventListener('drop', (e) => {
+                uploadArea.classList.remove('bg-purple-500/30');
+                if (e.dataTransfer.files.length > 0) {
+                    fileInput.files = e.dataTransfer.files;
+                    loadMidiFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            function convertToSharp(noteName) {
+                if (!noteName || noteName.length < 2) return noteName;
+                const octaveMatch = noteName.match(/\d+$/);
+                if (!octaveMatch) return noteName;
+                const octave = octaveMatch[0];
+                const pitch = noteName.slice(0, -octave.length);
+                return (NOTE_MAP_FLAT_TO_SHARP[pitch] || pitch) + octave;
+            }
+
+            function highlightKey(noteName, duration) {
+                const sharpNoteName = convertToSharp(noteName);
+                const keyElement = document.querySelector(`.key[data-note="${sharpNoteName}"]`);
+                if (keyElement) {
+                    keyElement.classList.add('active');
+                    setTimeout(() => keyElement.classList.remove('active'), duration * 1000 + 100);
+                }
+            }
+
+            function playNextStep() {
+                if (playbackSteps.length === 0) {
+                    fileStatus.textContent = '先にMIDIファイルをアップロードしてください。';
+                    return;
+                }
+                
+                if (currentStepIndex >= playbackSteps.length) currentStepIndex = 0;
+                
+                const notesToPlay = playbackSteps[currentStepIndex];
+                if (!notesToPlay) return;
+
+                notesToPlay.forEach(note => {
+                    synth.triggerAttackRelease(note.name, note.duration, Tone.now());
+                    highlightKey(note.name, note.duration);
+                });
+                
+                currentStepIndex++;
+                updateNoteProgress();
+            }
+            
+            function updateNoteProgress() {
+                noteProgressDisplay.textContent = `進捗: ${currentStepIndex} / ${playbackSteps.length}`;
+            }
+
+            async function handleInteraction() {
+                await initializeAppAudio();
+                playNextStep();
+            }
+
+            window.addEventListener('keydown', (e) => {
+                if (e.repeat || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
+                handleInteraction();
+            });
+
+            pianoKeysContainer.addEventListener('mousedown', () => handleInteraction());
+
+            createKeyboard();
+            initializeControls();
+            mainContainer.style.opacity = 1;
+        });
+    </script>
+</body>
+</html>

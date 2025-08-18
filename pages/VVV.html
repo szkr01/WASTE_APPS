@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lyric Weaver | AI Vowel Composer</title>
+    <meta name="description" content="Generate lyrical phrases by recursively replacing vowel patterns with Japanese words from an extensive dictionary. An interactive tool for creative writing and music.">
+    <meta name="page:icon" content="fas fa-feather-alt">
+    <meta name="page:color" content="#818cf8">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+        
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            scrollbar-width: thin;
+            scrollbar-color: #4f46e5 #1e293b;
+        }
+
+        .font-mono {
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #4f46e5;
+            border-radius: 10px;
+            border: 2px solid #1e293b;
+        }
+        
+        .text-gradient {
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .loader {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: inline-block;
+            position: relative;
+            border: 3px solid;
+            border-color: #64748b #64748b transparent transparent;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        .loader::after,
+        .loader::before {
+            content: '';  
+            box-sizing: border-box;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            margin: auto;
+            border: 3px solid;
+            border-color: transparent transparent #60a5fa #60a5fa;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            box-sizing: border-box;
+            animation: rotationBack 0.5s linear infinite;
+            transform-origin: center center;
+        }
+        .loader::before {
+            width: 28px;
+            height: 28px;
+            border-color: #64748b #64748b transparent transparent;
+            animation: rotation 1.5s linear infinite;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } } 
+        @keyframes rotationBack { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+
+        .tooltip-arrow::before {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 0 6px 6px 6px;
+            border-color: transparent transparent #334155 transparent;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+        input[type="range"]::-webkit-slider-runnable-track { background: #334155; height: 0.25rem; border-radius: 0.25rem; }
+        input[type="range"]::-moz-range-track { background: #334155; height: 0.25rem; border-radius: 0.25rem; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; margin-top: -6px; background-color: #a78bfa; height: 1.25rem; width: 1.25rem; border-radius: 50%; border: 2px solid #e0e7ff; transition: background-color 0.2s; }
+        input[type="range"]:hover::-webkit-slider-thumb { background-color: #8b5cf6; }
+        input[type="range"]::-moz-range-thumb { border: none; border-radius: 50%; background-color: #a78bfa; height: 1.25rem; width: 1.25rem; border: 2px solid #e0e7ff; transition: background-color 0.2s; }
+        input[type="range"]:hover::-moz-range-thumb { background-color: #8b5cf6; }
+
+        .segment { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .highlight-segment { animation: pulse 1.5s ease-in-out infinite; background-color: rgba(167, 139, 250, 0.2); }
+        .perm-highlight { background-color: rgba(167, 139, 250, 0.25); }
+        @keyframes pulse { 0%, 100% { background-color: rgba(167, 139, 250, 0.2); } 50% { background-color: rgba(167, 139, 250, 0.4); } }
+        
+        .log-item { animation: slideInUp 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        @keyframes slideInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .interactive-candidate[aria-selected="true"] { background-color: #4338ca; border-color: #818cf8; color: white; }
+    </style>
+</head>
+
+<body class="bg-slate-900 text-slate-300">
+
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col justify-center items-center z-50 transition-opacity duration-500">
+        <div class="loader"></div>
+        <p id="loading-text" class="mt-6 text-slate-300 font-medium text-lg">辞書データを準備しています...</p>
+        <div class="w-64 bg-slate-700 rounded-full h-2.5 mt-4 overflow-hidden">
+            <div id="loading-progress" class="bg-gradient-to-r from-sky-500 to-indigo-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+    </div>
+
+    <div id="app-container" class="grid grid-cols-1 lg:grid-cols-12 min-h-screen opacity-0 transition-opacity duration-500">
+        <aside class="lg:col-span-3 bg-slate-800/50 border-r border-slate-700/50 p-6 flex flex-col h-screen overflow-y-auto">
+            <header class="mb-6">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-feather-alt text-3xl text-gradient"></i>
+                    <h1 class="text-2xl font-bold text-slate-100">Lyric Weaver</h1>
+                </div>
+                <p class="mt-1 text-sm text-slate-400">母音から歌詞を自動構成</p>
+            </header>
+
+            <div class="space-y-6 mb-6">
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label for="n-vowels" class="font-bold text-slate-300 text-sm">母音数 (n)</label>
+                        <span id="n-vowels-value" class="font-mono bg-slate-700 text-indigo-300 text-sm font-semibold px-2.5 py-1 rounded-md">5</span>
+                    </div>
+                    <input type="range" id="n-vowels" min="2" max="15" value="5" class="w-full">
+                </div>
+                 <div>
+                    <label for="vowel-sequence-input" class="font-bold text-slate-300 text-sm mb-2 block">基本母音シーケンス (n文字)</label>
+                    <div class="relative">
+                        <input type="text" id="vowel-sequence-input" class="w-full bg-slate-700 border border-slate-600 rounded-lg py-2 pl-3 pr-20 text-white font-mono focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-all" placeholder="長さ5の母音..." maxlength="5">
+                        <button id="random-vowel-btn" class="absolute inset-y-0 right-0 flex items-center justify-center w-20 text-slate-400 hover:text-sky-300 transition-colors text-xs font-bold">ランダム</button>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label for="k-repeats" class="font-bold text-slate-300 text-sm">繰り返し (k)</label>
+                        <span id="k-repeats-value" class="font-mono bg-slate-700 text-indigo-300 text-sm font-semibold px-2.5 py-1 rounded-md">3</span>
+                    </div>
+                    <input type="range" id="k-repeats" min="1" max="10" value="3" class="w-full">
+                </div>
+            </div>
+            
+            <div class="border-t border-b border-slate-700 py-6">
+                <div class="flex items-center justify-between mb-4">
+                    <label for="interactive-mode-toggle" class="font-bold text-slate-300 text-sm">インタラクティブモード</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="interactive-mode-toggle" class="sr-only peer">
+                        <div class="w-11 h-6 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                </div>
+                <div class="flex flex-col space-y-3">
+                    <button id="generate-btn" class="w-full text-white font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg shadow-sky-900/50 flex items-center justify-center space-x-2">
+                        <i class="fas fa-magic"></i>
+                        <span>母音シーケンスを生成</span>
+                    </button>
+                    <button id="compose-btn" disabled class="w-full text-white font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 transition-all duration-300 transform hover:scale-105 shadow-lg shadow-indigo-900/50 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+                        <i class="fas fa-play-circle"></i>
+                        <span>構成開始</span>
+                    </button>
+                    <button id="reset-btn" class="w-full text-slate-300 font-bold py-3 px-4 rounded-lg bg-slate-600 hover:bg-slate-700 transition-colors duration-300 flex items-center justify-center space-x-2">
+                        <i class="fas fa-undo"></i>
+                        <span>リセット</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="flex-grow flex flex-col min-h-0 pt-6">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider">辞書フィルター</h2>
+                     <div class="space-x-2">
+                        <button id="filter-select-all" class="text-xs text-sky-400 hover:text-sky-300 font-medium">全選択</button>
+                        <button id="filter-deselect-all" class="text-xs text-slate-400 hover:text-slate-300 font-medium">全解除</button>
+                    </div>
+                </div>
+                <div id="dictionary-filter-list" class="flex flex-wrap gap-2 pr-2">
+                </div>
+            </div>
+        </aside>
+
+        <main class="lg:col-span-6 bg-slate-900/70 p-4 md:p-8 flex flex-col h-screen">
+            <div id="composition-canvas" class="flex-grow bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6 mb-4 flex items-center justify-center text-center leading-loose text-2xl font-mono min-h-[200px] overflow-auto">
+                <div id="welcome-message" class="flex flex-col items-center justify-center h-full text-center p-8">
+                    <i class="fas fa-pen-fancy text-5xl text-slate-600 mb-6"></i>
+                    <h2 class="text-2xl font-bold text-slate-300">ようこそ Lyric Weaver へ</h2>
+                    <p class="mt-2 max-w-md text-slate-400">左のパネルで設定を調整し、「母音シーケンスを生成」ボタンを押して始めましょう。</p>
+                </div>
+            </div>
+            <div class="flex-shrink-0 h-1/3 bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 rounded-2xl flex flex-col">
+                <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider p-4 border-b border-slate-700/50">プロセスログ</h3>
+                <ul id="composition-log" class="flex-grow p-4 space-y-2 overflow-y-auto">
+                    <li class="text-slate-500">ここに処理のステップが表示されます...</li>
+                </ul>
+            </div>
+        </main>
+        
+        <aside id="interactive-panel" class="lg:col-span-3 bg-slate-800/50 border-l border-slate-700/50 p-6 flex flex-col h-screen">
+            <h2 class="text-lg font-bold text-slate-100 mb-4 flex items-center"><i class="fas fa-tasks mr-3 text-indigo-400"></i>インタラクティブ選択</h2>
+            
+            <div id="interactive-placeholder" class="flex-grow flex flex-col items-center justify-center text-center text-slate-500 border-2 border-dashed border-slate-700 rounded-xl p-4">
+                <i class="fas fa-mouse-pointer text-4xl mb-4"></i>
+                <p>インタラクティブモードで構成を開始すると、ここに単語の候補が表示されます。</p>
+            </div>
+
+            <div id="interactive-content" class="hidden flex-grow flex flex-col min-h-0">
+                <div class="mb-4">
+                    <p class="text-sm text-slate-400">対象の母音シーケンス:</p>
+                    <p id="interactive-vowel-pattern" class="text-2xl font-mono text-yellow-300 bg-slate-700/50 rounded-md p-2 text-center tracking-widest"></p>
+                </div>
+                <p class="text-sm text-slate-400 mb-2">候補一覧:</p>
+                <div class="flex-grow bg-slate-900/50 rounded-md p-2 overflow-y-auto border border-slate-700">
+                    <ul id="interactive-candidate-list" class="space-y-1">
+                    </ul>
+                </div>
+                <div class="mt-4 space-y-2">
+                    <button id="interactive-replace-btn" disabled class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">選択した単語で置換</button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="interactive-skip-btn" class="w-full bg-slate-600 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-4 rounded-lg transition-colors">スキップ (自動選択)</button>
+                        <button id="interactive-keep-btn" class="w-full bg-slate-600 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-4 rounded-lg transition-colors">置換しない</button>
+                    </div>
+                    <button id="interactive-research-btn" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2.5 px-4 rounded-lg transition-colors">
+                        <i class="fas fa-sync-alt mr-2"></i>別の候補を検索
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <div id="word-detail-modal" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex justify-center items-center p-4 z-50 opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out">
+        <div id="modal-panel" class="bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col transform opacity-0 scale-95 transition-all duration-300 ease-in-out">
+            <div class="flex justify-between items-center p-5 border-b border-slate-700">
+                <h2 id="modal-title" class="text-2xl font-bold text-slate-100"></h2>
+                <button id="modal-close-btn" class="text-slate-400 hover:text-white hover:bg-slate-700 rounded-full w-9 h-9 flex items-center justify-center transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div id="modal-content" class="p-6 flex-grow overflow-y-auto space-y-4 bg-slate-900/50">
+            </div>
+            <div class="p-4 bg-slate-800 border-t border-slate-700 rounded-b-2xl text-right">
+                 <button id="modal-close-btn-footer" class="bg-slate-600 text-slate-200 font-medium py-2 px-5 rounded-lg hover:bg-slate-700 transition-colors">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class YomiUtil {
+             constructor() {
+                this.roma_to_hira = { "a": "あ", "ba": "ば", "be": "べ", "bi": "び", "bo": "ぼ", "bu": "ぶ", "bya": "びゃ", "bye": "びぇ", "byi": "びぃ", "byo": "びょ", "byu": "びゅ", "ca": "か", "ce": "せ", "cha": "ちゃ", "che": "ちぇ", "chi": "ち", "cho": "ちょ", "chu": "ちゅ", "ci": "し", "co": "こ", "cu": "く", "cya": "ちゃ", "cye": "ちぇ", "cyi": "ちぃ", "cyo": "ちょ", "cyu": "ちゅ", "da": "だ", "de": "で", "dha": "でゃ", "dhe": "でぇ", "dhi": "でぃ", "dho": "でょ", "dhu": "でゅ", "di": "ぢ", "do": "ど", "du": "づ", "dwa": "どぁ", "dwe": "どぇ", "dwi": "どぃ", "dwo": "どぉ", "dwu": "どぅ", "dya": "ぢゃ", "dye": "ぢぇ", "dyi": "ぢぃ", "dyo": "ぢょ", "dyu": "ぢゅ", "e": "え", "fa": "ふぁ", "fe": "ふぇ", "fi": "ふぃ", "fo": "ふぉ", "fu": "ふ", "fwa": "ふぁ", "fwe": "ふぇ", "fwi": "ふぃ", "fwo": "ふぉ", "fwu": "ふぅ", "fya": "ふゃ", "fye": "ふぇ", "fyi": "ふぃ", "fyo": "ふょ", "fyu": "ふゅ", "ga": "が", "ge": "げ", "gi": "ぎ", "go": "ご", "gu": "ぐ", "gwa": "ぐぁ", "gwe": "ぐぇ", "gwi": "ぐぃ", "gwo": "ぐぉ", "gwu": "ぐぅ", "gya": "ぎゃ", "gye": "ぎぇ", "gyi": "ぎぃ", "gyo": "ぎょ", "gyu": "ぎゅ", "ha": "は", "he": "へ", "hi": "ひ", "ho": "ほ", "hu": "ふ", "hya": "ひゃ", "hye": "ひぇ", "hyi": "ひぃ", "hyo": "ひょ", "hyu": "ひゅ", "i": "い", "ja": "じゃ", "je": "じぇ", "ji": "じ", "jo": "じょ", "ju": "じゅ", "jya": "じゃ", "jye": "じぇ", "jyi": "じぃ", "jyo": "じょ", "jyu": "じゅ", "ka": "か", "ke": "け", "ki": "き", "ko": "こ", "ku": "く", "kwa": "くぁ", "kya": "きゃ", "kye": "きぇ", "kyi": "きぃ", "kyo": "きょ", "kyu": "きゅ", "la": "ぁ", "le": "ぇ", "li": "ぃ", "lka": "ヵ", "lke": "ヶ", "lo": "ぉ", "lu": "ぅ", "lwa": "ゎ", "lya": "ゃ", "lye": "ぇ", "lyi": "ぃ", "lyo": "ょ", "lyu": "ゅ", "ma": "ま", "me": "め", "mi": "み", "mo": "も", "mu": "む", "mya": "みゃ", "mye": "みぇ", "myi": "みぃ", "myo": "みょ", "myu": "みゅ", "n": "ん", "na": "な", "ne": "ね", "ni": "に", "nn": "ん", "no": "の", "nu": "ぬ", "nya": "にゃ", "nye": "にぇ", "nyi": "にぃ", "nyo": "にょ", "nyu": "にゅ", "o": "お", "pa": "ぱ", "pe": "ぺ", "pi": "ぴ", "po": "ぽ", "pu": "ぷ", "pya": "ぴゃ", "pye": "ぴぇ", "pyi": "ぴぃ", "pyo": "ぴょ", "pyu": "ぴゅ", "qa": "くぁ", "qe": "くぇ", "qi": "くぃ", "qo": "くぉ", "qu": "く", "qwa": "くぁ", "qwe": "くぇ", "qwi": "くぃ", "qwo": "くぉ", "qwu": "くぅ", "qya": "くゃ", "qye": "くぇ", "qyi": "くぃ", "qyo": "くょ", "qyu": "くゅ", "ra": "ら", "re": "れ", "ri": "り", "ro": "ろ", "ru": "る", "rya": "りゃ", "rye": "りぇ", "ryi": "りぃ", "ryo": "りょ", "ryu": "りゅ", "sa": "さ", "se": "せ", "sha": "しゃ", "she": "しぇ", "shi": "し", "sho": "しょ", "shu": "しゅ", "si": "し", "so": "そ", "su": "す", "swa": "すぁ", "swe": "すぇ", "swi": "すぃ", "swo": "すぉ", "swu": "すぅ", "sya": "しゃ", "sye": "しぇ", "syi": "しぃ", "syo": "しょ", "syu": "しゅ", "ta": "た", "te": "て", "tha": "てゃ", "the": "てぇ", "thi": "てぃ", "tho": "てょ", "thu": "てゅ", "ti": "ち", "to": "と", "tsa": "つぁ", "tse": "つぇ", "tsi": "つぃ", "tso": "つぉ", "tsu": "つ", "tu": "つ", "twa": "とぁ", "twe": "とぇ", "twi": "とぃ", "two": "とぉ", "twu": "とぅ", "tya": "ちゃ", "tye": "ちぇ", "tyi": "ちぃ", "tyo": "ちょ", "tyu": "ちゅ", "u": "う", "va": "ヴぁ", "ve": "ヴぇ", "vi": "ヴぃ", "vo": "ヴぉ", "vu": "ヴ", "vya": "ヴゃ", "vye": "ヴぇ", "vyi": "ヴぃ", "vyo": "ヴょ", "vyu": "ヴゅ", "wa": "わ", "we": "うぇ", "wha": "うぁ", "whe": "うぇ", "whi": "うぃ", "who": "うぉ", "whu": "う", "wi": "うぃ", "wo": "を", "wu": "う", "wye": "ゑ", "wyi": "ゐ", "xa": "ぁ", "xe": "ぇ", "xi": "ぃ", "xka": "ヵ", "xke": "ヶ", "xo": "ぉ", "xu": "ぅ", "xwa": "ゎ", "xya": "ゃ", "xye": "ぇ", "xyi": "ぃ", "xyo": "ょ", "xyu": "ゅ", "ya": "や", "ye": "いぇ", "yi": "い", "yo": "よ", "yu": "ゆ", "za": "ざ", "ze": "ぜ", "zi": "じ", "zo": "ぞ", "zu": "ず", "zya": "じゃ", "zye": "じぇ", "zyi": "じぃ", "zyo": "じょ", "zyu": "じゅ", }
+                this.kana_to_roma = {};
+                for (let roma in this.roma_to_hira) {
+                    let hira = this.roma_to_hira[roma];
+                    let kana = this.hira2kana(hira);
+                    if (this.kana_to_roma[kana]) continue;
+                    this.kana_to_roma[kana] = roma;
+                }
+            }
+            hira2kana(str) {
+                return str.replace(/[\u3041-\u3096]/g, match => String.fromCharCode(match.charCodeAt(0) + 0x60));
+            }
+            kana2roma(str) {
+                const res = [];
+                let i = 0;
+                while (i < str.length) {
+                    let c = str[i];
+                    if (i + 1 < str.length) {
+                        let cc = c + str[i + 1];
+                        if (this.kana_to_roma[cc]) {
+                            res.push(this.kana_to_roma[cc]);
+                            i += 2;
+                            continue;
+                        }
+                    }
+                    if (this.kana_to_roma[c]) {
+                        res.push(this.kana_to_roma[c]);
+                    }
+                    i++;
+                }
+                return res;
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const dom = {
+                loadingOverlay: document.getElementById('loading-overlay'), loadingText: document.getElementById('loading-text'), loadingProgress: document.getElementById('loading-progress'), appContainer: document.getElementById('app-container'), nVowelsSlider: document.getElementById('n-vowels'), nVowelsValue: document.getElementById('n-vowels-value'), vowelSequenceInput: document.getElementById('vowel-sequence-input'), randomVowelBtn: document.getElementById('random-vowel-btn'), kRepeatsSlider: document.getElementById('k-repeats'), kRepeatsValue: document.getElementById('k-repeats-value'), generateBtn: document.getElementById('generate-btn'), composeBtn: document.getElementById('compose-btn'), resetBtn: document.getElementById('reset-btn'), interactiveModeToggle: document.getElementById('interactive-mode-toggle'), dictionaryFilterList: document.getElementById('dictionary-filter-list'), filterSelectAll: document.getElementById('filter-select-all'), filterDeselectAll: document.getElementById('filter-deselect-all'), compositionCanvas: document.getElementById('composition-canvas'), compositionLog: document.getElementById('composition-log'), welcomeMessage: document.getElementById('welcome-message'), interactivePanel: document.getElementById('interactive-panel'), interactivePlaceholder: document.getElementById('interactive-placeholder'), interactiveContent: document.getElementById('interactive-content'), interactiveVowelPattern: document.getElementById('interactive-vowel-pattern'), interactiveCandidateList: document.getElementById('interactive-candidate-list'), interactiveReplaceBtn: document.getElementById('interactive-replace-btn'), interactiveSkipBtn: document.getElementById('interactive-skip-btn'), interactiveKeepBtn: document.getElementById('interactive-keep-btn'), interactiveResearchBtn: document.getElementById('interactive-research-btn'), wordDetailModal: document.getElementById('word-detail-modal'), modalPanel: document.getElementById('modal-panel'), modalTitle: document.getElementById('modal-title'), modalContent: document.getElementById('modal-content'), modalCloseBtn: document.getElementById('modal-close-btn'), modalCloseBtnFooter: document.getElementById('modal-close-btn-footer'),
+            };
+
+            const YU = new YomiUtil();
+            const wordDetailsMap = new Map();
+            const vowelToWordMap = new Map();
+            let compositionData = [];
+            let initialCompositionData = [];
+            let isComposing = false;
+            let isInteractiveMode = false;
+            const VOWELS = ['a', 'i', 'u', 'e', 'o', 'n'];
+
+            const csvList = ["../Assets/ipac/Adj.csv", "../Assets/ipac/Adnominal.csv", "../Assets/ipac/Adverb.csv", "../Assets/ipac/Auxil.csv", "../Assets/ipac/Conjunction.csv", "../Assets/ipac/Filler.csv", "../Assets/ipac/Interjection.csv", "../Assets/ipac/Noun.adjv.csv", "../Assets/ipac/Noun.adverbal.csv", "../Assets/ipac/Noun.csv", "../Assets/ipac/Noun.demonst.csv", "../Assets/ipac/Noun.nai.csv", "../Assets/ipac/Noun.name.csv", "../Assets/ipac/Noun.number.csv", "../Assets/ipac/Noun.org.csv", "../Assets/ipac/Noun.others.csv", "../Assets/ipac/Noun.place.csv", "../Assets/ipac/Noun.proper.csv", "../Assets/ipac/Noun.verbal.csv", "../Assets/ipac/Others.csv", "../Assets/ipac/Postp-col.csv", "../Assets/ipac/Postp.csv", "../Assets/ipac/Prefix.csv", "../Assets/ipac/Suffix.csv", "../Assets/ipac/Symbol.csv", "../Assets/ipac/Verb.csv"];
+            const dictionaryConfig = { 'Noun': { name: '名詞', color: 'blue' }, 'Verb': { name: '動詞', color: 'green' }, 'Adj': { name: '形容詞', color: 'pink' }, 'Adverb': { name: '副詞', color: 'purple' }, 'Adnominal': { name: '連体詞', color: 'fuchsia' }, 'Conjunction': { name: '接続詞', color: 'indigo' }, 'Interjection': { name: '感動詞', color: 'yellow' }, 'Postp': { name: '助詞', color: 'cyan' }, 'Auxil': { name: '助動詞', color: 'violet' }, 'Prefix': { name: '接頭辞', color: 'emerald' }, 'Suffix': { name: '接尾辞', color: 'lime' }, 'Symbol': { name: '記号', color: 'orange' }, 'Filler': { name: 'フィラー', color: 'gray' }, 'Others': { name: 'その他', color: 'slate' } };
+
+            const getTailwindFilterChipColors = color => {
+                const sets = { 'pink': { base: 'bg-slate-700', text: 'text-pink-300', border: 'border-pink-500/50', hover: 'hover:bg-pink-500/20 hover:border-pink-400', checked_bg: 'bg-pink-500', checked_text: 'text-white', checked_border: 'border-pink-500' }, 'fuchsia': { base: 'bg-slate-700', text: 'text-fuchsia-300', border: 'border-fuchsia-500/50', hover: 'hover:bg-fuchsia-500/20 hover:border-fuchsia-400', checked_bg: 'bg-fuchsia-500', checked_text: 'text-white', checked_border: 'border-fuchsia-500' }, 'purple': { base: 'bg-slate-700', text: 'text-purple-300', border: 'border-purple-500/50', hover: 'hover:bg-purple-500/20 hover:border-purple-400', checked_bg: 'bg-purple-500', checked_text: 'text-white', checked_border: 'border-purple-500' }, 'violet': { base: 'bg-slate-700', text: 'text-violet-300', border: 'border-violet-500/50', hover: 'hover:bg-violet-500/20 hover:border-violet-400', checked_bg: 'bg-violet-500', checked_text: 'text-white', checked_border: 'border-violet-500' }, 'indigo': { base: 'bg-slate-700', text: 'text-indigo-300', border: 'border-indigo-500/50', hover: 'hover:bg-indigo-500/20 hover:border-indigo-400', checked_bg: 'bg-indigo-500', checked_text: 'text-white', checked_border: 'border-indigo-500' }, 'blue': { base: 'bg-slate-700', text: 'text-blue-300', border: 'border-blue-500/50', hover: 'hover:bg-blue-500/20 hover:border-blue-400', checked_bg: 'bg-blue-500', checked_text: 'text-white', checked_border: 'border-blue-500' }, 'cyan': { base: 'bg-slate-700', text: 'text-cyan-300', border: 'border-cyan-500/50', hover: 'hover:bg-cyan-500/20 hover:border-cyan-400', checked_bg: 'bg-cyan-500', checked_text: 'text-white', checked_border: 'border-cyan-500' }, 'green': { base: 'bg-slate-700', text: 'text-green-300', border: 'border-green-500/50', hover: 'hover:bg-green-500/20 hover:border-green-400', checked_bg: 'bg-green-500', checked_text: 'text-white', checked_border: 'border-green-500' }, 'lime': { base: 'bg-slate-700', text: 'text-lime-300', border: 'border-lime-500/50', hover: 'hover:bg-lime-500/20 hover:border-lime-400', checked_bg: 'bg-lime-500', checked_text: 'text-white', checked_border: 'border-lime-500' }, 'yellow': { base: 'bg-slate-700', text: 'text-yellow-300', border: 'border-yellow-500/50', hover: 'hover:bg-yellow-500/20 hover:border-yellow-400', checked_bg: 'bg-yellow-500', checked_text: 'text-black', checked_border: 'border-yellow-500' }, 'orange': { base: 'bg-slate-700', text: 'text-orange-300', border: 'border-orange-500/50', hover: 'hover:bg-orange-500/20 hover:border-orange-400', checked_bg: 'bg-orange-500', checked_text: 'text-white', checked_border: 'border-orange-500' }, 'slate': { base: 'bg-slate-700', text: 'text-slate-300', border: 'border-slate-500/50', hover: 'hover:bg-slate-600/20 hover:border-slate-400', checked_bg: 'bg-slate-500', checked_text: 'text-white', checked_border: 'border-slate-500' }, 'gray': { base: 'bg-slate-700', text: 'text-gray-300', border: 'border-gray-500/50', hover: 'hover:bg-gray-600/20 hover:border-gray-400', checked_bg: 'bg-gray-500', checked_text: 'text-white', checked_border: 'border-gray-500' }, };
+                return sets[color] || sets['gray'];
+            };
+
+            const getTypeFromPath = path => path.split('/').pop().split('.')[0];
+            const getForwardVowelString = kanaString => {
+                if (!kanaString) return '';
+                const cleanKana = kanaString.replace(/ー/g, '');
+                const romajiArray = YU.kana2roma(cleanKana);
+                return romajiArray ? romajiArray.map(e => e[e.length - 1]).join('') : '';
+            };
+
+            const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+            async function initialize() {
+                try {
+                    let loadedCount = 0;
+                    for (const csvPath of csvList) {
+                        const response = await fetch(csvPath);
+                        if (!response.ok) { console.warn(`Could not load ${csvPath}, skipping.`); continue; }
+                        const data = await response.text();
+                        const rows = data.trim().split('\n');
+                        const source = getTypeFromPath(csvPath);
+
+                        for (const line of rows) {
+                            const row = line.split(',');
+                            if (row && row.length > 11 && row[0] && row[11]) {
+                                const surfaceWord = row[0], yomi = row[11];
+                                if (!wordDetailsMap.has(surfaceWord)) wordDetailsMap.set(surfaceWord, []);
+                                wordDetailsMap.get(surfaceWord).push({ surface: row[0] || '', pos1: row[4] || '*', pos2: row[5] || '*', pos3: row[6] || '*', pos4: row[7] || '*', conjForm: row[8] || '*', conjType: row[9] || '*', baseForm: row[10] || '*', yomi: row[11] || '', pronunciation: row[12] || '', source: source });
+                                
+                                const forwardVowels = getForwardVowelString(yomi);
+                                if (forwardVowels) {
+                                    if (!vowelToWordMap.has(forwardVowels)) vowelToWordMap.set(forwardVowels, new Set());
+                                    vowelToWordMap.get(forwardVowels).add({ word: surfaceWord, source });
+                                }
+                            }
+                        }
+                        loadedCount++;
+                        const progress = (loadedCount / csvList.length) * 100;
+                        dom.loadingProgress.style.width = `${progress}%`;
+                        dom.loadingText.textContent = `辞書を処理中... (${loadedCount}/${csvList.length})`;
+                    }
+                    
+                    setupFilters();
+                    
+                    dom.loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
+                    dom.appContainer.classList.remove('opacity-0');
+                } catch (error) {
+                    console.error('Initialization failed:', error);
+                    dom.loadingText.innerHTML = `エラー: 辞書ファイルの読み込みに失敗しました。<br>ファイルが指定の場所にあるか確認してください。`;
+                    dom.loadingText.classList.add('text-red-500');
+                    dom.loadingProgress.parentElement.classList.add('hidden');
+                }
+            }
+            
+            function setupFilters() {
+                dom.dictionaryFilterList.innerHTML = '';
+                Object.entries(dictionaryConfig).forEach(([key, {name, color}]) => {
+                    const colors = getTailwindFilterChipColors(color);
+                    dom.dictionaryFilterList.innerHTML += `
+                        <label class="cursor-pointer">
+                            <input type="checkbox" data-filter-type="${key}" class="filter-checkbox sr-only peer" checked>
+                            <span class="peer-checked:${colors.checked_bg} peer-checked:${colors.checked_text} peer-checked:${colors.checked_border} ${colors.base} ${colors.text} ${colors.border} inline-block text-xs font-medium px-3 py-1.5 rounded-full border-2 transition-all duration-200 ${colors.hover}">
+                                ${name}
+                            </span>
+                        </label>`;
+                });
+            }
+
+            function logStep(html) {
+                if (dom.compositionLog.children.length === 1 && dom.compositionLog.firstElementChild.textContent.includes('...')) {
+                    dom.compositionLog.innerHTML = '';
+                }
+                const li = document.createElement('li');
+                li.className = 'log-item text-slate-400 text-sm font-mono flex items-start space-x-2';
+                li.innerHTML = `<span class="text-indigo-400 mt-0.5">&gt;</span><div class="flex-1">${html}</div>`;
+                dom.compositionLog.appendChild(li);
+                li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }
+
+            function renderComposition() {
+                dom.welcomeMessage.classList.add('hidden');
+                dom.compositionCanvas.classList.add('flex-wrap', 'content-center');
+
+                dom.compositionCanvas.innerHTML = compositionData.map((item, index) => {
+                    if (item.type === 'vowel') {
+                        return `<span class="segment text-slate-500" data-index="${index}">${item.value}</span>`;
+                    } else if (item.type === 'word') {
+                        return `<button class="segment text-gradient font-bold mx-1 hover:underline decoration-dotted underline-offset-4" data-word="${item.value}" data-index="${index}">${item.value}</button>`;
+                    }
+                }).join('');
+            }
+
+            function handleGenerate() {
+                if(isComposing) return;
+                const n = parseInt(dom.nVowelsSlider.value);
+                const k = parseInt(dom.kRepeatsSlider.value);
+                let baseVowels = dom.vowelSequenceInput.value.trim().toLowerCase();
+
+                if (baseVowels && (!/^[aiueon]+$/.test(baseVowels) || baseVowels.length !== n)) {
+                    logStep(`<span class="text-red-400">エラー: 母音シーケンスの入力が不正です。a,i,u,e,o,nのみを${n}文字入力してください。</span>`);
+                    dom.vowelSequenceInput.classList.add('border-red-500', 'ring', 'ring-red-500/50');
+                    setTimeout(() => dom.vowelSequenceInput.classList.remove('border-red-500', 'ring', 'ring-red-500/50'), 2000);
+                    return;
+                }
+
+                if (!baseVowels) {
+                    baseVowels = Array.from({length: n}, () => VOWELS[Math.floor(Math.random() * VOWELS.length)]).join('');
+                    dom.vowelSequenceInput.value = baseVowels;
+                }
+                
+                const fullSequence = baseVowels.repeat(k);
+                compositionData = Array.from(fullSequence).map(vowel => ({ type: 'vowel', value: vowel, processed: false }));
+                initialCompositionData = JSON.parse(JSON.stringify(compositionData));
+                renderComposition();
+                dom.composeBtn.disabled = false;
+                logStep('母音シーケンスを生成しました。');
+            }
+
+            function handleReset() {
+                isComposing = false;
+                compositionData = JSON.parse(JSON.stringify(initialCompositionData));
+
+                if (compositionData.length > 0) {
+                    compositionData.forEach(item => { if(item.type === 'vowel') item.processed = false; });
+                    renderComposition();
+                } else {
+                    dom.welcomeMessage.classList.remove('hidden');
+                    dom.compositionCanvas.innerHTML = '';
+                    dom.compositionCanvas.appendChild(dom.welcomeMessage);
+                    dom.compositionCanvas.classList.add('items-center', 'justify-center');
+                    dom.compositionCanvas.classList.remove('flex-wrap', 'content-center');
+                }
+                
+                dom.compositionLog.innerHTML = '<li class="text-slate-500">ここに処理のステップが表示されます...</li>';
+                dom.generateBtn.disabled = false;
+                dom.composeBtn.disabled = (compositionData.length === 0);
+                dom.nVowelsSlider.disabled = false;
+                dom.kRepeatsSlider.disabled = false;
+                resetInteractivePanel();
+            }
+            
+            function getUserChoice(candidates, vowelPattern) {
+                return new Promise(resolve => {
+                    dom.interactivePlaceholder.classList.add('hidden');
+                    dom.interactiveContent.classList.remove('hidden');
+                    dom.interactiveVowelPattern.textContent = vowelPattern;
+                    dom.interactiveCandidateList.innerHTML = '';
+                    
+                    candidates.forEach(candidate => {
+                        const li = document.createElement('li');
+                        li.className = 'interactive-candidate cursor-pointer p-2 rounded-md border border-slate-700 hover:bg-slate-700 transition-colors flex justify-between items-center';
+                        li.dataset.word = JSON.stringify(candidate);
+                        li.setAttribute('aria-selected', 'false');
+                        const { name, color } = dictionaryConfig[candidate.source] || { name: '不明', color: 'gray' };
+                        const colors = getTailwindFilterChipColors(color);
+                        li.innerHTML = `<span class="font-bold">${candidate.word}</span><span class="text-xs font-semibold px-2 py-0.5 rounded-full ${colors.base} ${colors.text}">${name}</span>`;
+                        dom.interactiveCandidateList.appendChild(li);
+                    });
+
+                    let selectedWord = null;
+
+                    const candidateClickHandler = (e) => {
+                        const targetLi = e.target.closest('.interactive-candidate');
+                        if (!targetLi) return;
+                        dom.interactiveCandidateList.querySelectorAll('.interactive-candidate').forEach(el => el.setAttribute('aria-selected', 'false'));
+                        targetLi.setAttribute('aria-selected', 'true');
+                        selectedWord = JSON.parse(targetLi.dataset.word);
+                        dom.interactiveReplaceBtn.disabled = false;
+                    };
+
+                    const cleanupAndResolve = (result) => {
+                        dom.interactiveCandidateList.removeEventListener('click', candidateClickHandler);
+                        replaceBtnHandler.abort(); skipBtnHandler.abort(); keepBtnHandler.abort(); researchBtnHandler.abort();
+                        resolve(result);
+                    };
+                    
+                    const replaceBtnHandler = new AbortController();
+                    dom.interactiveReplaceBtn.addEventListener('click', () => { if (selectedWord) cleanupAndResolve({ action: 'replace', word: selectedWord }); }, { signal: replaceBtnHandler.signal });
+                    const skipBtnHandler = new AbortController();
+                    dom.interactiveSkipBtn.addEventListener('click', () => cleanupAndResolve({ action: 'skip' }), { signal: skipBtnHandler.signal });
+                    const keepBtnHandler = new AbortController();
+                    dom.interactiveKeepBtn.addEventListener('click', () => cleanupAndResolve({ action: 'keep' }), { signal: keepBtnHandler.signal });
+                    const researchBtnHandler = new AbortController();
+                    dom.interactiveResearchBtn.addEventListener('click', () => cleanupAndResolve({ action: 'research' }), { signal: researchBtnHandler.signal });
+
+                    dom.interactiveCandidateList.addEventListener('click', candidateClickHandler);
+                });
+            }
+            
+            function resetInteractivePanel() {
+                 dom.interactiveContent.classList.add('hidden');
+                 dom.interactivePlaceholder.classList.remove('hidden');
+                 dom.interactiveReplaceBtn.disabled = true;
+            }
+
+            async function processBlock(blockStart, blockEnd) {
+                const activeFilters = new Set(Array.from(document.querySelectorAll('.filter-checkbox:checked')).map(cb => cb.dataset.filterType));
+                const blockLen = blockEnd - blockStart + 1;
+                const blockVowels = compositionData.slice(blockStart, blockEnd + 1);
+
+                let allPossibleReplacements = [];
+                for (let l = blockLen; l >= 2; l--) {
+                    for (let p_offset = 0; p_offset <= blockLen - l; p_offset++) {
+                        const p_global = blockStart + p_offset;
+                        const subArray = compositionData.slice(p_global, p_global + l);
+                        const vowelPattern = subArray.map(item => item.value).join('');
+                        const candidates = Array.from(vowelToWordMap.get(vowelPattern) || []).filter(c => activeFilters.has(c.source));
+                        if (candidates.length > 0) {
+                            allPossibleReplacements.push({ P: p_global, L: l, vowelPattern, candidates });
+                        }
+                    }
+                }
+                
+                allPossibleReplacements.sort(() => Math.random() - 0.5);
+
+                while (isComposing && allPossibleReplacements.length > 0) {
+                    const proposal = allPossibleReplacements.pop();
+                    const { P, L, vowelPattern, candidates } = proposal;
+
+                    const segmentIndices = Array.from({ length: L }, (_, i) => P + i);
+                    const domSegments = segmentIndices.map(i => dom.compositionCanvas.querySelector(`[data-index="${i}"]`));
+                    domSegments.forEach(el => el?.classList.add('perm-highlight'));
+
+                    let userChoice = { action: 'skip' };
+                    if (isInteractiveMode) {
+                        logStep(`ユーザーの選択を待っています... (母音: <span class="text-yellow-400">${vowelPattern}</span>)`);
+                        userChoice = await getUserChoice(candidates, vowelPattern);
+                        resetInteractivePanel();
+                    }
+                    domSegments.forEach(el => el?.classList.remove('perm-highlight'));
+
+                    if (userChoice.action === 'research') {
+                        logStep('別の候補を再検索します...');
+                        await sleep(200);
+                        continue; 
+                    }
+
+                    let finalReplacementWord = null;
+                    if (userChoice.action === 'replace') {
+                        finalReplacementWord = userChoice.word;
+                        logStep(`ユーザーが単語 <span class="text-gradient font-bold">'${finalReplacementWord.word}'</span> を選択しました。`);
+                    } else if (userChoice.action === 'skip') {
+                        finalReplacementWord = candidates[Math.floor(Math.random() * candidates.length)];
+                        logStep(`範囲 <span class="text-sky-400">[${P+1}..${P+L}]</span> を自動選択された単語 <span class="text-gradient font-bold">'${finalReplacementWord.word}'</span> で置換します。`);
+                    } else { 
+                         logStep(`ユーザーが母音ブロック <span class="text-yellow-400">${blockVowels.map(v=>v.value).join('')}</span> の置換を拒否しました。`);
+                         blockVowels.forEach(v => v.processed = true);
+                         return; 
+                    }
+
+                    if (finalReplacementWord) {
+                        const newItem = { type: 'word', value: finalReplacementWord.word, originalVowels: vowelPattern };
+                        compositionData.splice(P, L, newItem);
+                        renderComposition();
+                        await sleep(200);
+                    }
+                    return; 
+                }
+                
+                logStep(`ブロック <span class="text-yellow-400">${blockVowels.map(v=>v.value).join('')}</span> 内でこれ以上置換可能な単語が見つかりませんでした。`);
+                blockVowels.forEach(v => v.processed = true);
+            }
+
+            async function handleCompose() {
+                if (isComposing || compositionData.length === 0) return;
+                isComposing = true;
+                dom.generateBtn.disabled = true; dom.composeBtn.disabled = true; dom.resetBtn.disabled = true; dom.nVowelsSlider.disabled = true; dom.kRepeatsSlider.disabled = true;
+                logStep('構成プロセスを開始します...');
+                await sleep(200);
+                
+                try {
+                    while (isComposing) {
+                        let blockStart = -1;
+                        for (let i = 0; i < compositionData.length; i++) {
+                            if (compositionData[i].type === 'vowel' && !compositionData[i].processed) {
+                                blockStart = i; break;
+                            }
+                        }
+
+                        if (blockStart === -1) {
+                            logStep('全ての母音セグメントが処理されました。'); break;
+                        }
+
+                        let blockEnd = blockStart;
+                        while (blockEnd + 1 < compositionData.length && compositionData[blockEnd + 1].type === 'vowel' && !compositionData[blockEnd + 1].processed) {
+                            blockEnd++;
+                        }
+                        
+                        await processBlock(blockStart, blockEnd);
+                    }
+                } catch (err) {
+                    console.error("Composition error:", err);
+                    logStep("<span class='text-red-400'>エラーが発生しました。プロセスを中断します。</span>");
+                } finally {
+                    logStep('構成プロセスが完了しました。');
+                    isComposing = false;
+                    dom.resetBtn.disabled = false; dom.generateBtn.disabled = false;
+                    dom.nVowelsSlider.disabled = false; dom.kRepeatsSlider.disabled = false;
+                }
+            }
+            
+            function openWordDetailModal(word) {
+                const details = wordDetailsMap.get(word);
+                if (!details || details.length === 0) return;
+                dom.modalTitle.textContent = word;
+                dom.modalContent.innerHTML = '';
+                details.forEach((detail, index) => {
+                    const pos = [detail.pos1, detail.pos2, detail.pos3, detail.pos4].filter(p => p && p !== '*' && p !== '').join(' - ');
+                    const { name, color } = dictionaryConfig[detail.source] || { name: '不明', color: 'gray' };
+                    const colors = getTailwindFilterChipColors(color);
+                    dom.modalContent.innerHTML += `<div class="bg-slate-800 border border-slate-700 rounded-lg p-4"><div class="flex justify-between items-start mb-3"><h4 class="font-bold text-slate-300">エントリー ${index + 1}</h4><span class="${colors.checked_bg} ${colors.checked_text} text-xs font-bold px-3 py-1 rounded-full">${name}</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm"><div class="flex flex-col"><span class="text-xs text-slate-400 font-semibold">読み</span><span class="text-slate-200 font-mono">${detail.yomi || 'N/A'}</span></div><div class="flex flex-col"><span class="text-xs text-slate-400 font-semibold">発音</span><span class="text-slate-200 font-mono">${detail.pronunciation || 'N/A'}</span></div><div class="flex flex-col"><span class="text-xs text-slate-400 font-semibold">原形</span><span class="text-slate-200">${detail.baseForm === '*' ? detail.surface : detail.baseForm}</span></div><div class="flex flex-col col-span-1 sm:col-span-2"><span class="text-xs text-slate-400 font-semibold">品詞</span><span class="text-slate-200">${pos || 'N/A'}</span></div><div class="flex flex-col"><span class="text-xs text-slate-400 font-semibold">活用形</span><span class="text-slate-200">${detail.conjForm === '*' ? 'N/A' : detail.conjForm}</span></div><div class="flex flex-col"><span class="text-xs text-slate-400 font-semibold">活用型</span><span class="text-slate-200">${detail.conjType === '*' ? 'N/A' : detail.conjType}</span></div></div></div>`;
+                });
+                document.body.classList.add('overflow-hidden');
+                dom.wordDetailModal.classList.remove('opacity-0', 'pointer-events-none');
+                requestAnimationFrame(() => dom.modalPanel.classList.remove('opacity-0', 'scale-95'));
+            }
+
+            function closeWordDetailModal() {
+                dom.modalPanel.classList.add('opacity-0', 'scale-95');
+                dom.wordDetailModal.classList.add('opacity-0');
+                setTimeout(() => { dom.wordDetailModal.classList.add('pointer-events-none'); document.body.classList.remove('overflow-hidden'); }, 300);
+            }
+
+            dom.nVowelsSlider.addEventListener('input', e => {
+                const n = e.target.value;
+                dom.nVowelsValue.textContent = n;
+                dom.vowelSequenceInput.placeholder = `長さ${n}の母音...`;
+                dom.vowelSequenceInput.maxLength = n;
+                dom.vowelSequenceInput.value = '';
+            });
+            dom.kRepeatsSlider.addEventListener('input', e => dom.kRepeatsValue.textContent = e.target.value);
+            dom.randomVowelBtn.addEventListener('click', () => { dom.vowelSequenceInput.value = Array.from({length: parseInt(dom.nVowelsSlider.value)}, () => VOWELS[Math.floor(Math.random() * VOWELS.length)]).join(''); });
+            
+            dom.interactiveModeToggle.addEventListener('change', e => isInteractiveMode = e.target.checked);
+            dom.generateBtn.addEventListener('click', handleGenerate);
+            dom.composeBtn.addEventListener('click', handleCompose);
+            dom.resetBtn.addEventListener('click', handleReset);
+            
+            dom.filterSelectAll.addEventListener('click', () => document.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = true));
+            dom.filterDeselectAll.addEventListener('click', () => document.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = false));
+
+            dom.compositionCanvas.addEventListener('click', e => { if (e.target.closest('[data-word]')) openWordDetailModal(e.target.closest('[data-word]').dataset.word); });
+            dom.modalCloseBtn.addEventListener('click', closeWordDetailModal);
+            dom.modalCloseBtnFooter.addEventListener('click', closeWordDetailModal);
+            dom.wordDetailModal.addEventListener('click', e => e.target === dom.wordDetailModal && closeWordDetailModal());
+            document.addEventListener('keydown', e => e.key === 'Escape' && !dom.wordDetailModal.classList.contains('pointer-events-none') && closeWordDetailModal());
+
+            initialize();
+        });
+    </script>
+</body>
+</html>
