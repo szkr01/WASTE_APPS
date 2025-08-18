@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>子音シフター | Consonant Shifter</title>
+    <meta name="description" content="ひらがなの文章を入力すると、母音をそのままに子音だけをランダムに変化させて、新しい言葉を生成するインタラクティブなウェブアプリケーションです。">
+    <meta name="page:icon" content="fas fa-atom">
+    <meta name="page:color" content="#2dd4bf">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        html, body {
+            height: 100%;
+        }
+        body {
+            font-family: 'Noto+Sans+JP', 'Noto Sans JP', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background-color: #0F172A; /* slate-900 */
+            color: #cbd5e1; /* slate-300 */
+            overflow: hidden;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #334155; /* slate-700 */
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background-color: #475569; /* slate-600 */
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.5); /* slate-800/50 */
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.5); /* slate-700/50 */
+        }
+        #tooltip {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            width: 100%; background: transparent;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 4px; background: #334155; border-radius: 5px; /* slate-700 */
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px; width: 20px;
+            border-radius: 50%;
+            background: #2dd4bf; /* teal-400 */
+            cursor: pointer; margin-top: -8px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.5); /* slate-900/50 */
+        }
+        input[type="range"]:active::-webkit-slider-thumb {
+            transform: scale(1.2);
+            box-shadow: 0 0 15px #2dd4bf;
+        }
+        input[type="range"]::-moz-range-track {
+            height: 4px; background: #334155; border-radius: 5px;
+        }
+        input[type="range"]::-moz-range-thumb {
+            height: 20px; width: 20px; border-radius: 50%;
+            background: #2dd4bf; cursor: pointer; border: none;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4 lg:p-6">
+
+    <div class="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 -z-10"></div>
+    <div class="absolute top-0 left-0 h-96 w-96 bg-teal-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 -z-10"></div>
+    <div class="absolute bottom-0 right-0 h-96 w-96 bg-sky-500/10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2 -z-10"></div>
+
+    <main class="w-full h-full max-w-7xl flex flex-col lg:flex-row gap-4 lg:gap-6">
+
+        <!-- Input Panel -->
+        <div class="glass-panel rounded-2xl flex flex-col flex-1 p-5 min-h-0 min-w-0">
+            <h2 class="text-lg font-semibold text-slate-300 mb-3 flex items-center gap-2"><i class="fas fa-keyboard text-slate-400"></i>入力</h2>
+            <textarea id="inputText" class="custom-scrollbar w-full flex-1 bg-slate-900/80 border border-slate-700/80 text-slate-300 rounded-lg p-4 text-base md:text-lg focus:ring-2 focus:ring-teal-400 focus:border-teal-400 transition-all duration-300 resize-none break-words"></textarea>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="shrink-0 flex lg:flex-col items-center justify-center gap-4 lg:w-64 p-4 glass-panel rounded-2xl">
+            <div class="flex-1 w-full flex flex-col items-center justify-center gap-6">
+                <h1 class="text-3xl font-bold text-center text-transparent bg-clip-text bg-gradient-to-br from-teal-300 to-sky-400 hidden lg:block">
+                    子音シフター
+                </h1>
+                <button id="transformButton" class="group w-full lg:w-40 h-16 lg:h-40 flex flex-col items-center justify-center bg-gradient-to-br from-teal-500 to-cyan-500 text-white font-bold rounded-full transition-all duration-300 transform hover:scale-105 hover:shadow-2xl hover:shadow-teal-500/30 active:scale-95">
+                    <i class="fas fa-atom text-4xl mb-2 transition-transform duration-500 group-hover:rotate-180"></i>
+                    <span class="text-lg">変換する</span>
+                </button>
+                <div class="w-full max-w-xs">
+                    <label for="changeStrength" class="flex justify-between items-center text-sm font-medium text-slate-400 mb-2">
+                        <span>変化の強度</span>
+                        <span id="strengthValue" class="font-semibold text-teal-300">100%</span>
+                    </label>
+                    <input id="changeStrength" type="range" min="0" max="100" value="100" class="w-full">
+                </div>
+            </div>
+            <div class="flex lg:flex-col gap-3">
+                 <button id="clearButton" class="group w-12 h-12 flex items-center justify-center bg-slate-700/50 hover:bg-red-500/80 text-slate-300 hover:text-white rounded-full transition-all duration-300 transform hover:scale-110">
+                    <i class="fas fa-times text-xl"></i>
+                 </button>
+            </div>
+        </div>
+
+        <!-- Output Panel -->
+        <div class="glass-panel rounded-2xl flex flex-col flex-1 p-5 min-h-0 min-w-0">
+             <div class="flex justify-between items-center mb-3">
+                <h2 class="text-lg font-semibold text-slate-300 flex items-center gap-2"><i class="fas fa-magic text-slate-400"></i>出力</h2>
+                <button id="copyButton" class="relative group flex items-center gap-2 text-slate-400 hover:text-teal-300 transition-colors duration-300 text-sm opacity-0 pointer-events-none">
+                    <i class="fas fa-copy"></i>
+                    <span>コピー</span>
+                    <span id="tooltip" class="absolute bottom-full mb-2 whitespace-nowrap bg-slate-900 text-white text-xs px-2 py-1 rounded opacity-0 pointer-events-none transform translate-y-2">コピーしました！</span>
+                </button>
+            </div>
+            <div id="outputText" class="custom-scrollbar w-full flex-1 bg-slate-900/80 border border-slate-700/80 rounded-lg p-4 text-base md:text-lg overflow-y-auto whitespace-pre-wrap break-words">
+                <span class="text-slate-500">ここに結果が表示されます...</span>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const inputText = document.getElementById('inputText');
+            const outputText = document.getElementById('outputText');
+            const transformButton = document.getElementById('transformButton');
+            const clearButton = document.getElementById('clearButton');
+            const copyButton = document.getElementById('copyButton');
+            const strengthSlider = document.getElementById('changeStrength');
+            const strengthValue = document.getElementById('strengthValue');
+            const tooltip = document.getElementById('tooltip');
+
+            const hiraganaMap = {
+                'あ': ['あ', 'か', 'さ', 'た', 'な', 'は', 'ま', 'や', 'ら', 'わ', 'が', 'ざ', 'だ', 'ば', 'ぱ'],
+                'い': ['い', 'き', 'し', 'ち', 'に', 'ひ', 'み', 'り', 'ぎ', 'じ', 'ぢ', 'び', 'ぴ'],
+                'う': ['う', 'く', 'す', 'つ', 'ぬ', 'ふ', 'む', 'ゆ', 'る', 'ぐ', 'ず', 'づ', 'ぶ', 'ぷ'],
+                'え': ['え', 'け', 'せ', 'て', 'ね', 'へ', 'め', 'れ', 'げ', 'ぜ', 'で', 'べ', 'ぺ'],
+                'お': ['お', 'こ', 'そ', 'と', 'の', 'ほ', 'も', 'よ', 'ろ', 'を', 'ご', 'ぞ', 'ど', 'ぼ', 'ぽ']
+            };
+
+            const specialChars = { 'ゃ': 'あ', 'ゅ': 'う', 'ょ': 'お', 'っ': null, 'ん': null };
+            const vowelMap = {};
+            for (const vowel in hiraganaMap) {
+                for (const char of hiraganaMap[vowel]) {
+                    vowelMap[char] = vowel;
+                }
+            }
+            Object.assign(vowelMap, specialChars);
+
+            const transformText = () => {
+                const text = inputText.value;
+                if (!text) {
+                    outputText.innerHTML = '<span class="text-slate-500">ここに結果が表示されます...</span>';
+                    copyButton.classList.add('opacity-0', 'pointer-events-none');
+                    return;
+                }
+
+                let result = '';
+                const strength = parseInt(strengthSlider.value, 10);
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    const vowel = vowelMap[char];
+                    if (vowel && Math.random() * 100 < strength) {
+                        const consonantGroup = hiraganaMap[vowel];
+                        if (consonantGroup) {
+                            let newChar = char;
+                            if (consonantGroup.length > 1) {
+                                do {
+                                    newChar = consonantGroup[Math.floor(Math.random() * consonantGroup.length)];
+                                } while (newChar === char);
+                            }
+                            result += newChar;
+                        } else {
+                            result += char;
+                        }
+                    } else {
+                        result += char;
+                    }
+                }
+                
+                outputText.textContent = result;
+                copyButton.classList.remove('opacity-0', 'pointer-events-none');
+            };
+
+            const copyToClipboard = () => {
+                if (outputText.textContent && !outputText.querySelector('span')) {
+                    navigator.clipboard.writeText(outputText.textContent).then(() => {
+                        tooltip.classList.remove('opacity-0', 'translate-y-2');
+                        tooltip.classList.add('opacity-100', 'translate-y-0');
+                        setTimeout(() => {
+                           tooltip.classList.remove('opacity-100', 'translate-y-0');
+                           tooltip.classList.add('opacity-0', 'translate-y-2');
+                        }, 2000);
+                    });
+                }
+            };
+
+            const clearFields = () => {
+                inputText.value = '';
+                outputText.innerHTML = '<span class="text-slate-500">ここに結果が表示されます...</span>';
+                copyButton.classList.add('opacity-0', 'pointer-events-none');
+                inputText.focus();
+            };
+
+            strengthSlider.addEventListener('input', () => {
+                strengthValue.textContent = `${strengthSlider.value}%`;
+            });
+            
+            transformButton.addEventListener('click', transformText);
+            clearButton.addEventListener('click', clearFields);
+            copyButton.addEventListener('click', copyToClipboard);
+        });
+    </script>
+</body>
+</html>
