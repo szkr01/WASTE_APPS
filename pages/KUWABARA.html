@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kuwabara Filter Studio & Advanced Effects</title>
+    <meta name="description" content="An advanced image processing tool with focal point control. Apply various artistic filters like Kuwabara, Bilateral, and more, with effects that radiate smoothly from a user-selected point using a Gaussian falloff.">
+    <meta name="page:icon" content="fas-fa-bullseye">
+    <meta name="page:color" content="#818cf8">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(0.95); }
+          50% { opacity: 0.7; transform: scale(1.1); }
+        }
+        .loader { animation: spin 1s linear infinite; }
+        .focal-point-marker { animation: pulse 2s infinite ease-in-out; }
+        input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; background: transparent; }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #e2e8f0; border-radius: 9999px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%; background: #6366f1; cursor: pointer; margin-top: -6px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); transition: background .2s ease-in-out; }
+        input[type=range]:hover::-webkit-slider-thumb { background: #4f46e5; }
+        input[type=range]::-moz-range-track { width: 100%; height: 8px; cursor: pointer; background: #e2e8f0; border-radius: 9999px; }
+        input[type=range]::-moz-range-thumb { height: 20px; width: 20px; border-radius: 50%; background: #6366f1; cursor: pointer; border: none; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+        .gradient-text { background-image: linear-gradient(to right, #60a5fa, #818cf8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        #viewer-canvas { cursor: grab; }
+        #viewer-canvas.grabbing { cursor: grabbing; }
+        #canvas.focal-point-mode { cursor: crosshair; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans antialiased overflow-hidden">
+    <main class="flex h-screen w-screen p-4 md:p-6 lg:p-8 gap-4 md:gap-6 lg:gap-8">
+
+        <div id="controls-panel" class="w-full lg:w-1/3 xl:w-1/4 bg-white rounded-2xl shadow-lg p-6 flex flex-col transition-all duration-300 overflow-y-auto">
+            <header class="mb-6">
+                <h1 class="text-3xl font-bold gradient-text">Image Effects Studio</h1>
+                <p class="text-slate-500 mt-1">Explore advanced image filters</p>
+            </header>
+
+            <div class="flex-grow flex flex-col gap-6">
+                <label for="image-upload" id="drop-zone" class="flex-shrink-0 min-h-[150px] flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-all duration-300 text-center">
+                    <i class="fas fa-cloud-arrow-up text-4xl text-slate-400 mb-3"></i>
+                    <span class="font-semibold text-slate-600">Drag & Drop Image</span>
+                    <span class="text-slate-500 text-sm mt-1">or click to upload</span>
+                    <span class="text-slate-500 text-sm mt-2 font-bold">or just press Ctrl+V</span>
+                </label>
+                <input type="file" id="image-upload" class="hidden" accept="image/*">
+
+                <div id="main-controls" class="flex-grow space-y-4 opacity-50 pointer-events-none transition-opacity duration-300">
+                    <div>
+                        <label for="filter-select" class="font-medium text-slate-700 block mb-2">Filter Type</label>
+                        <select id="filter-select" class="w-full p-2 border border-slate-300 rounded-md bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <optgroup label="Kuwabara Variants"><option value="weighted_kuwabara" selected>Weighted Kuwabara</option><option value="generalized_kuwabara">Generalized Kuwabara</option></optgroup>
+                            <optgroup label="Edge-Preserving Smooth"><option value="bilateral">Bilateral Filter</option></optgroup>
+                            <optgroup label="Anime & Comic Style"><option value="sobel">Sobel Edge Detection</option><option value="posterize">Posterization</option></optgroup>
+                             <optgroup label="Artistic Effects"><option value="watercolor">Watercolor</option><option value="pixelate">Pixelation</option><option value="dither">Dithering (Bayer)</option></optgroup>
+                        </select>
+                    </div>
+
+                    <div id="filter-settings-container" class="space-y-5 pt-2 border-t border-slate-200">
+                        <div id="settings-weighted_kuwabara" class="filter-settings space-y-5">
+                            <div><div class="flex justify-between items-center mb-1"><label for="wk-kernel-size" class="font-medium text-slate-700">Filter Radius</label><span id="wk-kernel-size-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">4</span></div><input type="range" id="wk-kernel-size" min="1" max="10" value="4" step="1" data-value-display="wk-kernel-size-value"></div>
+                            <div><div class="flex justify-between items-center mb-1"><label for="wk-sigma" class="font-medium text-slate-700">Bell Curve (Sigma)</label><span id="wk-sigma-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">2.5</span></div><input type="range" id="wk-sigma" min="0.5" max="5" value="2.5" step="0.1" data-value-display="wk-sigma-value"></div>
+                        </div>
+                        <div id="settings-generalized_kuwabara" class="filter-settings space-y-5 hidden">
+                            <div><div class="flex justify-between items-center mb-1"><label for="gk-kernel-size" class="font-medium text-slate-700">Filter Radius</label><span id="gk-kernel-size-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">5</span></div><input type="range" id="gk-kernel-size" min="1" max="15" value="5" step="1" data-value-display="gk-kernel-size-value"></div>
+                            <div><div class="flex justify-between items-center mb-1"><label for="gk-sectors" class="font-medium text-slate-700">Sectors</label><span id="gk-sectors-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">8</span></div><input type="range" id="gk-sectors" min="2" max="36" value="8" step="1" data-value-display="gk-sectors-value"></div>
+                        </div>
+                        <div id="settings-bilateral" class="filter-settings space-y-5 hidden">
+                             <div><div class="flex justify-between items-center mb-1"><label for="bl-kernel-size" class="font-medium text-slate-700">Spatial Radius</label><span id="bl-kernel-size-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">5</span></div><input type="range" id="bl-kernel-size" min="1" max="15" value="5" step="1" data-value-display="bl-kernel-size-value"></div>
+                             <div><div class="flex justify-between items-center mb-1"><label for="bl-sigma-color" class="font-medium text-slate-700">Color Sigma</label><span id="bl-sigma-color-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">50</span></div><input type="range" id="bl-sigma-color" min="1" max="150" value="50" step="1" data-value-display="bl-sigma-color-value"></div>
+                        </div>
+                        <div id="settings-sobel" class="filter-settings space-y-5 hidden"><div><div class="flex justify-between items-center mb-1"><label for="sb-threshold" class="font-medium text-slate-700">Threshold</label><span id="sb-threshold-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">128</span></div><input type="range" id="sb-threshold" min="0" max="255" value="128" step="1" data-value-display="sb-threshold-value"></div></div>
+                        <div id="settings-posterize" class="filter-settings space-y-5 hidden"><div><div class="flex justify-between items-center mb-1"><label for="ps-levels" class="font-medium text-slate-700">Color Levels</label><span id="ps-levels-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">4</span></div><input type="range" id="ps-levels" min="2" max="16" value="4" step="1" data-value-display="ps-levels-value"></div></div>
+                        <div id="settings-watercolor" class="filter-settings space-y-5 hidden">
+                            <div><div class="flex justify-between items-center mb-1"><label for="wc-radius" class="font-medium text-slate-700">Bleed Radius</label><span id="wc-radius-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">7</span></div><input type="range" id="wc-radius" min="1" max="15" value="7" step="1" data-value-display="wc-radius-value"></div>
+                            <div><div class="flex justify-between items-center mb-1"><label for="wc-texture" class="font-medium text-slate-700">Paper Texture</label><span id="wc-texture-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">0.05</span></div><input type="range" id="wc-texture" min="0" max="0.2" value="0.05" step="0.01" data-value-display="wc-texture-value"></div>
+                        </div>
+                        <div id="settings-pixelate" class="filter-settings space-y-5 hidden"><div><div class="flex justify-between items-center mb-1"><label for="px-size" class="font-medium text-slate-700">Block Size</label><span id="px-size-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">10</span></div><input type="range" id="px-size" min="2" max="50" value="10" step="1" data-value-display="px-size-value"></div></div>
+                        <div id="settings-dither" class="filter-settings space-y-5 hidden"><div><div class="flex justify-between items-center mb-1"><label for="dt-levels" class="font-medium text-slate-700">Color Levels</label><span id="dt-levels-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">2</span></div><input type="range" id="dt-levels" min="2" max="8" value="2" step="1" data-value-display="dt-levels-value"></div></div>
+                    </div>
+
+                    <div id="focal-point-controls" class="space-y-4 pt-4 border-t border-slate-200">
+                        <div class="flex items-center justify-between">
+                            <label for="enable-focal-point" class="font-medium text-slate-700 select-none">Focal Point</label>
+                            <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                                <input type="checkbox" name="enable-focal-point" id="enable-focal-point" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                                <label for="enable-focal-point" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                            </div>
+                        </div>
+                        <div id="focal-point-settings" class="space-y-5 hidden">
+                             <p class="text-xs text-slate-500 -mt-2">Click on the image to set a focus point.</p>
+                             <div>
+                                <div class="flex justify-between items-center mb-1">
+                                    <label for="fp-size" class="font-medium text-slate-700">Focus Size</label>
+                                    <span id="fp-size-value" class="param-value text-sm font-mono bg-slate-200 text-slate-700 px-2 py-0.5 rounded">150</span>
+                                </div>
+                                <input type="range" id="fp-size" min="10" max="500" value="150" step="5" data-value-display="fp-size-value">
+                             </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="mt-auto pt-6 flex flex-col gap-3">
+                 <button id="apply-filter" class="w-full text-white font-bold py-3 px-4 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 hover:shadow-lg hover:shadow-indigo-500/30 transform hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none disabled:transform-none" disabled>
+                    <i class="fas fa-wand-magic-sparkles mr-2"></i>Apply Filter
+                </button>
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="reset-image" class="w-full bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 transition-colors duration-200 disabled:opacity-50 disabled:pointer-events-none" disabled>
+                        <i class="fas fa-arrow-rotate-left mr-2"></i>Reset
+                    </button>
+                    <button id="download-image" class="w-full bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 transition-colors duration-200 disabled:opacity-50 disabled:pointer-events-none" disabled>
+                       <i class="fas fa-download mr-2"></i>Download
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="canvas-container" class="w-full lg:w-2/3 xl:w-3/4 bg-white rounded-2xl shadow-lg flex items-center justify-center p-4 relative overflow-hidden transition-all duration-300">
+            <div id="placeholder" class="text-center text-slate-400 transition-opacity duration-300">
+                <i class="far fa-image text-8xl"></i>
+                <p class="mt-4 font-medium text-lg">Your image will appear here</p>
+                <p class="mt-1 text-sm text-slate-400">Right-click on the image to open the panning viewer.</p>
+            </div>
+            <canvas id="canvas" class="hidden transition-opacity duration-300 max-w-full max-h-full"></canvas>
+            <div id="focal-point-marker" class="focal-point-marker absolute w-6 h-6 border-2 border-white bg-indigo-500/50 rounded-full shadow-lg pointer-events-none hidden -translate-x-1/2 -translate-y-1/2"></div>
+            <div id="loader" class="absolute inset-0 bg-white/70 backdrop-blur-sm flex-col items-center justify-center text-indigo-600 hidden">
+                <div class="loader w-16 h-16 border-4 border-slate-200 border-t-indigo-600 rounded-full"></div>
+                <p id="loader-text" class="mt-4 font-semibold text-lg">Applying filter...</p>
+            </div>
+        </div>
+    </main>
+
+    <div id="viewer" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <canvas id="viewer-canvas"></canvas>
+        <div class="absolute bottom-5 left-1/2 -translate-x-1/2 text-white bg-black/50 px-4 py-2 rounded-lg text-sm pointer-events-none">
+            <i class="fas fa-arrows-up-down-left-right"></i> Right-click & drag to pan <span class="mx-2 text-gray-500">|</span> <i class="fas fa-search-plus"></i> Scroll wheel to zoom <span class="mx-2 text-gray-500">|</span> <i class="fas fa-computer-mouse"></i> Click to close
+        </div>
+    </div>
+    
+    <style>
+        .toggle-checkbox:checked { right: 0; border-color: #6366f1; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #6366f1; }
+    </style>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('image-upload');
+        const canvasContainer = document.getElementById('canvas-container');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const placeholder = document.getElementById('placeholder');
+        const loader = document.getElementById('loader');
+        const loaderText = document.getElementById('loader-text');
+        const focalPointMarker = document.getElementById('focal-point-marker');
+
+        const viewer = document.getElementById('viewer');
+        const viewerCanvas = document.getElementById('viewer-canvas');
+        const viewerCtx = viewerCanvas.getContext('2d');
+
+        const mainControls = document.getElementById('main-controls');
+        const filterSelect = document.getElementById('filter-select');
+        const applyBtn = document.getElementById('apply-filter');
+        const resetBtn = document.getElementById('reset-image');
+        const downloadBtn = document.getElementById('download-image');
+        
+        const enableFocalPointCheckbox = document.getElementById('enable-focal-point');
+        const focalPointSettings = document.getElementById('focal-point-settings');
+        
+        let originalImageData = null;
+        let currentImage = null;
+        let isPanning = false;
+        let panStartX = 0;
+        let panStartY = 0;
+        let viewTransform = { x: 0, y: 0, scale: 1 };
+        let focalPoint = null; // {x, y} in image coordinates
+        
+        const getLuminance = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+
+        const updateUIForImage = (loaded) => {
+            if (loaded) {
+                placeholder.classList.add('opacity-0', 'hidden');
+                canvas.classList.remove('hidden');
+                canvas.classList.add('opacity-100');
+                mainControls.classList.remove('opacity-50', 'pointer-events-none');
+                [applyBtn, resetBtn].forEach(btn => btn.disabled = false);
+                downloadBtn.disabled = true;
+                focalPoint = null;
+                focalPointMarker.classList.add('hidden');
+            } else {
+                placeholder.classList.remove('opacity-0', 'hidden');
+                canvas.classList.add('hidden');
+                canvas.classList.remove('opacity-100');
+                mainControls.classList.add('opacity-50', 'pointer-events-none');
+                [applyBtn, resetBtn, downloadBtn].forEach(btn => btn.disabled = true);
+                originalImageData = null;
+                currentImage = null;
+                focalPoint = null;
+            }
+        };
+
+        const handleImageFile = (file) => {
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        currentImage = img;
+                        drawImageToCanvas(img);
+                        updateUIForImage(true);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+        
+        const drawImageToCanvas = (img) => {
+            const containerW = canvasContainer.clientWidth - 32;
+            const containerH = canvasContainer.clientHeight - 32;
+            const imgAspectRatio = img.width / img.height;
+            const containerAspectRatio = containerW / containerH;
+
+            let renderW, renderH;
+            if (imgAspectRatio > containerAspectRatio) {
+                renderW = containerW;
+                renderH = containerW / imgAspectRatio;
+            } else {
+                renderH = containerH;
+                renderW = containerH * imgAspectRatio;
+            }
+            
+            canvas.width = img.width;
+            canvas.height = img.height;
+            canvas.style.width = `${renderW}px`;
+            canvas.style.height = `${renderH}px`;
+            
+            ctx.drawImage(img, 0, 0);
+            originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            updateFocalPointMarker();
+        };
+        
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-indigo-400', 'bg-indigo-50'); });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('border-indigo-400', 'bg-indigo-50'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-indigo-400', 'bg-indigo-50');
+            handleImageFile(e.dataTransfer.files[0]);
+        });
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => handleImageFile(fileInput.files[0]));
+        document.addEventListener('paste', (e) => {
+            const items = e.clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    handleImageFile(items[i].getAsFile());
+                    break;
+                }
+            }
+        });
+        
+        filterSelect.addEventListener('change', (e) => {
+            document.querySelectorAll('.filter-settings').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`settings-${e.target.value}`).classList.remove('hidden');
+        });
+
+        document.querySelectorAll('input[type="range"]').forEach(slider => {
+            slider.addEventListener('input', () => {
+                const displayId = slider.dataset.valueDisplay;
+                if (displayId) document.getElementById(displayId).textContent = slider.value;
+            });
+        });
+
+        resetBtn.addEventListener('click', () => {
+            if (originalImageData) {
+                ctx.putImageData(originalImageData, 0, 0);
+                downloadBtn.disabled = true;
+                focalPoint = null;
+                focalPointMarker.classList.add('hidden');
+            }
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'filtered-image.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+
+        applyBtn.addEventListener('click', () => {
+            if (!originalImageData) return;
+            loader.classList.remove('hidden');
+            loader.classList.add('flex');
+            loaderText.textContent = 'Applying filter...';
+
+            setTimeout(() => {
+                const filterType = filterSelect.value;
+                let filteredImageData;
+
+                try {
+                    switch (filterType) {
+                        case 'weighted_kuwabara': filteredImageData = applyWeightedKuwahara(originalImageData, parseInt(document.getElementById('wk-kernel-size').value), parseFloat(document.getElementById('wk-sigma').value)); break;
+                        case 'generalized_kuwabara': filteredImageData = applyGeneralizedKuwahara(originalImageData, parseInt(document.getElementById('gk-kernel-size').value), parseInt(document.getElementById('gk-sectors').value)); break;
+                        case 'bilateral': filteredImageData = applyBilateral(originalImageData, parseInt(document.getElementById('bl-kernel-size').value), parseFloat(document.getElementById('bl-sigma-color').value)); break;
+                        case 'sobel': filteredImageData = applySobel(originalImageData, parseInt(document.getElementById('sb-threshold').value)); break;
+                        case 'posterize': filteredImageData = applyPosterize(originalImageData, parseInt(document.getElementById('ps-levels').value)); break;
+                        case 'watercolor': filteredImageData = applyWatercolor(originalImageData, parseInt(document.getElementById('wc-radius').value), parseFloat(document.getElementById('wc-texture').value)); break;
+                        case 'pixelate': filteredImageData = applyPixelate(originalImageData, parseInt(document.getElementById('px-size').value)); break;
+                        case 'dither': filteredImageData = applyDither(originalImageData, parseInt(document.getElementById('dt-levels').value)); break;
+                    }
+                    
+                    let finalImageData = filteredImageData;
+                    if (enableFocalPointCheckbox.checked && focalPoint) {
+                        loaderText.textContent = 'Applying focal point effect...';
+                        const focusSize = parseInt(document.getElementById('fp-size').value);
+                        finalImageData = applyFocalPointEffect(originalImageData, filteredImageData, focalPoint, focusSize);
+                    }
+                    
+                    if (finalImageData) ctx.putImageData(finalImageData, 0, 0);
+
+                } catch (error) {
+                    console.error("Filter application failed:", error);
+                    loaderText.textContent = 'An error occurred.';
+                    setTimeout(() => { loader.classList.add('hidden'); loader.classList.remove('flex'); }, 2000);
+                    return;
+                }
+                
+                loader.classList.add('hidden');
+                loader.classList.remove('flex');
+                downloadBtn.disabled = false;
+            }, 50);
+        });
+        
+        // ### FOCAL POINT LOGIC ###
+        enableFocalPointCheckbox.addEventListener('change', (e) => {
+            if(e.target.checked) {
+                focalPointSettings.classList.remove('hidden');
+                canvas.classList.add('focal-point-mode');
+            } else {
+                focalPointSettings.classList.add('hidden');
+                canvas.classList.remove('focal-point-mode');
+                focalPointMarker.classList.add('hidden');
+                focalPoint = null;
+            }
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (!enableFocalPointCheckbox.checked || !currentImage) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            focalPoint = {
+                x: (x / canvas.clientWidth) * canvas.width,
+                y: (y / canvas.clientHeight) * canvas.height
+            };
+            
+            updateFocalPointMarker();
+        });
+
+        function updateFocalPointMarker() {
+            if (focalPoint && enableFocalPointCheckbox.checked) {
+                const viewX = (focalPoint.x / canvas.width) * canvas.clientWidth;
+                const viewY = (focalPoint.y / canvas.height) * canvas.clientHeight;
+                
+                const offsetX = canvas.offsetLeft;
+                const offsetY = canvas.offsetTop;
+
+                focalPointMarker.style.left = `${viewX + offsetX}px`;
+                focalPointMarker.style.top = `${viewY + offsetY}px`;
+                focalPointMarker.classList.remove('hidden');
+            } else {
+                focalPointMarker.classList.add('hidden');
+            }
+        }
+        
+        function applyFocalPointEffect(original, filtered, point, focusSize) {
+            const { data: src, width, height } = original;
+            const { data: filt } = filtered;
+            const dst = new Uint8ClampedArray(src.length);
+            const focusSize2 = 2 * focusSize * focusSize;
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const distance2 = Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2);
+                    const strength = 1.0 - Math.exp(-distance2 / focusSize2);
+                    
+                    const idx = (y * width + x) * 4;
+                    dst[idx]     = src[idx]     * (1 - strength) + filt[idx]     * strength;
+                    dst[idx + 1] = src[idx + 1] * (1 - strength) + filt[idx + 1] * strength;
+                    dst[idx + 2] = src[idx + 2] * (1 - strength) + filt[idx + 2] * strength;
+                    dst[idx + 3] = 255;
+                }
+            }
+            return new ImageData(dst, width, height);
+        }
+
+        // ### FILTER ALGORITHMS ###
+        function applyWeightedKuwahara(imgData, radius, sigma) {
+            const { data: src, width, height } = imgData; const dst = new Uint8ClampedArray(src.length); const kernel = createGaussianKernel(radius, sigma);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const means = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]; const weightSums = [0, 0, 0, 0]; const lumMeans = [0, 0, 0, 0]; const lumVariances = [0, 0, 0, 0];
+                    const regions = [{ x0: -radius, y0: -radius, x1: 0, y1: 0 }, { x0: 0, y0: -radius, x1: radius, y1: 0 }, { x0: -radius, y0: 0, x1: 0, y1: radius }, { x0: 0, y0: 0, x1: radius, y1: radius },];
+                    for (let i = 0; i < 4; i++) {
+                        for (let ky = regions[i].y0; ky <= regions[i].y1; ky++) {
+                            for (let kx = regions[i].x0; kx <= regions[i].x1; kx++) {
+                                const px = Math.min(width - 1, Math.max(0, x + kx)); const py = Math.min(height - 1, Math.max(0, y + ky)); const weight = kernel[(ky + radius) * (2 * radius + 1) + (kx + radius)]; const p_idx = (py * width + px) * 4; const r = src[p_idx], g = src[p_idx + 1], b = src[p_idx + 2];
+                                means[i][0] += r * weight; means[i][1] += g * weight; means[i][2] += b * weight; lumMeans[i] += getLuminance(r, g, b) * weight; weightSums[i] += weight;
+                            }
+                        }
+                        if (weightSums[i] > 0) { means[i].forEach((v, c) => means[i][c] /= weightSums[i]); lumMeans[i] /= weightSums[i]; }
+                    }
+                    for (let i = 0; i < 4; i++) {
+                        let weightedVarianceSum = 0;
+                        for (let ky = regions[i].y0; ky <= regions[i].y1; ky++) {
+                            for (let kx = regions[i].x0; kx <= regions[i].x1; kx++) {
+                                const px = Math.min(width - 1, Math.max(0, x + kx)); const py = Math.min(height - 1, Math.max(0, y + ky)); const weight = kernel[(ky + radius) * (2 * radius + 1) + (kx + radius)]; const p_idx = (py * width + px) * 4; const lum = getLuminance(src[p_idx], src[p_idx + 1], src[p_idx + 2]); const diff = lum - lumMeans[i];
+                                weightedVarianceSum += diff * diff * weight;
+                            }
+                        }
+                        if (weightSums[i] > 0) lumVariances[i] = weightedVarianceSum / weightSums[i];
+                    }
+                    let minVariance = Infinity, bestRegion = 0;
+                    for (let i = 0; i < 4; i++) if (lumVariances[i] < minVariance) { minVariance = lumVariances[i]; bestRegion = i; }
+                    const dst_idx = (y * width + x) * 4; dst[dst_idx] = means[bestRegion][0]; dst[dst_idx + 1] = means[bestRegion][1]; dst[dst_idx + 2] = means[bestRegion][2]; dst[dst_idx + 3] = 255;
+                }
+            } return new ImageData(dst, width, height);
+        }
+        function applyGeneralizedKuwahara(imgData, radius, sectors) {
+            const { data: src, width, height } = imgData; const dst = new Uint8ClampedArray(src.length);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const means = Array.from({ length: sectors }, () => [0, 0, 0]); const lumMeans = new Array(sectors).fill(0); const counts = new Array(sectors).fill(0);
+                    for (let ky = -radius; ky <= radius; ky++) {
+                        for (let kx = -radius; kx <= radius; kx++) {
+                            if (kx * kx + ky * ky > radius * radius) continue; const angle = Math.atan2(ky, kx) + Math.PI; const sector = Math.floor(angle / (2 * Math.PI) * sectors); const px = Math.min(width - 1, Math.max(0, x + kx)); const py = Math.min(height - 1, Math.max(0, y + ky)); const p_idx = (py * width + px) * 4; const r = src[p_idx], g = src[p_idx + 1], b = src[p_idx + 2];
+                            means[sector][0] += r; means[sector][1] += g; means[sector][2] += b; lumMeans[sector] += getLuminance(r, g, b); counts[sector]++;
+                        }
+                    }
+                    for(let i=0; i<sectors; i++) if (counts[i] > 0) { means[i].forEach((v, c) => means[i][c] /= counts[i]); lumMeans[i] /= counts[i]; }
+                    const lumVariances = new Array(sectors).fill(0);
+                    for (let ky = -radius; ky <= radius; ky++) {
+                        for (let kx = -radius; kx <= radius; kx++) {
+                           if (kx * kx + ky * ky > radius * radius) continue; const angle = Math.atan2(ky, kx) + Math.PI; const sector = Math.floor(angle / (2 * Math.PI) * sectors); const px = Math.min(width - 1, Math.max(0, x + kx)); const py = Math.min(height - 1, Math.max(0, y + ky)); const p_idx = (py * width + px) * 4; const lum = getLuminance(src[p_idx], src[p_idx + 1], src[p_idx + 2]); const diff = lum - lumMeans[sector];
+                           lumVariances[sector] += diff * diff;
+                        }
+                    }
+                    for(let i=0; i<sectors; i++) if (counts[i] > 0) lumVariances[i] /= counts[i];
+                    let minVariance = Infinity, bestRegion = 0;
+                    for (let i = 0; i < sectors; i++) if (counts[i] > 0 && lumVariances[i] < minVariance) { minVariance = lumVariances[i]; bestRegion = i; }
+                    const dst_idx = (y * width + x) * 4; dst[dst_idx] = means[bestRegion][0]; dst[dst_idx + 1] = means[bestRegion][1]; dst[dst_idx + 2] = means[bestRegion][2]; dst[dst_idx + 3] = 255;
+                }
+            } return new ImageData(dst, width, height);
+        }
+        function applyBilateral(imgData, radius, sigmaC) {
+            const { data: src, width, height } = imgData; const dst = new Uint8ClampedArray(src.length); const sigmaS = radius / 2; const gauss = (x, sigma) => Math.exp(-(x * x) / (2 * sigma * sigma));
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const center_idx = (y * width + x) * 4; const cR = src[center_idx], cG = src[center_idx+1], cB = src[center_idx+2]; let totalR = 0, totalG = 0, totalB = 0, totalWeight = 0;
+                    for (let ky = -radius; ky <= radius; ky++) {
+                        for (let kx = -radius; kx <= radius; kx++) {
+                            const px = Math.min(width - 1, Math.max(0, x + kx)); const py = Math.min(height - 1, Math.max(0, y + ky)); const p_idx = (py * width + px) * 4; const pR = src[p_idx], pG = src[p_idx+1], pB = src[p_idx+2]; const dSpatial = Math.sqrt(kx*kx + ky*ky); const dColor = Math.sqrt(Math.pow(cR-pR, 2) + Math.pow(cG-pG, 2) + Math.pow(cB-pB, 2)); const w = gauss(dSpatial, sigmaS) * gauss(dColor, sigmaC);
+                            totalR += pR * w; totalG += pG * w; totalB += pB * w; totalWeight += w;
+                        }
+                    }
+                    dst[center_idx] = totalR / totalWeight; dst[center_idx+1] = totalG / totalWeight; dst[center_idx+2] = totalB / totalWeight; dst[center_idx+3] = 255;
+                }
+            } return new ImageData(dst, width, height);
+        }
+        function applySobel(imgData, threshold) {
+            const { data: src, width, height } = imgData; const dst = new Uint8ClampedArray(src.length); const gray = new Uint8ClampedArray(width * height);
+            for (let i = 0; i < src.length; i += 4) gray[i/4] = getLuminance(src[i], src[i+1], src[i+2]);
+            const kx = [-1, 0, 1, -2, 0, 2, -1, 0, 1]; const ky = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
+            for (let y = 1; y < height-1; y++) {
+                for (let x = 1; x < width-1; x++) {
+                    let gx = 0, gy = 0;
+                    for (let oy = -1; oy <= 1; oy++) {
+                        for (let ox = -1; ox <= 1; ox++) {
+                            const pixelVal = gray[(y + oy) * width + (x + ox)]; gx += pixelVal * kx[(oy+1)*3 + (ox+1)]; gy += pixelVal * ky[(oy+1)*3 + (ox+1)];
+                        }
+                    }
+                    const magnitude = Math.sqrt(gx*gx + gy*gy); const color = magnitude > threshold ? 0 : 255; const dst_idx = (y * width + x) * 4;
+                    dst[dst_idx] = dst[dst_idx+1] = dst[dst_idx+2] = color; dst[dst_idx+3] = 255;
+                }
+            } return new ImageData(dst, width, height);
+        }
+        function applyPosterize(imgData, levels) {
+             const { data: src, width, height } = imgData; const dst = new Uint8ClampedArray(src.length); const factor = 255 / (levels - 1);
+             for(let i=0; i<src.length; i+=4) {
+                 dst[i]   = Math.round(Math.round(src[i] / 255 * (levels-1)) * factor); dst[i+1] = Math.round(Math.round(src[i+1] / 255 * (levels-1)) * factor); dst[i+2] = Math.round(Math.round(src[i+2] / 255 * (levels-1)) * factor); dst[i+3] = 255;
+             } return new ImageData(dst, width, height);
+        }
+        function applyWatercolor(imgData, radius, texture) {
+            let smoothed = applyWeightedKuwahara(imgData, radius, radius / 2); const { data: sm, width, height } = smoothed;
+            for(let i = 0; i < sm.length; i+=4) {
+                const noise = (Math.random() - 0.5) * 255 * texture;
+                sm[i] = Math.max(0, Math.min(255, sm[i] + noise)); sm[i+1] = Math.max(0, Math.min(255, sm[i+1] + noise)); sm[i+2] = Math.max(0, Math.min(255, sm[i+2] + noise));
+            } return new ImageData(sm, width, height);
+        }
+        function applyPixelate(imgData, size) {
+            const { data: src, width, height } = imgData; const dst = new Uint8ClampedArray(src.length);
+            for (let y = 0; y < height; y += size) {
+                for (let x = 0; x < width; x += size) {
+                    let r = 0, g = 0, b = 0, count = 0;
+                    for (let py = y; py < y + size && py < height; py++) for (let px = x; px < x + size && px < width; px++) { const idx = (py * width + px) * 4; r += src[idx]; g += src[idx+1]; b += src[idx+2]; count++; }
+                    r /= count; g /= count; b /= count;
+                    for (let py = y; py < y + size && py < height; py++) for (let px = x; px < x + size && px < width; px++) { const idx = (py * width + px) * 4; dst[idx] = r; dst[idx+1] = g; dst[idx+2] = b; dst[idx+3] = 255; }
+                }
+            } return new ImageData(dst, width, height);
+        }
+        function applyDither(imgData, levels) {
+            const { data: src, width, height } = imgData; const dst = new Uint8ClampedArray(src.length); const bayerMatrix = [[ 0,  8,  2, 10], [12,  4, 14,  6], [ 3, 11,  1,  9], [15,  7, 13,  5]]; const matrixSize = 4; const factor = 255 / (levels - 1);
+            for(let y=0; y<height; y++) for(let x=0; x<width; x++) { const idx = (y * width + x) * 4; const threshold = (bayerMatrix[y % matrixSize][x % matrixSize] / 16 - 0.5) * (255/levels); dst[idx] = Math.round(Math.round((src[idx] + threshold) / 255 * (levels-1)) * factor); dst[idx+1] = Math.round(Math.round((src[idx+1] + threshold) / 255 * (levels-1)) * factor); dst[idx+2] = Math.round(Math.round((src[idx+2] + threshold) / 255 * (levels-1)) * factor); dst[idx+3] = 255; }
+            return new ImageData(dst, width, height);
+        }
+        function createGaussianKernel(radius, sigma) {
+            const size = 2 * radius + 1; const kernel = new Float32Array(size * size); const sigma2 = 2 * sigma * sigma; let sum = 0; let i = 0;
+            for (let y = -radius; y <= radius; y++) for (let x = -radius; x <= radius; x++) { const value = Math.exp(-(x * x + y * y) / sigma2); kernel[i] = value; sum += value; i++; }
+            for (let j = 0; j < kernel.length; j++) kernel[j] /= sum;
+            return kernel;
+        };
+
+        // ### VIEWER LOGIC ###
+        canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); if (currentImage) openViewer(); });
+        const openViewer = () => {
+            viewer.classList.remove('hidden'); viewerCanvas.width = viewer.clientWidth; viewerCanvas.height = viewer.clientHeight; viewTransform = { x: (viewerCanvas.width - canvas.width) / 2, y: (viewerCanvas.height - canvas.height) / 2, scale: 1 }; drawViewer();
+        };
+        const drawViewer = () => {
+            viewerCtx.fillStyle = 'rgba(0,0,0,0)'; viewerCtx.clearRect(0, 0, viewerCanvas.width, viewerCanvas.height); viewerCtx.setTransform(viewTransform.scale, 0, 0, viewTransform.scale, viewTransform.x, viewTransform.y); viewerCtx.drawImage(canvas, 0, 0); viewerCtx.setTransform(1, 0, 0, 1, 0, 0);
+        };
+        viewer.addEventListener('click', (e) => { if (e.target === viewer) viewer.classList.add('hidden'); });
+        viewerCanvas.addEventListener('contextmenu', e => e.preventDefault());
+        viewerCanvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && isPanning) return;
+            if (e.button === 0) { viewer.classList.add('hidden'); return; }
+            if (e.button === 2) { isPanning = true; viewerCanvas.classList.add('grabbing'); panStartX = e.clientX - viewTransform.x; panStartY = e.clientY - viewTransform.y; e.preventDefault(); }
+        });
+        window.addEventListener('mousemove', (e) => { if (isPanning) { viewTransform.x = e.clientX - panStartX; viewTransform.y = e.clientY - panStartY; requestAnimationFrame(drawViewer); } });
+        window.addEventListener('mouseup', (e) => { if (isPanning && e.button === 2) { isPanning = false; viewerCanvas.classList.remove('grabbing'); } });
+        viewerCanvas.addEventListener('wheel', (e) => {
+            e.preventDefault(); const zoomFactor = 1.1; const oldScale = viewTransform.scale; const rect = viewerCanvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+            if (e.deltaY < 0) viewTransform.scale = Math.min(10, viewTransform.scale * zoomFactor); else viewTransform.scale = Math.max(0.1, viewTransform.scale / zoomFactor);
+            viewTransform.x = mouseX - (mouseX - viewTransform.x) * (viewTransform.scale / oldScale); viewTransform.y = mouseY - (mouseY - viewTransform.y) * (viewTransform.scale / oldScale); requestAnimationFrame(drawViewer);
+        });
+        window.addEventListener('resize', () => { if (currentImage) drawImageToCanvas(currentImage); if (!viewer.classList.contains('hidden')) openViewer(); });
+
+        updateUIForImage(false);
+    </script>
+</body>
+</html>

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Array Languages: A Refreshing Perspective</title>
+    <meta name="description" content="An interactive introduction to the elegance and power of Array Programming Languages, designed for a busy mind.">
+    <meta name="page:icon" content="fas fa-th">
+    <meta name="page:color" content="#6366f1">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&family=Roboto+Mono:wght@400;700&display=swap');
+
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background: linear-gradient(-45deg, #1e3a8a, #4c1d95, #0891b2, #5b21b6);
+            background-size: 400% 400%;
+            animation: gradientBG 20s ease infinite;
+            overflow: hidden;
+            color: #e0e7ff;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .glass-card:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-8px);
+            box-shadow: 0 20px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .code-font {
+            font-family: 'Roboto Mono', monospace;
+        }
+        
+        .gradient-text {
+            background: linear-gradient(45deg, #a5b4fc, #f9a8d4);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .interactive-input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.2s ease-in-out;
+        }
+        .interactive-input:focus {
+            outline: none;
+            border-color: #a5b4fc;
+            box-shadow: 0 0 15px rgba(165, 180, 252, 0.5);
+        }
+        
+        .output-box {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid transparent;
+        }
+
+        [data-tooltip] {
+            position: relative;
+            cursor: pointer;
+        }
+        [data-tooltip]::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #1e293b;
+            color: #e0e7ff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            z-index: 10;
+        }
+        [data-tooltip]:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .fade-in {
+            animation: fadeIn 1.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in.delay-1 { animation-delay: 0.2s; }
+        .fade-in.delay-2 { animation-delay: 0.4s; }
+        .fade-in.delay-3 { animation-delay: 0.6s; }
+        .fade-in.delay-4 { animation-delay: 0.8s; }
+
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <main class="w-full max-w-7xl mx-auto text-center">
+        
+        <header class="mb-12 fade-in">
+            <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight">
+                <span class="gradient-text">多忙な夏のsyochさんへ贈る、<br class="md:hidden">配列言語という涼風</span>
+            </h1>
+            <p class="mt-4 text-lg md:text-xl text-indigo-200 max-w-3xl mx-auto">
+                ループからの解放、思考のショートカットへようこそ。
+            </p>
+        </header>
+
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+            <div class="glass-card rounded-2xl p-6 text-left fade-in delay-1">
+                <div class="flex items-center mb-4">
+                    <i class="fas fa-person-running text-3xl text-sky-300 mr-4"></i>
+                    <h2 class="text-2xl font-bold text-white">さよなら、退屈なループ</h2>
+                </div>
+                <p class="text-indigo-200 mb-6">データの集まり（配列）全体に一度で命令。一行一行の処理を書く必要はありません。</p>
+                
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="font-bold text-sm text-rose-300 mb-2 code-font">JAVASCRIPT (合計値)</h3>
+                        <pre class="code-font bg-black/30 p-3 rounded-lg text-sm whitespace-pre-wrap"><code>let numbers = [1,2,3,4,5];
+let sum = 0;
+for (let i = 0; i < numbers.length; i++) {
+  sum += numbers[i];
+}</code></pre>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm text-cyan-300 mb-2 code-font">ARRAY LANGUAGE (J-like)</h3>
+                        <div class="interactive-demo" data-id="sum">
+                             <div class="flex items-center gap-2 p-3 bg-black/30 rounded-lg">
+                                <input type="text" class="interactive-input w-full p-2 rounded-md code-font text-cyan-200 text-sm" value="+ / 1 2 3 4 5">
+                                <span class="text-2xl text-indigo-300 font-thin">&rarr;</span>
+                                <div class="output-box p-2 rounded-md code-font text-white font-bold text-lg min-w-[50px] text-center">15</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="glass-card rounded-2xl p-6 text-left fade-in delay-2">
+                <div class="flex items-center mb-4">
+                    <i class="fas fa-book-sparkles text-3xl text-amber-300 mr-4"></i>
+                    <h2 class="text-2xl font-bold text-white">記号が奏でる魔法の呪文</h2>
+                </div>
+                <p class="text-indigo-200 mb-6">短い記号（グリフ）が、複雑な操作を表す単語のように機能します。組み合わせることで強力な表現が可能です。</p>
+                <div class="grid grid-cols-2 gap-4 text-center code-font">
+                    <div data-tooltip="Sum Reduce: 配列の要素を全て足す" class="p-4 bg-black/20 rounded-lg cursor-pointer"><span class="text-2xl text-cyan-300">+/</span><p class="text-xs text-indigo-300 mt-1">合計</p></div>
+                    <div data-tooltip="Shape: 配列の形を調べる" class="p-4 bg-black/20 rounded-lg cursor-pointer"><span class="text-2xl text-fuchsia-300">$</span><p class="text-xs text-indigo-300 mt-1">形状</p></div>
+                    <div data-tooltip="Tally: 配列の要素数を数える" class="p-4 bg-black/20 rounded-lg cursor-pointer"><span class="text-2xl text-lime-300">#</span><p class="text-xs text-indigo-300 mt-1">個数</p></div>
+                    <div data-tooltip="Iota: 0からN-1までの連番を生成" class="p-4 bg-black/20 rounded-lg cursor-pointer"><span class="text-2xl text-rose-300">i.</span><p class="text-xs text-indigo-300 mt-1">連番</p></div>
+                    <div data-tooltip="Grade Up: 配列をソートするためのインデックスを返す" class="p-4 bg-black/20 rounded-lg cursor-pointer"><span class="text-2xl text-sky-300">/:</span><p class="text-xs text-indigo-300 mt-1">ソート</p></div>
+                    <div data-tooltip="Member of: 左の要素が右の配列に含まれるか判定" class="p-4 bg-black/20 rounded-lg cursor-pointer"><span class="text-2xl text-amber-300">e.</span><p class="text-xs text-indigo-300 mt-1">要素検索</p></div>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-6 text-left fade-in delay-3">
+                <div class="flex items-center mb-4">
+                    <i class="fas fa-brain text-3xl text-fuchsia-300 mr-4"></i>
+                    <h2 class="text-2xl font-bold text-white">データで考える、新しい視点</h2>
+                </div>
+                <p class="text-indigo-200 mb-6">問題解決のアプローチが変わります。「どのように」ではなく「何を」したいかに集中できるようになります。</p>
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="font-bold text-sm text-rose-300 mb-2 code-font">PROBLEM</h3>
+                        <p class="bg-black/30 p-3 rounded-lg text-sm text-indigo-200">"配列 `2 8 3 6 4` の平均値を求めよ"</p>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm text-cyan-300 mb-2 code-font">ARRAY LANGUAGE (J-like)</h3>
+                        <div class="interactive-demo" data-id="average">
+                            <div class="flex items-center gap-2 p-3 bg-black/30 rounded-lg">
+                                <input type="text" class="interactive-input w-full p-2 rounded-md code-font text-cyan-200 text-sm" value="(+ / % #) 2 8 3 6 4">
+                                <span class="text-2xl text-indigo-300 font-thin">&rarr;</span>
+                                <div class="output-box p-2 rounded-md code-font text-white font-bold text-lg min-w-[50px] text-center">4.6</div>
+                            </div>
+                            <p class="text-xs text-indigo-300 mt-2">これは「合計(+/)...を...個数(#)...で...割る(%)」と読み解けます。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <footer class="mt-12 text-center fade-in delay-4">
+            <p class="text-indigo-200">忙しい毎日に、ほんの少しの思考のスパイスを。</p>
+            <div class="mt-4 flex justify-center items-center space-x-6">
+                <a href="https://tryapl.org/" target="_blank" class="text-sky-300 hover:text-sky-100 transition duration-300">TryAPL</a>
+                <a href="https://www.jsoftware.com/jwiki/Playground" target="_blank" class="text-sky-300 hover:text-sky-100 transition duration-300">J Playground</a>
+                <a href="https://mlochbaum.github.io/BQN/try.html" target="_blank" class="text-sky-300 hover:text-sky-100 transition duration-300">TryBQN</a>
+            </div>
+        </footer>
+
+    </main>
+
+    <script>
+        function simpleArrayLangInterpreter(code) {
+            code = code.trim();
+            const tokens = code.split(/\s+/);
+            
+            const extractNumbers = (arr) => arr.map(Number).filter(n => !isNaN(n));
+            
+            try {
+                // Case 1: Sum Reduce (+ / 1 2 3)
+                if (tokens[0] === '+' && tokens[1] === '/') {
+                    const numbers = extractNumbers(tokens.slice(2));
+                    if (numbers.length === 0) return 'NaN';
+                    return numbers.reduce((a, b) => a + b, 0);
+                }
+
+                // Case 2: Average ((+ / % #) 1 2 3)
+                const avgMatch = code.match(/^\(\s*\+\s*\/\s*%\s*#\s*\)\s*(.*)$/);
+                if (avgMatch) {
+                    const numbers = extractNumbers(avgMatch[1].split(/\s+/));
+                    if (numbers.length === 0) return 'NaN';
+                    const sum = numbers.reduce((a, b) => a + b, 0);
+                    const count = numbers.length;
+                    return sum / count;
+                }
+                
+                return 'Err';
+
+            } catch (e) {
+                return 'Err';
+            }
+        }
+
+        document.querySelectorAll('.interactive-demo').forEach(demo => {
+            const input = demo.querySelector('.interactive-input');
+            const outputBox = demo.querySelector('.output-box');
+
+            const updateOutput = () => {
+                const code = input.value;
+                const result = simpleArrayLangInterpreter(code);
+                
+                if (typeof result === 'number' && !Number.isInteger(result)) {
+                    outputBox.textContent = result.toFixed(2);
+                } else {
+                    outputBox.textContent = result;
+                }
+            };
+
+            input.addEventListener('keyup', updateOutput);
+            input.addEventListener('change', updateOutput);
+            
+            updateOutput();
+        });
+        
+        // Initial animation trigger
+        document.addEventListener("DOMContentLoaded", function() {
+            const animatedElements = document.querySelectorAll('.fade-in');
+            animatedElements.forEach(el => el.style.opacity = '0');
+        });
+
+    </script>
+</body>
+</html>

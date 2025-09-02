@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Grid Processor</title>
+    <meta name="description" content="An interactive image processing tool to resize images and apply a pixel grid effect.">
+    <meta name="page:icon" content="fas fa-th-large">
+    <meta name="page:color" content="#8b5cf6">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Arial', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'BIZ UDPGothic', Meiryo, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .gradient-background {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed, #db2777, #f59e0b);
+            background-size: 400% 400%;
+            animation: gradient-animation 15s ease infinite;
+        }
+
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #8b5cf6;
+            transition: background 0.2s ease-in-out;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #a78bfa;
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #8b5cf6;
+            transition: background 0.2s ease-in-out;
+        }
+
+        input[type="range"]::-moz-range-thumb:hover {
+            background: #a78bfa;
+        }
+
+        .custom-file-button {
+            transition: all 0.3s ease;
+        }
+
+        .custom-file-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .canvas-container {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            background: rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .canvas-container.has-content {
+            border: 2px solid #8b5cf6;
+            background: rgba(0, 0, 0, 0.4);
+        }
+        
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-left-color: #fff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="gradient-background text-white overflow-hidden h-screen">
+
+    <div class="flex items-center justify-center w-full h-full p-4">
+        <main class="w-full h-full max-w-7xl mx-auto glass-card rounded-2xl shadow-2xl flex flex-col lg:flex-row overflow-hidden">
+
+            <aside class="w-full lg:w-1/3 p-6 space-y-6 flex flex-col border-b lg:border-b-0 lg:border-r border-white/15 overflow-y-auto">
+                <header>
+                    <h1 class="text-3xl font-bold tracking-tight text-shadow">Pixel Grid Processor</h1>
+                    <p class="text-white/80 mt-1">画像をリサイズし、グリッド状にピクセルを間引くツール</p>
+                </header>
+                
+                <div class="space-y-4 flex-grow">
+                    <div>
+                        <label for="image-upload" class="text-lg font-semibold block mb-2">1. 画像を選択</label>
+                        <label class="custom-file-button w-full flex items-center justify-center gap-3 px-4 py-3 bg-violet-600 rounded-lg cursor-pointer shadow-lg hover:bg-violet-700">
+                            <i class="fas fa-upload"></i>
+                            <span>ファイルを選択</span>
+                            <input id="image-upload" type="file" class="hidden" accept="image/*">
+                        </label>
+                        <p id="file-name" class="text-sm mt-2 text-white/70 truncate"></p>
+                    </div>
+
+                    <div>
+                        <label for="n-value" class="text-lg font-semibold block mb-2">2. グリッドサイズ (N)</label>
+                        <div class="flex items-center gap-4 p-3 bg-black/20 rounded-lg">
+                            <input id="n-value-slider" type="range" min="2" max="50" value="10" class="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer">
+                            <span id="n-value-display" class="font-bold text-xl bg-violet-500 rounded-md w-14 text-center py-1">10</span>
+                        </div>
+                         <p class="text-xs mt-2 text-white/70">Nの値が大きいほど、グリッドは粗くなります。</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4 pt-4 border-t border-white/15">
+                     <button id="process-btn" disabled class="w-full flex items-center justify-center gap-3 text-lg font-bold py-3 rounded-lg bg-pink-600 hover:bg-pink-700 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed disabled:opacity-50 shadow-lg">
+                        <i class="fas fa-cogs"></i>
+                        <span>処理を実行</span>
+                    </button>
+                    <a id="download-btn" class="hidden w-full flex items-center justify-center gap-3 text-lg font-bold py-3 rounded-lg bg-emerald-500 hover:bg-emerald-600 transition-all duration-300 shadow-lg" href="#" download="processed-image.png">
+                        <i class="fas fa-download"></i>
+                        <span>画像をダウンロード</span>
+                    </a>
+                </div>
+            </aside>
+
+            <section class="flex-grow flex flex-col p-6 overflow-hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-full min-h-0">
+                    <div class="flex flex-col">
+                        <h2 class="text-xl font-bold mb-2 text-center">オリジナル画像</h2>
+                        <div id="original-canvas-container" class="canvas-container w-full flex-grow flex items-center justify-center rounded-lg p-2">
+                             <div id="original-placeholder" class="text-center text-white/50">
+                                <i class="fas fa-image text-5xl"></i>
+                                <p class="mt-2">ここに画像が表示されます</p>
+                            </div>
+                            <canvas id="original-canvas" class="max-w-full max-h-full object-contain"></canvas>
+                        </div>
+                    </div>
+                    <div class="flex flex-col">
+                        <h2 class="text-xl font-bold mb-2 text-center">処理後</h2>
+                        <div id="result-canvas-container" class="canvas-container w-full flex-grow flex items-center justify-center rounded-lg p-2 relative">
+                            <div id="result-placeholder" class="text-center text-white/50">
+                                <i class="fas fa-th-large text-5xl"></i>
+                                <p class="mt-2">ここに処理結果が表示されます</p>
+                            </div>
+                            <div id="loader" class="absolute hidden flex-col items-center justify-center gap-2">
+                                <div class="loader"></div>
+                                <span class="font-semibold">処理中...</span>
+                            </div>
+                            <canvas id="result-canvas" class="max-w-full max-h-full object-contain"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const imageUpload = document.getElementById('image-upload');
+            const fileNameDisplay = document.getElementById('file-name');
+            const nValueSlider = document.getElementById('n-value-slider');
+            const nValueDisplay = document.getElementById('n-value-display');
+            const processBtn = document.getElementById('process-btn');
+            const downloadBtn = document.getElementById('download-btn');
+            
+            const originalCanvas = document.getElementById('original-canvas');
+            const originalCtx = originalCanvas.getContext('2d');
+            const originalContainer = document.getElementById('original-canvas-container');
+            const originalPlaceholder = document.getElementById('original-placeholder');
+
+            const resultCanvas = document.getElementById('result-canvas');
+            const resultCtx = resultCanvas.getContext('2d');
+            const resultContainer = document.getElementById('result-canvas-container');
+            const resultPlaceholder = document.getElementById('result-placeholder');
+            const loader = document.getElementById('loader');
+
+            let originalImage = null;
+
+            nValueSlider.addEventListener('input', (e) => {
+                nValueDisplay.textContent = e.target.value;
+            });
+            
+            imageUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            originalImage = img;
+                            fileNameDisplay.textContent = file.name;
+                            processBtn.disabled = false;
+                            
+                            originalPlaceholder.style.display = 'none';
+                            originalContainer.classList.add('has-content');
+                            
+                            const aspect = img.width / img.height;
+                            const containerWidth = originalContainer.clientWidth - 16;
+                            const containerHeight = originalContainer.clientHeight - 16;
+                            
+                            let canvasWidth = containerWidth;
+                            let canvasHeight = containerWidth / aspect;
+
+                            if (canvasHeight > containerHeight) {
+                                canvasHeight = containerHeight;
+                                canvasWidth = containerHeight * aspect;
+                            }
+                            
+                            originalCanvas.width = canvasWidth;
+                            originalCanvas.height = canvasHeight;
+                            originalCtx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+                            
+                            downloadBtn.classList.add('hidden');
+                            resultPlaceholder.style.display = 'block';
+                            resultContainer.classList.remove('has-content');
+                            resultCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            processBtn.addEventListener('click', () => {
+                if (!originalImage) {
+                    alert('先に画像を選択してください。');
+                    return;
+                }
+                
+                processBtn.disabled = true;
+                downloadBtn.classList.add('hidden');
+                loader.style.display = 'flex';
+                resultPlaceholder.style.display = 'none';
+                resultContainer.classList.add('has-content');
+
+                setTimeout(() => {
+                    processImage();
+                }, 50);
+            });
+
+            function processImage() {
+                const n = parseInt(nValueSlider.value, 10);
+                const targetSize = 1024;
+
+                let newWidth, newHeight;
+                if (originalImage.width < originalImage.height) {
+                    newWidth = targetSize;
+                    newHeight = (originalImage.height / originalImage.width) * targetSize;
+                } else {
+                    newHeight = targetSize;
+                    newWidth = (originalImage.width / originalImage.height) * targetSize;
+                }
+
+                newWidth = Math.round(newWidth);
+                newHeight = Math.round(newHeight);
+                
+                const offscreenCanvas = document.createElement('canvas');
+                offscreenCanvas.width = newWidth;
+                offscreenCanvas.height = newHeight;
+                const offscreenCtx = offscreenCanvas.getContext('2d');
+                
+                offscreenCtx.drawImage(originalImage, 0, 0, newWidth, newHeight);
+                
+                const imageData = offscreenCtx.getImageData(0, 0, newWidth, newHeight);
+                const data = imageData.data;
+                const newData = new Uint8ClampedArray(data.length);
+
+                for (let y = 0; y < newHeight; y++) {
+                    for (let x = 0; x < newWidth; x++) {
+                        const index = (y * newWidth + x) * 4;
+                        if (x % n === 0 && y % n === 0) {
+                            newData[index] = data[index];
+                            newData[index + 1] = data[index + 1];
+                            newData[index + 2] = data[index + 2];
+                            newData[index + 3] = data[index + 3];
+                        } else {
+                            newData[index] = 0;
+                            newData[index + 1] = 0;
+                            newData[index + 2] = 0;
+                            newData[index + 3] = 255;
+                        }
+                    }
+                }
+                
+                const newImageData = new ImageData(newData, newWidth, newHeight);
+
+                const aspect = newWidth / newHeight;
+                const containerWidth = resultContainer.clientWidth - 16;
+                const containerHeight = resultContainer.clientHeight - 16;
+                
+                let displayWidth = containerWidth;
+                let displayHeight = containerWidth / aspect;
+
+                if (displayHeight > containerHeight) {
+                    displayHeight = containerHeight;
+                    displayWidth = containerHeight * aspect;
+                }
+
+                resultCanvas.width = displayWidth;
+                resultCanvas.height = displayHeight;
+
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = newWidth;
+                tempCanvas.height = newHeight;
+                tempCanvas.getContext('2d').putImageData(newImageData, 0, 0);
+
+                resultCtx.drawImage(tempCanvas, 0, 0, displayWidth, displayHeight);
+
+                downloadBtn.href = tempCanvas.toDataURL('image/png');
+                downloadBtn.classList.remove('hidden');
+                processBtn.disabled = false;
+                loader.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

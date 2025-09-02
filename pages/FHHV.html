@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seamless Video Looper</title>
+    <meta name="description" content="An interactive application to create and experience seamless graphs of looping and transitional videos. Upload your own clips and build a dynamic visual journey.">
+    <meta name="page:icon" content="fas fa-project-diagram">
+    <meta name="page:color" content="#8b5cf6">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    
+    <style>
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        body {
+            background: linear-gradient(-45deg, #1f2937, #3730a3, #5b21b6, #1e3a8a);
+            background-size: 400% 400%;
+            animation: gradient-animation 20s ease infinite;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .video-container video {
+            transition: opacity 0.7s ease-in-out;
+        }
+        
+        .modal {
+            background: rgba(10, 10, 20, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(139, 92, 246, 0.6);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(139, 92, 246, 0.8);
+        }
+    </style>
+</head>
+<body class="text-gray-200 font-sans h-screen overflow-hidden flex flex-col">
+    <header class="p-4 flex justify-between items-center glass-panel shadow-lg z-20">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-project-diagram text-violet-400 text-2xl"></i>
+            <h1 class="text-xl font-bold tracking-wider">Seamless Video Looper</h1>
+        </div>
+    </header>
+
+    <main class="flex-grow flex p-4 gap-4 overflow-hidden">
+
+        <!-- Left Column: Video Player and Interaction -->
+        <div class="w-2/3 flex flex-col gap-4">
+            <div id="video-player-wrapper" class="relative flex-grow bg-black rounded-2xl shadow-2xl overflow-hidden aspect-video">
+                <video id="videoPlayerA" class="absolute top-0 left-0 w-full h-full object-contain" playsinline muted></video>
+                <video id="videoPlayerB" class="absolute top-0 left-0 w-full h-full object-contain opacity-0" playsinline muted></video>
+                <div id="player-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-70 z-10 transition-opacity duration-500">
+                    <i class="fas fa-film text-6xl text-gray-500 mb-4"></i>
+                    <h2 class="text-2xl font-semibold text-gray-400">Player Idle</h2>
+                    <p class="text-gray-500 mt-2">Create a graph and select a starting node to begin.</p>
+                </div>
+                <div id="status-display" class="absolute bottom-4 left-4 z-20 glass-panel px-4 py-2 rounded-lg text-sm transition-opacity duration-300 opacity-0">
+                    <p id="status-text"></p>
+                </div>
+            </div>
+            <div id="interaction-panel" class="h-1/4 glass-panel rounded-2xl p-4 flex flex-col">
+                <h3 class="font-semibold text-violet-300 border-b border-violet-300/20 pb-2 mb-3"><i class="fas fa-mouse-pointer-alt mr-2"></i>Interaction Controls</h3>
+                <div id="interaction-buttons" class="flex-grow overflow-y-auto flex flex-wrap gap-3 content-start">
+                    <div id="interaction-placeholder" class="text-gray-500 text-center w-full self-center">Add nodes to enable interaction.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Graph Editor -->
+        <div class="w-1/3 flex flex-col gap-4">
+            <div class="h-1/3 glass-panel rounded-2xl p-4 flex flex-col">
+                 <div class="flex justify-between items-center border-b border-violet-300/20 pb-2 mb-3">
+                    <h3 class="font-semibold text-violet-300"><i class="fas fa-folder-open mr-2"></i>Video Assets</h3>
+                    <label for="video-upload" class="cursor-pointer bg-violet-500 hover:bg-violet-600 text-white font-bold py-1 px-3 rounded-lg transition-colors text-sm">
+                        <i class="fas fa-upload mr-1"></i> Upload
+                    </label>
+                    <input type="file" id="video-upload" multiple accept="video/*" class="hidden">
+                </div>
+                <ul id="asset-list" class="flex-grow overflow-y-auto space-y-2 pr-2">
+                    <li id="asset-placeholder" class="text-gray-500 text-center mt-4">Upload videos to get started.</li>
+                </ul>
+            </div>
+            <div class="flex-grow glass-panel rounded-2xl p-4 flex flex-col">
+                <div class="flex justify-between items-center border-b border-violet-300/20 pb-2 mb-3">
+                    <h3 class="font-semibold text-violet-300"><i class="fas fa-sitemap mr-2"></i>Graph Editor</h3>
+                    <div class="space-x-2">
+                        <button id="add-node-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-1 px-3 rounded-lg transition-colors text-sm disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
+                           <i class="fas fa-plus-circle mr-1"></i> Add Node
+                        </button>
+                        <button id="add-edge-btn" class="bg-teal-500 hover:bg-teal-600 text-white font-bold py-1 px-3 rounded-lg transition-colors text-sm disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-link mr-1"></i> Add Edge
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-grow overflow-y-auto pr-2">
+                    <h4 class="text-lg font-medium text-sky-300 mb-2">Nodes (Looping Videos)</h4>
+                    <div id="node-list" class="space-y-2 mb-4">
+                         <div id="node-placeholder" class="text-gray-500 text-center py-2">No nodes created.</div>
+                    </div>
+                    <h4 class="text-lg font-medium text-teal-300 mb-2">Edges (Transition Videos)</h4>
+                    <div id="edge-list" class="space-y-2">
+                        <div id="edge-placeholder" class="text-gray-500 text-center py-2">No edges created.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="node-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal">
+        <div class="glass-panel rounded-xl shadow-2xl w-full max-w-md p-6 border-violet-500 border-2">
+            <h2 class="text-2xl font-bold mb-4 text-sky-300">Create New Node</h2>
+            <div class="space-y-4">
+                <div>
+                    <label for="node-name" class="block text-sm font-medium text-gray-300 mb-1">Node Name</label>
+                    <input type="text" id="node-name" class="w-full bg-gray-900/50 border border-gray-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-sky-500 focus:outline-none" placeholder="e.g., Idle Animation">
+                </div>
+                <div>
+                    <label for="node-video" class="block text-sm font-medium text-gray-300 mb-1">Looping Video (VL)</label>
+                    <select id="node-video" class="w-full bg-gray-900/50 border border-gray-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-sky-500 focus:outline-none"></select>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-node" class="px-4 py-2 rounded-md bg-gray-600 hover:bg-gray-700 transition">Cancel</button>
+                <button id="save-node" class="px-4 py-2 rounded-md bg-sky-500 hover:bg-sky-600 transition font-semibold">Create Node</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="edge-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal">
+        <div class="glass-panel rounded-xl shadow-2xl w-full max-w-md p-6 border-teal-500 border-2">
+            <h2 class="text-2xl font-bold mb-4 text-teal-300">Create New Edge</h2>
+            <div class="space-y-4">
+                <div>
+                    <label for="edge-from" class="block text-sm font-medium text-gray-300 mb-1">From Node</label>
+                    <select id="edge-from" class="w-full bg-gray-900/50 border border-gray-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-teal-500 focus:outline-none"></select>
+                </div>
+                <div>
+                    <label for="edge-to" class="block text-sm font-medium text-gray-300 mb-1">To Node</label>
+                    <select id="edge-to" class="w-full bg-gray-900/50 border border-gray-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-teal-500 focus:outline-none"></select>
+                </div>
+                <div>
+                    <label for="edge-video" class="block text-sm font-medium text-gray-300 mb-1">Transition Video (V_ab)</label>
+                    <select id="edge-video" class="w-full bg-gray-900/50 border border-gray-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-teal-500 focus:outline-none"></select>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-edge" class="px-4 py-2 rounded-md bg-gray-600 hover:bg-gray-700 transition">Cancel</button>
+                <button id="save-edge" class="px-4 py-2 rounded-md bg-teal-500 hover:bg-teal-600 transition font-semibold">Create Edge</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const videoUpload = document.getElementById('video-upload');
+    const assetList = document.getElementById('asset-list');
+    const assetPlaceholder = document.getElementById('asset-placeholder');
+    const addNodeBtn = document.getElementById('add-node-btn');
+    const addEdgeBtn = document.getElementById('add-edge-btn');
+    const nodeList = document.getElementById('node-list');
+    const edgeList = document.getElementById('edge-list');
+    const nodePlaceholder = document.getElementById('node-placeholder');
+    const edgePlaceholder = document.getElementById('edge-placeholder');
+    const interactionPanel = document.getElementById('interaction-buttons');
+    const interactionPlaceholder = document.getElementById('interaction-placeholder');
+    
+    const playerA = document.getElementById('videoPlayerA');
+    const playerB = document.getElementById('videoPlayerB');
+    const playerOverlay = document.getElementById('player-overlay');
+    const statusDisplay = document.getElementById('status-display');
+    const statusText = document.getElementById('status-text');
+
+    const nodeModal = document.getElementById('node-modal');
+    const edgeModal = document.getElementById('edge-modal');
+
+    let videos = {};
+    let graph = {
+        nodes: {},
+        edges: []
+    };
+    let activePlayer = playerA;
+    let inactivePlayer = playerB;
+    let currentNodeId = null;
+    let transitionRequest = null;
+    let nodeIdCounter = 0;
+
+    const updateUIState = () => {
+        const hasVideos = Object.keys(videos).length > 0;
+        const hasNodes = Object.keys(graph.nodes).length > 0;
+        const hasMultipleNodes = Object.keys(graph.nodes).length > 1;
+
+        addNodeBtn.disabled = !hasVideos;
+        addEdgeBtn.disabled = !hasMultipleNodes;
+        
+        if (hasVideos) {
+            assetPlaceholder.classList.add('hidden');
+        } else {
+            assetPlaceholder.classList.remove('hidden');
+        }
+
+        if (hasNodes) {
+            nodePlaceholder.classList.add('hidden');
+            interactionPlaceholder.classList.add('hidden');
+        } else {
+            nodePlaceholder.classList.remove('hidden');
+            interactionPlaceholder.classList.remove('hidden');
+        }
+        
+        const hasEdges = graph.edges.length > 0;
+        if (hasEdges) {
+            edgePlaceholder.classList.add('hidden');
+        } else {
+            edgePlaceholder.classList.remove('hidden');
+        }
+    };
+
+    videoUpload.addEventListener('change', (event) => {
+        for (const file of event.target.files) {
+            if (videos[file.name]) continue;
+
+            const url = URL.createObjectURL(file);
+            videos[file.name] = { file, url };
+            
+            const li = document.createElement('li');
+            li.className = 'flex items-center justify-between bg-gray-800/50 p-2 rounded-lg';
+            li.innerHTML = `
+                <div class="flex items-center gap-2 overflow-hidden">
+                    <i class="fas fa-file-video text-violet-400"></i>
+                    <span class="truncate text-sm">${file.name}</span>
+                </div>
+                <button data-filename="${file.name}" class="text-gray-500 hover:text-red-400 transition-colors remove-asset-btn">&times;</button>
+            `;
+            assetList.appendChild(li);
+        }
+        updateUIState();
+    });
+    
+    assetList.addEventListener('click', e => {
+        if(e.target.classList.contains('remove-asset-btn')){
+            const filename = e.target.dataset.filename;
+            URL.revokeObjectURL(videos[filename].url);
+            delete videos[filename];
+            e.target.parentElement.remove();
+            
+            // This is a simplified cleanup. A real app would check for dependencies in the graph.
+            // For this example, we assume users manage this.
+            
+            updateUIState();
+        }
+    });
+
+    const populateSelect = (selectElement, options, placeholder) => {
+        selectElement.innerHTML = `<option value="" disabled selected>${placeholder}</option>`;
+        for (const [key, value] of Object.entries(options)) {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = value.name || value;
+            selectElement.appendChild(option);
+        }
+    };
+
+    const openModal = (modal) => modal.classList.replace('hidden', 'flex');
+    const closeModal = (modal) => modal.classList.replace('flex', 'hidden');
+
+    addNodeBtn.addEventListener('click', () => {
+        const videoOptions = Object.keys(videos).reduce((acc, key) => {
+            acc[key] = key;
+            return acc;
+        }, {});
+        populateSelect(document.getElementById('node-video'), videoOptions, 'Select a video');
+        document.getElementById('node-name').value = '';
+        openModal(nodeModal);
+    });
+    
+    document.getElementById('cancel-node').addEventListener('click', () => closeModal(nodeModal));
+    document.getElementById('save-node').addEventListener('click', () => {
+        const name = document.getElementById('node-name').value;
+        const videoId = document.getElementById('node-video').value;
+        if (!name || !videoId) {
+            alert('Please fill all fields.');
+            return;
+        }
+
+        nodeIdCounter++;
+        const nodeId = `node-${nodeIdCounter}`;
+        graph.nodes[nodeId] = { id: nodeId, name, videoId };
+
+        renderGraph();
+        closeModal(nodeModal);
+        updateUIState();
+    });
+
+    addEdgeBtn.addEventListener('click', () => {
+        const nodeOptions = Object.values(graph.nodes).reduce((acc, node) => {
+            acc[node.id] = node.name;
+            return acc;
+        }, {});
+        const videoOptions = Object.keys(videos).reduce((acc, key) => {
+            acc[key] = key;
+            return acc;
+        }, {});
+
+        populateSelect(document.getElementById('edge-from'), nodeOptions, 'Select start node');
+        populateSelect(document.getElementById('edge-to'), nodeOptions, 'Select end node');
+        populateSelect(document.getElementById('edge-video'), videoOptions, 'Select transition video');
+        openModal(edgeModal);
+    });
+
+    document.getElementById('cancel-edge').addEventListener('click', () => closeModal(edgeModal));
+    document.getElementById('save-edge').addEventListener('click', () => {
+        const from = document.getElementById('edge-from').value;
+        const to = document.getElementById('edge-to').value;
+        const videoId = document.getElementById('edge-video').value;
+        if (!from || !to || !videoId) {
+            alert('Please fill all fields.');
+            return;
+        }
+        if(from === to) {
+            alert('Cannot create an edge to the same node.');
+            return;
+        }
+
+        graph.edges.push({ from, to, videoId });
+        renderGraph();
+        closeModal(edgeModal);
+        updateUIState();
+    });
+    
+    const renderGraph = () => {
+        nodeList.innerHTML = '';
+        interactionPanel.innerHTML = '';
+        Object.values(graph.nodes).forEach(node => {
+            const nodeDiv = document.createElement('div');
+            nodeDiv.className = 'bg-gray-800/50 p-2 rounded-lg flex justify-between items-center';
+            nodeDiv.innerHTML = `
+                <div>
+                    <i class="fas fa-dot-circle text-sky-400 mr-2"></i>
+                    <span class="font-semibold">${node.name}</span>
+                    <span class="text-xs text-gray-400 ml-2 truncate">${node.videoId}</span>
+                </div>
+            `;
+            nodeList.appendChild(nodeDiv);
+            
+            const button = document.createElement('button');
+            button.className = 'bg-gray-700 hover:bg-violet-500 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 transform hover:scale-105';
+            button.textContent = node.name;
+            button.dataset.targetNodeId = node.id;
+            button.addEventListener('click', () => requestTransition(node.id));
+            interactionPanel.appendChild(button);
+        });
+
+        edgeList.innerHTML = '';
+        graph.edges.forEach(edge => {
+            const fromNode = graph.nodes[edge.from];
+            const toNode = graph.nodes[edge.to];
+            if (!fromNode || !toNode) return;
+
+            const edgeDiv = document.createElement('div');
+            edgeDiv.className = 'bg-gray-800/50 p-2 rounded-lg';
+            edgeDiv.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs text-sky-400 bg-sky-900/50 px-2 py-1 rounded">${fromNode.name}</span>
+                    <i class="fas fa-long-arrow-alt-right text-teal-400"></i>
+                    <span class="font-mono text-xs text-sky-400 bg-sky-900/50 px-2 py-1 rounded">${toNode.name}</span>
+                </div>
+                <div class="flex items-center gap-2 mt-1 pl-1">
+                     <i class="fas fa-film text-gray-400"></i>
+                     <span class="text-xs text-gray-300">${edge.videoId}</span>
+                </div>
+            `;
+            edgeList.appendChild(edgeDiv);
+        });
+        updateUIState();
+    };
+
+    const setStatus = (text) => {
+        statusText.textContent = text;
+        statusDisplay.classList.remove('opacity-0');
+        setTimeout(() => statusDisplay.classList.add('opacity-0'), 3000);
+    };
+
+    const requestTransition = (targetNodeId) => {
+        if (!currentNodeId) {
+            startPlayback(targetNodeId);
+        } else if (currentNodeId !== targetNodeId) {
+            transitionRequest = targetNodeId;
+            activePlayer.loop = false;
+            setStatus(`Transitioning from ${graph.nodes[currentNodeId].name}...`);
+        }
+    };
+
+    const startPlayback = (nodeId) => {
+        const node = graph.nodes[nodeId];
+        if (!node) return;
+        
+        playerOverlay.classList.add('opacity-0');
+        currentNodeId = nodeId;
+        activePlayer.src = videos[node.videoId].url;
+        activePlayer.loop = true;
+        activePlayer.play().catch(e => console.error("Playback failed:", e));
+        
+        activePlayer.style.opacity = 1;
+        inactivePlayer.style.opacity = 0;
+        
+        setStatus(`Playing loop: ${node.name}`);
+    };
+
+    const handleLoopEnd = () => {
+        if (!transitionRequest) return;
+        
+        const targetNodeId = transitionRequest;
+        transitionRequest = null;
+        
+        const edge = graph.edges.find(e => e.from === currentNodeId && e.to === targetNodeId);
+        if (edge) {
+            playTransition(edge);
+        } else {
+            console.warn(`No edge found from ${currentNodeId} to ${targetNodeId}. Snapping directly.`);
+            startPlayback(targetNodeId);
+        }
+    };
+    
+    const playTransition = (edge) => {
+        const fromNode = graph.nodes[edge.from];
+        const toNode = graph.nodes[edge.to];
+        
+        setStatus(`Transition: ${fromNode.name} → ${toNode.name}`);
+        
+        // Preload destination loop on inactive player
+        inactivePlayer.src = videos[toNode.videoId].url;
+        inactivePlayer.loop = true;
+        inactivePlayer.load();
+        
+        // Play transition on active player
+        activePlayer.src = videos[edge.videoId].url;
+        activePlayer.loop = false;
+        activePlayer.play();
+        
+        const onTransitionEnd = () => {
+            activePlayer.removeEventListener('ended', onTransitionEnd);
+            
+            // Swap players
+            const temp = activePlayer;
+            activePlayer = inactivePlayer;
+            inactivePlayer = temp;
+            
+            activePlayer.style.opacity = 1;
+            inactivePlayer.style.opacity = 0;
+            
+            activePlayer.play();
+            currentNodeId = edge.to;
+            setStatus(`Playing loop: ${toNode.name}`);
+        };
+        activePlayer.addEventListener('ended', onTransitionEnd, { once: true });
+    };
+
+    playerA.addEventListener('ended', handleLoopEnd);
+    playerB.addEventListener('ended', handleLoopEnd);
+    
+    updateUIState();
+});
+</script>
+
+</body>
+</html>
