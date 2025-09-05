@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mosaic Weaver</title>
+    <title>MOSAIC.FLAC</title>
     <meta name="description" content="Create stunning mosaic art by selecting parts of your image. Adjust the pixelation level for the perfect effect using AI-powered segmentation.">
     <meta name="page:icon" content="fas fa-palette">
     <meta name="page:color" content="#38bdf8">
@@ -157,12 +157,11 @@
     <main class="w-full max-w-7xl h-full flex flex-col lg:flex-row items-center justify-center gap-8">
 
         <div class="w-full lg:w-3/4 h-auto lg:h-[90vh] flex flex-col main-panel rounded-2xl p-4">
-            <h1 class="text-3xl font-bold text-center mb-4 gradient-text">Mosaic Weaver</h1>
+            <h1 class="text-3xl font-bold text-center mb-4 gradient-text">MOSAIC.FLAC</h1>
             <div id="container" class="relative w-full flex-grow rounded-lg overflow-hidden border-2 border-dashed border-gray-300">
                 <label id="upload-button" for="upload" class="absolute inset-0 flex flex-col items-center justify-center text-gray-500 cursor-pointer p-4 text-center">
                     <svg class="w-16 h-16 mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     <span class="text-lg font-semibold">Click to upload image</span>
-                    <span id="example" class="text-sky-500 hover:text-sky-600 hover:underline mt-1 cursor-pointer">or try an example</span>
                 </label>
                 <canvas id="image-canvas" style="display: none;"></canvas>
                 <canvas id="mosaic-canvas" style="display: none;"></canvas>
@@ -328,7 +327,6 @@
         const statusLabel = document.getElementById('status');
         const fileUpload = document.getElementById('upload');
         const imageContainer = document.getElementById('container');
-        const example = document.getElementById('example');
         const imageCanvas = document.getElementById('image-canvas');
         const mosaicCanvas = document.getElementById('mosaic-canvas');
         const maskCanvas = document.getElementById('mask-output');
@@ -351,7 +349,6 @@
         let isMaskVisible = true;
 
         const BASE_URL = 'https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/';
-        const EXAMPLE_URL = BASE_URL + 'corgi.jpg';
 
         const blob = new Blob([workerCode], {
             type: 'application/javascript'
@@ -503,12 +500,6 @@
             const reader = new FileReader();
             reader.onload = e2 => segment(e2.target.result);
             reader.readAsDataURL(file);
-        });
-
-        example.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            segment(EXAMPLE_URL);
         });
 
         function addIcon({
