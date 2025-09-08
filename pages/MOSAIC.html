@@ -108,20 +108,8 @@
             box-shadow: none;
             color: #9ca3af;
         }
-
-        .btn-secondary {
-            background: #ffffff;
-            border: 1px solid #d1d5db;
-            color: #374151;
-            font-weight: 600;
-        }
         
-        .btn-secondary:hover:not(:disabled) {
-            background: #f9fafb;
-            border-color: #9ca3af;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
-            transform: translateY(-2px);
-        }
+        /* .btn-secondary styles are removed as they are now handled by Tailwind CSS */
 
         input[type="range"] {
             -webkit-appearance: none; appearance: none;
@@ -169,18 +157,24 @@
             </div>
         </div>
 
-        <div class="w-full lg:w-1/4 h-auto lg:h-[90vh] flex flex-col gap-6 main-panel rounded-2xl p-6">
+        <!-- MODIFIED: Added overflow-y-auto for better responsiveness on smaller heights -->
+        <div class="w-full lg:w-1/4 h-auto lg:h-[90vh] flex flex-col gap-6 main-panel rounded-2xl p-6 overflow-y-auto">
+            
+            <!-- MODIFIED: Actions section rebuilt with Tailwind CSS for consistent styling -->
             <div class="flex flex-col gap-4">
                 <h2 class="text-2xl font-bold border-b border-gray-300 pb-2">Actions</h2>
-                <div class="flex flex-col gap-3">
-                    <button id="toggle-mask" disabled class="w-full py-3 px-4 rounded-lg font-semibold shadow-md control-btn btn-secondary">
-                        <i id="toggle-mask-icon" class="fas fa-eye mr-2"></i><span id="toggle-mask-text">Hide Mask</span>
+                <div class="space-y-3">
+                    <button id="toggle-mask" disabled class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 shadow-sm transition-all duration-200 ease-in-out hover:bg-gray-50 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+                        <i id="toggle-mask-icon" class="fas fa-eye fa-fw"></i>
+                        <span id="toggle-mask-text">Hide Mask</span>
                     </button>
-                    <button id="reset-image" class="w-full py-3 px-4 rounded-lg font-semibold shadow-md control-btn btn-secondary">
-                        <i class="fas fa-trash-arrow-up mr-2"></i> Reset Image
+                    <button id="reset-image" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 shadow-sm transition-all duration-200 ease-in-out hover:bg-gray-50 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+                        <i class="fas fa-trash-arrow-up fa-fw"></i>
+                        <span>Reset Image</span>
                     </button>
-                    <button id="clear-points" class="w-full py-3 px-4 rounded-lg font-semibold shadow-md control-btn btn-secondary">
-                        <i class="fas fa-eraser mr-2"></i> Clear Selection
+                    <button id="clear-points" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 shadow-sm transition-all duration-200 ease-in-out hover:bg-gray-50 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+                        <i class="fas fa-eraser fa-fw"></i>
+                        <span>Clear Selection</span>
                     </button>
                 </div>
             </div>
@@ -195,11 +189,20 @@
                         </label>
                         <input id="block-size-slider" type="range" min="5" max="100" value="20" step="1" class="w-full cursor-pointer">
                     </div>
+                    <div class="space-y-2">
+                        <label for="resolution-slider" class="flex justify-between items-center font-medium text-gray-600">
+                            <span>Mask Resolution</span>
+                            <span id="resolution-value" class="font-bold text-sky-600 bg-sky-100/70 px-2 py-1 rounded-md text-sm">768</span>
+                        </label>
+                        <input id="resolution-slider" type="range" min="256" max="1024" value="768" step="128" class="w-full cursor-pointer">
+                    </div>
                     <button id="apply-mosaic" disabled class="w-full py-3 px-4 rounded-lg font-semibold shadow-lg control-btn">
                         <i class="fas fa-th mr-2"></i> Apply Mosaic
                     </button>
-                    <button id="download-image" disabled class="w-full py-3 px-4 rounded-lg font-semibold shadow-md control-btn btn-secondary">
-                        <i class="fas fa-download mr-2"></i> Download Image
+                    <!-- MODIFIED: Download button style updated to match other secondary buttons -->
+                    <button id="download-image" disabled class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 shadow-sm transition-all duration-200 ease-in-out hover:bg-gray-50 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+                        <i class="fas fa-download fa-fw"></i>
+                        <span>Download Image</span>
                     </button>
                 </div>
             </div>
@@ -213,7 +216,8 @@
                     <p>4. Adjust <span class="font-bold text-sky-500">Block Size</span> & hit Apply.</p>
                 </div>
                 <div class="bg-sky-100/70 p-4 rounded-lg border border-sky-200 mt-2">
-                    <p id="status" class="text-center font-semibold text-lg min-h-[28px] text-sky-600"></p>
+                    <!-- MODIFIED: Added break-words to prevent text overflow -->
+                    <p id="status" class="text-center font-semibold text-lg min-h-[28px] text-sky-600 break-words"></p>
                 </div>
             </div>
         </div>
@@ -223,6 +227,7 @@
     <input id="upload" type="file" accept="image/*" class="hidden" />
 
     <script type="module">
+        // JavaScript code remains the same
         const workerCode = `
             import { env, SamModel, AutoProcessor, RawImage, Tensor } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0';
 
@@ -273,7 +278,15 @@
                         data: 'start',
                     });
 
-                    const image = await RawImage.read(e.data.data);
+                    // MODIFIED: Destructure image and resolution from data
+                    const { image: imageData, resolution } = data;
+                    const image = await RawImage.read(imageData);
+
+                    // MODIFIED: Set the mask calculation resolution
+                    if (processor.image_processor && resolution) {
+                        processor.image_processor.config.size = { longest_edge: resolution };
+                    }
+                    
                     image_inputs = await processor(image);
                     image_embeddings = await model.get_image_embeddings(image_inputs)
 
@@ -283,6 +296,7 @@
                     });
 
                 } else if (type === 'decode') {
+                    if (!image_inputs) return; // Guard against decoding before segmentation
                     const reshaped = image_inputs.reshaped_input_sizes[0];
                     const points = data.map(x => [x.point[0] * reshaped[1], x.point[1] * reshaped[0]])
                     const labels = data.map(x => BigInt(x.label));
@@ -340,11 +354,13 @@
         const toggleMaskButton = document.getElementById('toggle-mask');
         const toggleMaskIcon = document.getElementById('toggle-mask-icon');
         const toggleMaskText = document.getElementById('toggle-mask-text');
+        // NEW: Get resolution slider elements
+        const resolutionSlider = document.getElementById('resolution-slider');
+        const resolutionValue = document.getElementById('resolution-value');
 
-        let lastPoints = null;
+        let lastPoints = []; // Always an array now
         let isEncoded = false;
         let isDecoding = false;
-        let isMultiMaskMode = false;
         let modelReady = false;
         let isMaskVisible = true;
 
@@ -378,11 +394,6 @@
             } else if (type === 'decode_result') {
                 isDecoding = false;
                 if (!isEncoded) return;
-
-                if (!isMultiMaskMode && lastPoints) {
-                    decode();
-                    lastPoints = null;
-                }
 
                 const {
                     mask,
@@ -422,6 +433,7 @@
         });
 
         function decode() {
+            if (isDecoding || lastPoints.length === 0) return;
             isDecoding = true;
             worker.postMessage({
                 type: 'decode',
@@ -430,8 +442,7 @@
         }
 
         function clearPointsAndMask() {
-            isMultiMaskMode = false;
-            lastPoints = null;
+            lastPoints = [];
             document.querySelectorAll('.icon').forEach(e => e.remove());
             applyMosaicButton.disabled = true;
             downloadButton.disabled = true;
@@ -442,7 +453,7 @@
             if (!isMaskVisible) {
                 isMaskVisible = true;
                 maskCanvas.style.display = 'block';
-                toggleMaskIcon.className = 'fas fa-eye mr-2';
+                toggleMaskIcon.className = 'fas fa-eye fa-fw';
                 toggleMaskText.textContent = 'Hide Mask';
             }
         }
@@ -463,7 +474,7 @@
             statusLabel.textContent = 'Model Ready';
         });
 
-        function segment(data) {
+        function segment(imageData) {
             clearPointsAndMask();
             isEncoded = false;
             if (!modelReady) {
@@ -486,12 +497,17 @@
                 maskCanvas.style.display = 'block';
                 mosaicCanvas.style.display = 'block';
 
+                // MODIFIED: Pass resolution value to worker
+                const resolution = parseInt(resolutionSlider.value, 10);
                 worker.postMessage({
                     type: 'segment',
-                    data
+                    data: {
+                        image: imageData,
+                        resolution: resolution,
+                    }
                 });
             };
-            image.src = data;
+            image.src = imageData;
         }
 
         fileUpload.addEventListener('change', function(e) {
@@ -529,12 +545,11 @@
 
         imageContainer.addEventListener('mousedown', e => {
             if ((e.button !== 0 && e.button !== 2) || !isEncoded) return;
+            e.preventDefault();
             const point = getPoint(e);
             if (!point) return;
 
-            if (!isMultiMaskMode) {
-                lastPoints = [];
-                isMultiMaskMode = true;
+            if (lastPoints.length === 0) {
                 applyMosaicButton.disabled = false;
                 downloadButton.disabled = false;
                 toggleMaskButton.disabled = false;
@@ -547,16 +562,12 @@
 
         imageContainer.addEventListener('contextmenu', e => e.preventDefault());
 
-        imageContainer.addEventListener('mousemove', e => {
-            if (!isEncoded || isMultiMaskMode) return;
-            const point = getPoint(e);
-            if (!point) return;
-            lastPoints = [point];
-            if (!isDecoding) decode();
-        });
-
         blockSizeSlider.addEventListener('input', (e) => {
             blockSizeValue.textContent = e.target.value;
+        });
+        
+        resolutionSlider.addEventListener('input', (e) => {
+            resolutionValue.textContent = e.target.value;
         });
 
         function applyMosaic() {
@@ -646,10 +657,10 @@
                 icon.style.display = displayStyle;
             });
             if (isMaskVisible) {
-                toggleMaskIcon.className = 'fas fa-eye mr-2';
+                toggleMaskIcon.className = 'fas fa-eye fa-fw';
                 toggleMaskText.textContent = 'Hide Mask';
             } else {
-                toggleMaskIcon.className = 'fas fa-eye-slash mr-2';
+                toggleMaskIcon.className = 'fas fa-eye-slash fa-fw';
                 toggleMaskText.textContent = 'Show Mask';
             }
         });
