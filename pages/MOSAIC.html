@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
@@ -47,7 +47,7 @@
 
         #image-canvas,
         #mosaic-canvas,
-        #mask-output {
+        #mask-canvas {
             position: absolute;
             top: 0;
             left: 0;
@@ -56,7 +56,7 @@
             object-fit: contain;
         }
 
-        #mask-output {
+        #mask-canvas {
             opacity: 0.6;
             pointer-events: none;
         }
@@ -108,8 +108,6 @@
             box-shadow: none;
             color: #9ca3af;
         }
-        
-        /* .btn-secondary styles are removed as they are now handled by Tailwind CSS */
 
         input[type="range"] {
             -webkit-appearance: none; appearance: none;
@@ -137,10 +135,19 @@
             border-radius: 50%; border: 2px solid #ffffff;
             box-shadow: 0 0 5px rgba(129, 140, 248, 0.7);
         }
+
+        .paint-tool.active-tool {
+            border-color: #38bdf8;
+            background-color: rgba(56, 189, 248, 0.1);
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+        }
     </style>
 </head>
 
 <body class="text-gray-800 flex items-center justify-center h-screen w-screen p-4">
+
+    <!-- NEW: Brush preview cursor element -->
+    <div id="brush-cursor" class="absolute rounded-full border-2 border-black bg-white bg-opacity-50 pointer-events-none hidden z-50" style="transform: translate(-50%, -50%);"></div>
 
     <main class="w-full max-w-7xl h-full flex flex-col lg:flex-row items-center justify-center gap-8">
 
@@ -153,14 +160,12 @@
                 </label>
                 <canvas id="image-canvas" style="display: none;"></canvas>
                 <canvas id="mosaic-canvas" style="display: none;"></canvas>
-                <canvas id="mask-output" style="display: none;"></canvas>
+                <canvas id="mask-canvas" style="display: none;"></canvas>
             </div>
         </div>
 
-        <!-- MODIFIED: Added overflow-y-auto for better responsiveness on smaller heights -->
         <div class="w-full lg:w-1/4 h-auto lg:h-[90vh] flex flex-col gap-6 main-panel rounded-2xl p-6 overflow-y-auto">
             
-            <!-- MODIFIED: Actions section rebuilt with Tailwind CSS for consistent styling -->
             <div class="flex flex-col gap-4">
                 <h2 class="text-2xl font-bold border-b border-gray-300 pb-2">Actions</h2>
                 <div class="space-y-3">
@@ -179,7 +184,7 @@
                 </div>
             </div>
 
-            <div class="flex flex-col gap-4 flex-grow">
+            <div class="flex flex-col gap-4">
                 <h2 class="text-2xl font-bold border-b border-gray-300 pb-2">Mosaic Controls</h2>
                 <div class="space-y-4">
                     <div class="space-y-2">
@@ -199,11 +204,34 @@
                     <button id="apply-mosaic" disabled class="w-full py-3 px-4 rounded-lg font-semibold shadow-lg control-btn">
                         <i class="fas fa-th mr-2"></i> Apply Mosaic
                     </button>
-                    <!-- MODIFIED: Download button style updated to match other secondary buttons -->
                     <button id="download-image" disabled class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 shadow-sm transition-all duration-200 ease-in-out hover:bg-gray-50 hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
                         <i class="fas fa-download fa-fw"></i>
                         <span>Download Image</span>
                     </button>
+                </div>
+            </div>
+            
+            <div class="flex flex-col gap-4">
+                <h2 class="text-2xl font-bold border-b border-gray-300 pb-2">Paint Tools</h2>
+                <div class="space-y-3">
+                    <div class="grid grid-cols-3 gap-2">
+                        <button data-tool="select" class="paint-tool flex flex-col items-center justify-center p-2 rounded-lg border border-gray-300 bg-white transition-all">
+                            <i class="fas fa-mouse-pointer fa-fw"></i><span class="text-xs mt-1 font-semibold">Select</span>
+                        </button>
+                        <button data-tool="brush" class="paint-tool flex flex-col items-center justify-center p-2 rounded-lg border border-gray-300 bg-white transition-all">
+                            <i class="fas fa-paint-brush fa-fw"></i><span class="text-xs mt-1 font-semibold">Brush</span>
+                        </button>
+                        <button data-tool="eraser" class="paint-tool flex flex-col items-center justify-center p-2 rounded-lg border border-gray-300 bg-white transition-all">
+                            <i class="fas fa-eraser fa-fw"></i><span class="text-xs mt-1 font-semibold">Eraser</span>
+                        </button>
+                    </div>
+                    <div class="space-y-2 pt-2">
+                        <label for="brush-size-slider" class="flex justify-between items-center font-medium text-gray-600">
+                            <span>Brush Size</span>
+                            <span id="brush-size-value" class="font-bold text-sky-600 bg-sky-100/70 px-2 py-1 rounded-md text-sm">20</span>
+                        </label>
+                        <input id="brush-size-slider" type="range" min="1" max="100" value="20" step="1" class="w-full cursor-pointer">
+                    </div>
                 </div>
             </div>
 
@@ -211,23 +239,21 @@
                 <h2 class="text-2xl font-bold border-b border-gray-300 pb-2">How to Use</h2>
                 <div class="text-sm text-gray-600 space-y-2 text-center">
                     <p>1. Upload an image.</p>
-                    <p>2. <span class="font-bold text-green-500">Left-click</span> to select an area.</p>
-                    <p>3. <span class="font-bold text-red-500">Right-click</span> to deselect.</p>
-                    <p>4. Adjust <span class="font-bold text-sky-500">Block Size</span> & hit Apply.</p>
+                    <p>2. Use tools to create a mask.</p>
+                    <p>3. <span class="font-bold text-green-500">Left-click</span> to add to mask.</p>
+                    <p>4. <span class="font-bold text-red-500">Right-click</span> to remove from mask.</p>
                 </div>
                 <div class="bg-sky-100/70 p-4 rounded-lg border border-sky-200 mt-2">
-                    <!-- MODIFIED: Added break-words to prevent text overflow -->
                     <p id="status" class="text-center font-semibold text-lg min-h-[28px] text-sky-600 break-words"></p>
                 </div>
             </div>
         </div>
-
     </main>
 
     <input id="upload" type="file" accept="image/*" class="hidden" />
 
     <script type="module">
-        // JavaScript code remains the same
+        // Worker code remains unchanged
         const workerCode = `
             import { env, SamModel, AutoProcessor, RawImage, Tensor } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0';
 
@@ -277,12 +303,10 @@
                         type: 'segment_result',
                         data: 'start',
                     });
-
-                    // MODIFIED: Destructure image and resolution from data
+                    
                     const { image: imageData, resolution } = data;
                     const image = await RawImage.read(imageData);
-
-                    // MODIFIED: Set the mask calculation resolution
+                    
                     if (processor.image_processor && resolution) {
                         processor.image_processor.config.size = { longest_edge: resolution };
                     }
@@ -296,7 +320,7 @@
                     });
 
                 } else if (type === 'decode') {
-                    if (!image_inputs) return; // Guard against decoding before segmentation
+                    if (!image_inputs) return;
                     const reshaped = image_inputs.reshaped_input_sizes[0];
                     const points = data.map(x => [x.point[0] * reshaped[1], x.point[1] * reshaped[0]])
                     const labels = data.map(x => BigInt(x.label));
@@ -343,7 +367,7 @@
         const imageContainer = document.getElementById('container');
         const imageCanvas = document.getElementById('image-canvas');
         const mosaicCanvas = document.getElementById('mosaic-canvas');
-        const maskCanvas = document.getElementById('mask-output');
+        const maskCanvas = document.getElementById('mask-canvas'); 
         const uploadButton = document.getElementById('upload-button');
         const resetButton = document.getElementById('reset-image');
         const clearButton = document.getElementById('clear-points');
@@ -354,221 +378,261 @@
         const toggleMaskButton = document.getElementById('toggle-mask');
         const toggleMaskIcon = document.getElementById('toggle-mask-icon');
         const toggleMaskText = document.getElementById('toggle-mask-text');
-        // NEW: Get resolution slider elements
         const resolutionSlider = document.getElementById('resolution-slider');
         const resolutionValue = document.getElementById('resolution-value');
 
-        let lastPoints = []; // Always an array now
+        const paintToolButtons = document.querySelectorAll('.paint-tool');
+        const brushSizeSlider = document.getElementById('brush-size-slider');
+        const brushSizeValue = document.getElementById('brush-size-value');
+        const brushCursor = document.getElementById('brush-cursor'); // NEW: Brush cursor element
+
+        let lastPoints = [];
         let isEncoded = false;
         let isDecoding = false;
         let modelReady = false;
         let isMaskVisible = true;
 
+        let currentTool = 'select';
+        let isPainting = false;
+        let brushSize = 20;
+        let lastPos = { x: 0, y: 0 };
+
+        // NEW: Cache for image display dimensions to avoid recalculation
+        let imageDisplayInfo = { valid: false };
+
         const BASE_URL = 'https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/';
-
-        const blob = new Blob([workerCode], {
-            type: 'application/javascript'
-        });
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
         const workerURL = URL.createObjectURL(blob);
-        const worker = new Worker(workerURL, {
-            type: 'module',
-        });
+        const worker = new Worker(workerURL, { type: 'module' });
 
-        const star = new Image();
-        star.src = BASE_URL + 'star-icon.png';
-        star.className = 'icon';
-
-        const cross = new Image();
-        cross.src = BASE_URL + 'cross-icon.png';
-        cross.className = 'icon';
+        const star = new Image(); star.src = BASE_URL + 'star-icon.png'; star.className = 'icon';
+        const cross = new Image(); cross.src = BASE_URL + 'cross-icon.png'; cross.className = 'icon';
 
         worker.addEventListener('message', (e) => {
-            const {
-                type,
-                data
-            } = e.data;
+            const { type, data } = e.data;
             if (type === 'ready') {
-                modelReady = true;
-                statusLabel.textContent = 'Model Ready';
-
+                modelReady = true; statusLabel.textContent = 'Model Ready';
             } else if (type === 'decode_result') {
-                isDecoding = false;
-                if (!isEncoded) return;
+                isDecoding = false; if (!isEncoded) return;
+                const { mask, scores } = data;
+                const tempCanvas = new OffscreenCanvas(mask.width, mask.height);
+                const tempCtx = tempCanvas.getContext('2d');
+                const imageData = tempCtx.createImageData(mask.width, mask.height);
 
-                const {
-                    mask,
-                    scores
-                } = data;
-                const context = maskCanvas.getContext('2d');
-                context.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-                const imageData = context.createImageData(mask.width, mask.height);
-                const numMasks = scores.length;
-                let bestIndex = 0;
-                for (let i = 1; i < numMasks; ++i) {
-                    if (scores[i] > scores[bestIndex]) {
-                        bestIndex = i;
-                    }
-                }
+                let bestIndex = 0; scores.forEach((s, i) => { if (s > scores[bestIndex]) bestIndex = i; });
                 statusLabel.textContent = `Segment Score: ${scores[bestIndex].toFixed(2)}`;
-                const pixelData = imageData.data;
-                for (let i = 0; i < pixelData.length; ++i) {
-                    if (mask.data[numMasks * i + bestIndex] === 1) {
-                        const offset = 4 * i;
-                        pixelData[offset] = 56;
-                        pixelData[offset + 1] = 189;
-                        pixelData[offset + 2] = 248;
-                        pixelData[offset + 3] = 255;
+
+                for (let i = 0; i < imageData.data.length / 4; ++i) {
+                    if (mask.data[scores.length * i + bestIndex] === 1) {
+                        imageData.data[4 * i + 0] = 56; imageData.data[4 * i + 1] = 189;
+                        imageData.data[4 * i + 2] = 248; imageData.data[4 * i + 3] = 255;
                     }
                 }
-                context.putImageData(imageData, 0, 0);
-
+                tempCtx.putImageData(imageData, 0, 0);
+                
+                const mainMaskCtx = maskCanvas.getContext('2d');
+                const lastClickLabel = lastPoints.length > 0 ? lastPoints[lastPoints.length - 1].label : 1;
+                mainMaskCtx.globalCompositeOperation = (lastClickLabel === 0) ? 'destination-out' : 'source-over';
+                mainMaskCtx.drawImage(tempCanvas, 0, 0);
+                mainMaskCtx.globalCompositeOperation = 'source-over';
             } else if (type === 'segment_result') {
-                if (data === 'start') {
-                    statusLabel.textContent = 'Extracting image embedding...';
-                } else {
-                    statusLabel.textContent = 'Embedding extracted!';
-                    isEncoded = true;
-                }
+                statusLabel.textContent = data === 'start' ? 'Extracting image embedding...' : 'Embedding extracted!';
+                if (data === 'done') isEncoded = true;
             }
         });
+
+        // --- NEW: Accurate Coordinate Calculation ---
+        function calculateImageDisplayInfo() {
+            const canvas = imageCanvas;
+            const rect = imageContainer.getBoundingClientRect();
+            if (rect.width === 0 || canvas.width === 0 || canvas.height === 0) {
+                imageDisplayInfo = { valid: false }; return;
+            }
+            const imageAR = canvas.width / canvas.height;
+            const containerAR = rect.width / rect.height;
+            let displayW, displayH, offsetX, offsetY;
+            if (imageAR > containerAR) {
+                displayW = rect.width; displayH = displayW / imageAR;
+                offsetX = 0; offsetY = (rect.height - displayH) / 2;
+            } else {
+                displayH = rect.height; displayW = displayH * imageAR;
+                offsetY = 0; offsetX = (rect.width - displayW) / 2;
+            }
+            imageDisplayInfo = {
+                valid: true, rect, displayW, displayH, offsetX, offsetY,
+                scale: canvas.width / displayW
+            };
+        }
+
+        function getCanvasCoordinates(evt) {
+            if (!imageDisplayInfo.valid) return null;
+            const { rect, displayW, displayH, offsetX, offsetY, scale } = imageDisplayInfo;
+            const mouseX = evt.clientX - rect.left;
+            const mouseY = evt.clientY - rect.top;
+            if (mouseX < offsetX || mouseX > offsetX + displayW || mouseY < offsetY || mouseY > offsetY + displayH) return null;
+            const ratioX = (mouseX - offsetX) / displayW;
+            const ratioY = (mouseY - offsetY) / displayH;
+            return {
+                ratioX, ratioY,
+                x: ratioX * imageCanvas.width,
+                y: ratioY * imageCanvas.height,
+                scale
+            };
+        }
+        window.addEventListener('resize', calculateImageDisplayInfo);
+
 
         function decode() {
             if (isDecoding || lastPoints.length === 0) return;
             isDecoding = true;
-            worker.postMessage({
-                type: 'decode',
-                data: lastPoints
-            });
+            worker.postMessage({ type: 'decode', data: lastPoints });
         }
 
         function clearPointsAndMask() {
             lastPoints = [];
             document.querySelectorAll('.icon').forEach(e => e.remove());
-            applyMosaicButton.disabled = true;
-            downloadButton.disabled = true;
-            toggleMaskButton.disabled = true;
+            [applyMosaicButton, downloadButton, toggleMaskButton].forEach(b => b.disabled = true);
             maskCanvas.getContext('2d').clearRect(0, 0, maskCanvas.width, maskCanvas.height);
             mosaicCanvas.getContext('2d').clearRect(0, 0, mosaicCanvas.width, mosaicCanvas.height);
-            
             if (!isMaskVisible) {
-                isMaskVisible = true;
-                maskCanvas.style.display = 'block';
-                toggleMaskIcon.className = 'fas fa-eye fa-fw';
-                toggleMaskText.textContent = 'Hide Mask';
+                isMaskVisible = true; maskCanvas.style.display = 'block';
+                toggleMaskIcon.className = 'fas fa-eye fa-fw'; toggleMaskText.textContent = 'Hide Mask';
             }
         }
         clearButton.addEventListener('click', clearPointsAndMask);
 
         resetButton.addEventListener('click', () => {
-            isEncoded = false;
-            worker.postMessage({
-                type: 'reset'
-            });
-            const imageCtx = imageCanvas.getContext('2d');
-            imageCtx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
+            isEncoded = false; worker.postMessage({ type: 'reset' });
+            imageCanvas.getContext('2d').clearRect(0, 0, imageCanvas.width, imageCanvas.height);
             clearPointsAndMask();
-            imageCanvas.style.display = 'none';
-            maskCanvas.style.display = 'none';
-            mosaicCanvas.style.display = 'none';
+            [imageCanvas, maskCanvas, mosaicCanvas].forEach(c => c.style.display = 'none');
             uploadButton.style.display = 'flex';
             statusLabel.textContent = 'Model Ready';
+            imageDisplayInfo.valid = false;
         });
 
         function segment(imageData) {
-            clearPointsAndMask();
-            isEncoded = false;
-            if (!modelReady) {
-                statusLabel.textContent = 'Loading model...';
-            }
+            clearPointsAndMask(); isEncoded = false;
+            if (!modelReady) statusLabel.textContent = 'Loading model...';
             const image = new Image();
             image.onload = () => {
-                const imageCtx = imageCanvas.getContext('2d');
-                imageCanvas.width = image.naturalWidth;
-                imageCanvas.height = image.naturalHeight;
-                maskCanvas.width = image.naturalWidth;
-                maskCanvas.height = image.naturalHeight;
-                mosaicCanvas.width = image.naturalWidth;
-                mosaicCanvas.height = image.naturalHeight;
-
-                imageCtx.drawImage(image, 0, 0);
-
-                uploadButton.style.display = 'none';
-                imageCanvas.style.display = 'block';
-                maskCanvas.style.display = 'block';
-                mosaicCanvas.style.display = 'block';
-
-                // MODIFIED: Pass resolution value to worker
-                const resolution = parseInt(resolutionSlider.value, 10);
-                worker.postMessage({
-                    type: 'segment',
-                    data: {
-                        image: imageData,
-                        resolution: resolution,
-                    }
+                [imageCanvas, maskCanvas, mosaicCanvas].forEach(c => {
+                    c.width = image.naturalWidth; c.height = image.naturalHeight;
                 });
+                imageCanvas.getContext('2d').drawImage(image, 0, 0);
+                uploadButton.style.display = 'none';
+                [imageCanvas, maskCanvas, mosaicCanvas].forEach(c => c.style.display = 'block');
+                calculateImageDisplayInfo(); // MODIFIED: Calculate dimensions after load
+                const resolution = parseInt(resolutionSlider.value, 10);
+                worker.postMessage({ type: 'segment', data: { image: imageData, resolution } });
             };
             image.src = imageData;
         }
-
-        fileUpload.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+        fileUpload.addEventListener('change', e => {
+            const file = e.target.files[0]; if (!file) return;
             const reader = new FileReader();
             reader.onload = e2 => segment(e2.target.result);
             reader.readAsDataURL(file);
         });
 
-        function addIcon({
-            point,
-            label
-        }) {
+        function addIcon({ point, label }) {
             const icon = (label === 1 ? star : cross).cloneNode();
-            icon.style.left = `${point[0] * 100}%`;
-            icon.style.top = `${point[1] * 100}%`;
-            icon.style.display = isMaskVisible ? 'block' : 'none';
+            icon.style.left = `${point[0] * 100}%`; icon.style.top = `${point[1] * 100}%`;
+            icon.style.display = (isMaskVisible && currentTool === 'select') ? 'block' : 'none';
             imageContainer.appendChild(icon);
         }
 
-        function getPoint(e) {
-            const rect = imageCanvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-
-            if (mouseX < 0 || mouseX > rect.width || mouseY < 0 || mouseY > rect.height) {
-                return null;
-            }
-            return {
-                point: [mouseX / rect.width, mouseY / rect.height],
-                label: e.button === 2 ? 0 : 1,
-            }
+        function getPoint(e) { // MODIFIED: Uses new coordinate function
+            const coords = getCanvasCoordinates(e);
+            if (!coords) return null;
+            return { point: [coords.ratioX, coords.ratioY], label: e.button === 2 ? 0 : 1 };
         }
 
         imageContainer.addEventListener('mousedown', e => {
-            if ((e.button !== 0 && e.button !== 2) || !isEncoded) return;
+            if (!isEncoded) return;
             e.preventDefault();
-            const point = getPoint(e);
-            if (!point) return;
-
-            if (lastPoints.length === 0) {
-                applyMosaicButton.disabled = false;
-                downloadButton.disabled = false;
-                toggleMaskButton.disabled = false;
-            }
-
-            lastPoints.push(point);
-            addIcon(point);
-            decode();
-        });
-
-        imageContainer.addEventListener('contextmenu', e => e.preventDefault());
-
-        blockSizeSlider.addEventListener('input', (e) => {
-            blockSizeValue.textContent = e.target.value;
+            if (currentTool === 'select') {
+                if (e.button !== 0 && e.button !== 2) return;
+                const point = getPoint(e); if (!point) return;
+                [applyMosaicButton, downloadButton, toggleMaskButton].forEach(b => b.disabled = false);
+                lastPoints.push(point); addIcon(point); decode();
+            } else { startPainting(e); }
         });
         
-        resolutionSlider.addEventListener('input', (e) => {
-            resolutionValue.textContent = e.target.value;
+        imageContainer.addEventListener('contextmenu', e => e.preventDefault());
+
+        // --- MODIFIED: Paint Logic with accurate coordinates ---
+        function startPainting(e) {
+            const coords = getCanvasCoordinates(e); if (!coords) return;
+            isPainting = true;
+            [applyMosaicButton, downloadButton, toggleMaskButton].forEach(b => b.disabled = false);
+            lastPos = { x: coords.x, y: coords.y };
+            draw(e);
+        }
+
+        function stopPainting() { if (isPainting) { isPainting = false; maskCanvas.getContext('2d').beginPath(); } }
+        
+        function draw(e) {
+            if (!isPainting) return;
+            const coords = getCanvasCoordinates(e);
+            if (!coords) { stopPainting(); return; }
+            const maskCtx = maskCanvas.getContext('2d');
+            maskCtx.beginPath();
+            maskCtx.lineWidth = brushSize * coords.scale;
+            maskCtx.lineCap = 'round'; maskCtx.lineJoin = 'round';
+            maskCtx.globalCompositeOperation = (currentTool === 'eraser') ? 'destination-out' : 'source-over';
+            maskCtx.strokeStyle = (currentTool === 'brush') ? 'rgba(56, 189, 248, 1)' : 'rgba(0,0,0,1)';
+            maskCtx.moveTo(lastPos.x, lastPos.y);
+            maskCtx.lineTo(coords.x, coords.y);
+            maskCtx.stroke();
+            lastPos = { x: coords.x, y: coords.y };
+        }
+        
+        imageContainer.addEventListener('mousemove', e => {
+            if (currentTool === 'brush' || currentTool === 'eraser') {
+                const coords = getCanvasCoordinates(e);
+                if (coords) {
+                    brushCursor.style.display = 'block';
+                    brushCursor.style.left = `${e.clientX}px`;
+                    brushCursor.style.top = `${e.clientY}px`;
+                } else { brushCursor.style.display = 'none'; }
+            }
+            draw(e);
         });
+        imageContainer.addEventListener('mouseup', stopPainting);
+        imageContainer.addEventListener('mouseleave', () => { stopPainting(); brushCursor.style.display = 'none'; });
+        imageContainer.addEventListener('mouseenter', () => { if(isEncoded && (currentTool === 'brush' || currentTool === 'eraser')) brushCursor.style.display = 'block' });
+
+
+        // --- MODIFIED: Tool Selection Logic for mode separation ---
+        paintToolButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                paintToolButtons.forEach(btn => btn.classList.remove('active-tool'));
+                button.classList.add('active-tool');
+                currentTool = button.dataset.tool;
+                const icons = document.querySelectorAll('.icon');
+                if (currentTool === 'select') {
+                    imageContainer.style.cursor = 'crosshair';
+                    brushCursor.style.display = 'none';
+                    icons.forEach(icon => icon.style.display = isMaskVisible ? 'block' : 'none');
+                } else {
+                    imageContainer.style.cursor = 'none';
+                    brushCursor.style.display = 'block';
+                    icons.forEach(icon => icon.style.display = 'none');
+                }
+            });
+        });
+        document.querySelector('[data-tool="select"]').click();
+
+        brushSizeSlider.addEventListener('input', (e) => {
+            brushSize = parseInt(e.target.value, 10);
+            brushSizeValue.textContent = brushSize;
+            brushCursor.style.width = `${brushSize}px`; brushCursor.style.height = `${brushSize}px`;
+        });
+        brushCursor.style.width = `${brushSize}px`; brushCursor.style.height = `${brushSize}px`; // Set initial size
+
+        blockSizeSlider.addEventListener('input', e => { blockSizeValue.textContent = e.target.value; });
+        resolutionSlider.addEventListener('input', e => { resolutionValue.textContent = e.target.value; });
 
         function applyMosaic() {
             statusLabel.textContent = 'Applying mosaic...';
@@ -576,53 +640,25 @@
             const imageCtx = imageCanvas.getContext('2d', { willReadFrequently: true });
             const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
             const mosaicCtx = mosaicCanvas.getContext('2d');
-
-            const w = imageCanvas.width;
-            const h = imageCanvas.height;
-
-            if (w === 0 || h === 0) {
-                statusLabel.textContent = 'No image data.';
-                return;
-            }
-
+            const [w, h] = [imageCanvas.width, imageCanvas.height]; if (w === 0 || h === 0) return;
             const imageData = imageCtx.getImageData(0, 0, w, h).data;
             const maskData = maskCtx.getImageData(0, 0, w, h).data;
-
             mosaicCtx.clearRect(0, 0, w, h);
-
-            for (let y = 0; y < h; y += gridSize) {
-                for (let x = 0; x < w; x += gridSize) {
-                    let isMasked = false;
-                    for (let j = 0; j < gridSize && (y + j) < h; j++) {
-                        for (let i = 0; i < gridSize && (x + i) < w; i++) {
-                            const pixelIndex = ((y + j) * w + (x + i)) * 4;
-                            if (maskData[pixelIndex + 3] > 0) {
-                                isMasked = true;
-                                break;
-                            }
-                        }
-                        if (isMasked) break;
+            for (let y = 0; y < h; y += gridSize) for (let x = 0; x < w; x += gridSize) {
+                let isMasked = false;
+                for (let j = 0; j < gridSize && y + j < h; j++) {
+                    for (let i = 0; i < gridSize && x + i < w; i++) {
+                        if (maskData[((y + j) * w + (x + i)) * 4 + 3] > 0) { isMasked = true; break; }
+                    } if (isMasked) break;
+                }
+                if (isMasked) {
+                    let r = 0, g = 0, b = 0, count = 0;
+                    for (let j = 0; j < gridSize && y + j < h; j++) for (let i = 0; i < gridSize && x + i < w; i++) {
+                        const idx = ((y + j) * w + (x + i)) * 4;
+                        r += imageData[idx]; g += imageData[idx + 1]; b += imageData[idx + 2]; count++;
                     }
-
-                    if (isMasked) {
-                        let r = 0, g = 0, b = 0, count = 0;
-                        for (let j = 0; j < gridSize && (y + j) < h; j++) {
-                            for (let i = 0; i < gridSize && (x + i) < w; i++) {
-                                const pixelIndex = ((y + j) * w + (x + i)) * 4;
-                                r += imageData[pixelIndex];
-                                g += imageData[pixelIndex + 1];
-                                b += imageData[pixelIndex + 2];
-                                count++;
-                            }
-                        }
-                        
-                        const avgR = Math.floor(r / count);
-                        const avgG = Math.floor(g / count);
-                        const avgB = Math.floor(b / count);
-
-                        mosaicCtx.fillStyle = `rgb(${avgR}, ${avgG}, ${avgB})`;
-                        mosaicCtx.fillRect(x, y, gridSize, gridSize);
-                    }
+                    mosaicCtx.fillStyle = `rgb(${r/count}, ${g/count}, ${b/count})`;
+                    mosaicCtx.fillRect(x, y, gridSize, gridSize);
                 }
             }
             statusLabel.textContent = 'Mosaic applied!';
@@ -630,22 +666,14 @@
         applyMosaicButton.addEventListener('click', applyMosaic);
 
         async function downloadImage() {
-            const [w, h] = [imageCanvas.width, imageCanvas.height];
-            if (w === 0 || h === 0) return;
-
+            const [w, h] = [imageCanvas.width, imageCanvas.height]; if (w === 0 || h === 0) return;
             statusLabel.textContent = 'Preparing download...';
             const downloadCanvas = new OffscreenCanvas(w, h);
             const ctx = downloadCanvas.getContext('2d');
-
-            ctx.drawImage(imageCanvas, 0, 0);
-            ctx.drawImage(mosaicCanvas, 0, 0);
-
+            ctx.drawImage(imageCanvas, 0, 0); ctx.drawImage(mosaicCanvas, 0, 0);
             const link = document.createElement('a');
-            link.download = 'mosaic-art.png';
-            link.href = URL.createObjectURL(await downloadCanvas.convertToBlob());
-            link.click();
-            link.remove();
-            statusLabel.textContent = 'Image downloaded!';
+            link.download = 'mosaic-art.png'; link.href = URL.createObjectURL(await downloadCanvas.convertToBlob());
+            link.click(); link.remove(); statusLabel.textContent = 'Image downloaded!';
         }
         downloadButton.addEventListener('click', downloadImage);
         
@@ -653,19 +681,13 @@
             isMaskVisible = !isMaskVisible;
             const displayStyle = isMaskVisible ? 'block' : 'none';
             maskCanvas.style.display = displayStyle;
-            document.querySelectorAll('.icon').forEach(icon => {
-                icon.style.display = displayStyle;
-            });
-            if (isMaskVisible) {
-                toggleMaskIcon.className = 'fas fa-eye fa-fw';
-                toggleMaskText.textContent = 'Hide Mask';
-            } else {
-                toggleMaskIcon.className = 'fas fa-eye-slash fa-fw';
-                toggleMaskText.textContent = 'Show Mask';
+            if (currentTool === 'select') { // MODIFIED: Only toggle icons if in select mode
+                document.querySelectorAll('.icon').forEach(icon => icon.style.display = displayStyle);
             }
+            toggleMaskIcon.className = `fas fa-eye${isMaskVisible ? '' : '-slash'} fa-fw`;
+            toggleMaskText.textContent = `${isMaskVisible ? 'Hide' : 'Show'} Mask`;
         });
 
     </script>
 </body>
-
 </html>
