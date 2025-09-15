@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
@@ -156,7 +156,9 @@
             <div id="container" class="relative w-full flex-grow rounded-lg overflow-hidden border-2 border-dashed border-gray-300">
                 <label id="upload-button" for="upload" class="absolute inset-0 flex flex-col items-center justify-center text-gray-500 cursor-pointer p-4 text-center">
                     <svg class="w-16 h-16 mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    <span class="text-lg font-semibold">Click to upload image</span>
+                    <!-- ====================== 変更点 1/2 ====================== -->
+                    <span class="text-lg font-semibold">Click, Drag & Drop, or Paste an image</span>
+                    <!-- ======================================================== -->
                 </label>
                 <canvas id="image-canvas" style="display: none;"></canvas>
                 <canvas id="mosaic-canvas" style="display: none;"></canvas>
@@ -535,9 +537,72 @@
             reader.readAsDataURL(file);
         });
 
+        // ====================== 変更点 2/2 ======================
+        // Drag & Drop and Paste Image Input
+        function handleImageFile(file) {
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => segment(e.target.result);
+                reader.readAsDataURL(file);
+            } else {
+                statusLabel.textContent = 'Please provide an image file.';
+            }
+        }
+
+        // Drag and Drop
+        imageContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!isEncoded) { // Only show feedback if no image is loaded
+                uploadButton.classList.add('bg-sky-50');
+                imageContainer.classList.add('border-sky-400');
+                imageContainer.classList.remove('border-gray-300');
+            }
+        });
+
+        imageContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+             if (!isEncoded) {
+                uploadButton.classList.remove('bg-sky-50');
+                imageContainer.classList.remove('border-sky-400');
+                imageContainer.classList.add('border-gray-300');
+            }
+        });
+
+        imageContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+             if (!isEncoded) {
+                uploadButton.classList.remove('bg-sky-50');
+                imageContainer.classList.remove('border-sky-400');
+                imageContainer.classList.add('border-gray-300');
+            }
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                handleImageFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // Paste from clipboard
+        window.addEventListener('paste', (e) => {
+            if (e.clipboardData && e.clipboardData.items) {
+                const items = e.clipboardData.items;
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        const file = items[i].getAsFile();
+                        handleImageFile(file);
+                        break; // Stop after finding the first image
+                    }
+                }
+            }
+        });
+        // ==========================================================
+
         function addIcon({ point, label }) {
+            if (!imageDisplayInfo.valid) return;
             const icon = (label === 1 ? star : cross).cloneNode();
-            icon.style.left = `${point[0] * 100}%`; icon.style.top = `${point[1] * 100}%`;
+            const { displayW, displayH, offsetX, offsetY } = imageDisplayInfo;
+            const iconX = offsetX + point[0] * displayW;
+            const iconY = offsetY + point[1] * displayH;
+            icon.style.left = `${iconX}px`;
+            icon.style.top = `${iconY}px`;
             icon.style.display = (isMaskVisible && currentTool === 'select') ? 'block' : 'none';
             imageContainer.appendChild(icon);
         }
