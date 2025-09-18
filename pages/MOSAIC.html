@@ -201,7 +201,7 @@
                             <span>Mask Resolution</span>
                             <span id="resolution-value" class="font-bold text-sky-600 bg-sky-100/70 px-2 py-1 rounded-md text-sm">768</span>
                         </label>
-                        <input id="resolution-slider" type="range" min="256" max="1024" value="768" step="128" class="w-full cursor-pointer">
+                        <input id="resolution-slider" type="range" min="256" max="1024" value="512" step="128" class="w-full cursor-pointer">
                     </div>
                     <button id="apply-mosaic" disabled class="w-full py-3 px-4 rounded-lg font-semibold shadow-lg control-btn">
                         <i class="fas fa-th mr-2"></i> Apply Mosaic
@@ -244,6 +244,7 @@
                     <p>2. Use tools to create a mask.</p>
                     <p>3. <span class="font-bold text-green-500">Left-click</span> to add to mask.</p>
                     <p>4. <span class="font-bold text-red-500">Right-click</span> to remove from mask.</p>
+                    <p>5. Press <span class="font-bold">Ctrl + Z</span> to undo.</p>
                 </div>
                 <div class="bg-sky-100/70 p-4 rounded-lg border border-sky-200 mt-2">
                     <p id="status" class="text-center font-semibold text-lg min-h-[28px] text-sky-600 break-words"></p>
@@ -257,20 +258,20 @@
     <script type="module">
         // Worker code remains unchanged
         const workerCode = `
-            import { env, SamModel, AutoProcessor, RawImage, Tensor } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.14.0';
-
+            import { env, SamModel, AutoProcessor, RawImage, Tensor } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.3/dist/transformers.min.js';
+            console.log('Transformers.js version:', env.version);
             env.allowLocalModels = false;
 
             class SegmentAnythingSingleton {
                 static model_id = 'Xenova/slimsam-77-uniform';
                 static model;
                 static processor;
-                static quantized = true;
 
                 static getInstance() {
                     if (!this.model) {
                         this.model = SamModel.from_pretrained(this.model_id, {
-                            quantized: this.quantized,
+                            dtype : "fp16",
+                            device: 'webgpu',
                         });
                     }
                     if (!this.processor) {
@@ -399,7 +400,11 @@
         let brushSize = 20;
         let lastPos = { x: 0, y: 0 };
 
-        // NEW: Cache for image display dimensions to avoid recalculation
+        // ====================== 変更点 1/5: Undo機能用の履歴配列 ======================
+        let maskHistory = [];
+        let pointsHistory = [];
+        // =========================================================================
+
         let imageDisplayInfo = { valid: false };
 
         const BASE_URL = 'https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/';
@@ -437,13 +442,55 @@
                 mainMaskCtx.globalCompositeOperation = (lastClickLabel === 0) ? 'destination-out' : 'source-over';
                 mainMaskCtx.drawImage(tempCanvas, 0, 0);
                 mainMaskCtx.globalCompositeOperation = 'source-over';
+
+                // ====================== 変更点 2/5: マスク描画後に状態を保存 ======================
+                saveState();
+                // ==============================================================================
             } else if (type === 'segment_result') {
                 statusLabel.textContent = data === 'start' ? 'Extracting image embedding...' : 'Embedding extracted!';
                 if (data === 'done') isEncoded = true;
             }
         });
 
-        // --- NEW: Accurate Coordinate Calculation ---
+        // ====================== 変更点 3/5: Undo機能の関数 ======================
+        function saveState() {
+            if (maskCanvas.width === 0 || maskCanvas.height === 0) return;
+            const maskCtx = maskCanvas.getContext('2d');
+            maskHistory.push(maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height));
+            pointsHistory.push([...lastPoints]); // 配列のコピーを保存
+        }
+
+        function undoLastAction() {
+            if (maskHistory.length <= 1) {
+                 statusLabel.textContent = 'Nothing to undo';
+                 return;
+            }
+
+            // 現在の状態を履歴から削除
+            maskHistory.pop();
+            pointsHistory.pop();
+
+            // 一つ前の状態を取得して復元
+            const lastMaskState = maskHistory[maskHistory.length - 1];
+            const lastPointsState = pointsHistory[pointsHistory.length - 1];
+
+            maskCanvas.getContext('2d').putImageData(lastMaskState, 0, 0);
+            lastPoints = [...lastPointsState];
+
+            // アイコンを再描画
+            document.querySelectorAll('.icon').forEach(e => e.remove());
+            lastPoints.forEach(p => addIcon(p));
+            statusLabel.textContent = 'Undo successful';
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                undoLastAction();
+            }
+        });
+        // =========================================================================
+
         function calculateImageDisplayInfo() {
             const canvas = imageCanvas;
             const rect = imageContainer.getBoundingClientRect();
@@ -487,26 +534,45 @@
         function decode() {
             if (isDecoding || lastPoints.length === 0) return;
             isDecoding = true;
-            worker.postMessage({ type: 'decode', data: lastPoints });
+            const lastPoint = lastPoints[lastPoints.length - 1];
+            worker.postMessage({ type: 'decode', data: [lastPoint] });
         }
 
-        function clearPointsAndMask() {
+        function clearPointsAndMask(shouldSaveState = false) {
             lastPoints = [];
             document.querySelectorAll('.icon').forEach(e => e.remove());
-            [applyMosaicButton, downloadButton, toggleMaskButton].forEach(b => b.disabled = true);
-            maskCanvas.getContext('2d').clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-            mosaicCanvas.getContext('2d').clearRect(0, 0, mosaicCanvas.width, mosaicCanvas.height);
+            if (maskCanvas.width > 0 && maskCanvas.height > 0) {
+                maskCanvas.getContext('2d').clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+                mosaicCanvas.getContext('2d').clearRect(0, 0, mosaicCanvas.width, mosaicCanvas.height);
+            }
+            if (shouldSaveState) {
+                saveState();
+            }
             if (!isMaskVisible) {
                 isMaskVisible = true; maskCanvas.style.display = 'block';
                 toggleMaskIcon.className = 'fas fa-eye fa-fw'; toggleMaskText.textContent = 'Hide Mask';
             }
         }
-        clearButton.addEventListener('click', clearPointsAndMask);
+        
+        clearButton.addEventListener('click', () => {
+             // ボタンを無効化
+            [applyMosaicButton, downloadButton, toggleMaskButton].forEach(b => b.disabled = true);
+            // 状態を保存するクリアを実行
+            clearPointsAndMask(true);
+            statusLabel.textContent = 'Selection cleared';
+        });
 
         resetButton.addEventListener('click', () => {
             isEncoded = false; worker.postMessage({ type: 'reset' });
-            imageCanvas.getContext('2d').clearRect(0, 0, imageCanvas.width, imageCanvas.height);
-            clearPointsAndMask();
+            if (imageCanvas.width > 0 && imageCanvas.height > 0) {
+                 imageCanvas.getContext('2d').clearRect(0, 0, imageCanvas.width, imageCanvas.height);
+            }
+            clearPointsAndMask(false); // リセット時は履歴を保存しない
+            // ====================== 変更点 4/5: リセット時に履歴もクリア ======================
+            maskHistory = [];
+            pointsHistory = [];
+            // ==============================================================================
+            [applyMosaicButton, downloadButton, toggleMaskButton].forEach(b => b.disabled = true);
             [imageCanvas, maskCanvas, mosaicCanvas].forEach(c => c.style.display = 'none');
             uploadButton.style.display = 'flex';
             statusLabel.textContent = 'Model Ready';
@@ -514,7 +580,8 @@
         });
 
         function segment(imageData) {
-            clearPointsAndMask(); isEncoded = false;
+            clearPointsAndMask(false); 
+            isEncoded = false;
             if (!modelReady) statusLabel.textContent = 'Loading model...';
             const image = new Image();
             image.onload = () => {
@@ -524,7 +591,14 @@
                 imageCanvas.getContext('2d').drawImage(image, 0, 0);
                 uploadButton.style.display = 'none';
                 [imageCanvas, maskCanvas, mosaicCanvas].forEach(c => c.style.display = 'block');
-                calculateImageDisplayInfo(); // MODIFIED: Calculate dimensions after load
+                calculateImageDisplayInfo();
+                
+                // ====================== 変更点 5/5: 最初の状態を保存 ======================
+                maskHistory = [];
+                pointsHistory = [];
+                saveState();
+                // ==============================================================================
+
                 const resolution = parseInt(resolutionSlider.value, 10);
                 worker.postMessage({ type: 'segment', data: { image: imageData, resolution } });
             };
@@ -537,8 +611,6 @@
             reader.readAsDataURL(file);
         });
 
-        // ====================== 変更点 2/2 ======================
-        // Drag & Drop and Paste Image Input
         function handleImageFile(file) {
             if (file && file.type.startsWith('image/')) {
                 const reader = new FileReader();
@@ -549,10 +621,9 @@
             }
         }
 
-        // Drag and Drop
         imageContainer.addEventListener('dragover', (e) => {
             e.preventDefault();
-            if (!isEncoded) { // Only show feedback if no image is loaded
+            if (!isEncoded) { 
                 uploadButton.classList.add('bg-sky-50');
                 imageContainer.classList.add('border-sky-400');
                 imageContainer.classList.remove('border-gray-300');
@@ -580,7 +651,6 @@
             }
         });
 
-        // Paste from clipboard
         window.addEventListener('paste', (e) => {
             if (e.clipboardData && e.clipboardData.items) {
                 const items = e.clipboardData.items;
@@ -588,12 +658,11 @@
                     if (items[i].type.indexOf('image') !== -1) {
                         const file = items[i].getAsFile();
                         handleImageFile(file);
-                        break; // Stop after finding the first image
+                        break; 
                     }
                 }
             }
         });
-        // ==========================================================
 
         function addIcon({ point, label }) {
             if (!imageDisplayInfo.valid) return;
@@ -607,7 +676,7 @@
             imageContainer.appendChild(icon);
         }
 
-        function getPoint(e) { // MODIFIED: Uses new coordinate function
+        function getPoint(e) { 
             const coords = getCanvasCoordinates(e);
             if (!coords) return null;
             return { point: [coords.ratioX, coords.ratioY], label: e.button === 2 ? 0 : 1 };
@@ -626,7 +695,6 @@
         
         imageContainer.addEventListener('contextmenu', e => e.preventDefault());
 
-        // --- MODIFIED: Paint Logic with accurate coordinates ---
         function startPainting(e) {
             const coords = getCanvasCoordinates(e); if (!coords) return;
             isPainting = true;
@@ -635,7 +703,13 @@
             draw(e);
         }
 
-        function stopPainting() { if (isPainting) { isPainting = false; maskCanvas.getContext('2d').beginPath(); } }
+        function stopPainting() { 
+            if (isPainting) { 
+                isPainting = false; 
+                maskCanvas.getContext('2d').beginPath(); 
+                saveState(); // ブラシ/消しゴムでの描画完了時に状態を保存
+            } 
+        }
         
         function draw(e) {
             if (!isPainting) return;
@@ -669,7 +743,6 @@
         imageContainer.addEventListener('mouseenter', () => { if(isEncoded && (currentTool === 'brush' || currentTool === 'eraser')) brushCursor.style.display = 'block' });
 
 
-        // --- MODIFIED: Tool Selection Logic for mode separation ---
         paintToolButtons.forEach(button => {
             button.addEventListener('click', () => {
                 paintToolButtons.forEach(btn => btn.classList.remove('active-tool'));
@@ -694,7 +767,7 @@
             brushSizeValue.textContent = brushSize;
             brushCursor.style.width = `${brushSize}px`; brushCursor.style.height = `${brushSize}px`;
         });
-        brushCursor.style.width = `${brushSize}px`; brushCursor.style.height = `${brushSize}px`; // Set initial size
+        brushCursor.style.width = `${brushSize}px`; brushCursor.style.height = `${brushSize}px`;
 
         blockSizeSlider.addEventListener('input', e => { blockSizeValue.textContent = e.target.value; });
         resolutionSlider.addEventListener('input', e => { resolutionValue.textContent = e.target.value; });
@@ -730,23 +803,41 @@
         }
         applyMosaicButton.addEventListener('click', applyMosaic);
 
+        // ====================== ▼▼▼ 変更箇所 ▼▼▼ ======================
         async function downloadImage() {
             const [w, h] = [imageCanvas.width, imageCanvas.height]; if (w === 0 || h === 0) return;
             statusLabel.textContent = 'Preparing download...';
             const downloadCanvas = new OffscreenCanvas(w, h);
             const ctx = downloadCanvas.getContext('2d');
-            ctx.drawImage(imageCanvas, 0, 0); ctx.drawImage(mosaicCanvas, 0, 0);
+            ctx.drawImage(imageCanvas, 0, 0); 
+            ctx.drawImage(mosaicCanvas, 0, 0);
+
+            // 現在時刻を取得してファイル名を生成
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`;
+
             const link = document.createElement('a');
-            link.download = 'mosaic-art.png'; link.href = URL.createObjectURL(await downloadCanvas.convertToBlob());
-            link.click(); link.remove(); statusLabel.textContent = 'Image downloaded!';
+            // ファイル名を 'mosaic_YYYYMMDD_HHMMSS.png' の形式に設定
+            link.download = `mosaic_${timestamp}.png`;
+            link.href = URL.createObjectURL(await downloadCanvas.convertToBlob());
+            link.click(); 
+            link.remove(); 
+            statusLabel.textContent = 'Image downloaded!';
         }
+        // ====================== ▲▲▲ 変更箇所 ▲▲▲ ======================
         downloadButton.addEventListener('click', downloadImage);
         
         toggleMaskButton.addEventListener('click', () => {
             isMaskVisible = !isMaskVisible;
             const displayStyle = isMaskVisible ? 'block' : 'none';
             maskCanvas.style.display = displayStyle;
-            if (currentTool === 'select') { // MODIFIED: Only toggle icons if in select mode
+            if (currentTool === 'select') {
                 document.querySelectorAll('.icon').forEach(icon => icon.style.display = displayStyle);
             }
             toggleMaskIcon.className = `fas fa-eye${isMaskVisible ? '' : '-slash'} fa-fw`;
