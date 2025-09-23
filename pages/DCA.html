@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Meta Data -->
+    <title>ドルコスト平均法リアルタイムシミュレーター</title>
+    <meta name="description" content="複数の仮想企業の株価をリアルタイムでシミュレーションし、ドルコスト平均法の効果を視覚的に体験できるツールです。成長株と停滞株のパフォーマンスを比較できます。">
+    <meta name="page:icon" content="fas fa-chart-line">
+    <meta name="page:color" content="#38bdf8">
+
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #67e8f9, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        /* Custom Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            background: #334155;
+            height: 0.25rem;
+            border-radius: 0.5rem;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            margin-top: -6px;
+            background-color: #38bdf8;
+            height: 1.25rem;
+            width: 1.25rem;
+            border-radius: 50%;
+            border: 2px solid #0f172a;
+            transition: background-color 0.2s ease-in-out;
+        }
+        input[type=range]:hover::-webkit-slider-thumb {
+            background-color: #67e8f9;
+        }
+        input[type=range]::-moz-range-track {
+            background: #334155;
+            height: 0.25rem;
+            border-radius: 0.5rem;
+        }
+        input[type=range]::-moz-range-thumb {
+            background-color: #38bdf8;
+            height: 1.25rem;
+            width: 1.25rem;
+            border-radius: 50%;
+            border: 2px solid #0f172a;
+            transition: background-color 0.2s ease-in-out;
+        }
+        input[type=range]:hover::-moz-range-thumb {
+            background-color: #67e8f9;
+        }
+
+        .live-indicator {
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-gray-200 h-screen overflow-hidden flex flex-col">
+
+    <header class="p-4 border-b border-slate-700/50 flex-shrink-0">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold gradient-text flex items-center gap-3">
+                <i class="fas fa-chart-line"></i>
+                <span>ドルコスト平均法シミュレーター</span>
+            </h1>
+            <div id="simulationStatus" class="flex items-center gap-2 text-sm font-medium text-slate-400">
+                <div id="liveIndicator" class="w-2 h-2 rounded-full bg-slate-500"></div>
+                <span id="statusText">待機中</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="controls-panel bg-slate-900/50 backdrop-blur-sm p-4 border-b border-slate-700/50 flex-shrink-0">
+        <div class="container mx-auto grid grid-cols-2 md:grid-cols-4 lg:flex lg:justify-center items-center gap-4 md:gap-6">
+            
+            <div class="flex flex-col gap-1 col-span-2 md:col-span-4 lg:col-auto lg:flex-row lg:items-center lg:gap-4">
+                <button id="startButton" class="w-full bg-sky-500 hover:bg-sky-400 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 flex items-center justify-center gap-2"><i class="fas fa-play"></i>開始</button>
+                <button id="stopButton" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 flex items-center justify-center gap-2" disabled><i class="fas fa-pause"></i>停止</button>
+                <button id="resetButton" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 flex items-center justify-center gap-2"><i class="fas fa-redo"></i>リセット</button>
+            </div>
+
+            <div class="flex flex-col gap-1">
+                <label for="monthlyInvestment" class="text-xs text-slate-400">毎月の投資額 (円)</label>
+                <input type="number" id="monthlyInvestment" value="10000" min="1000" step="1000" class="bg-slate-800 border border-slate-600 rounded-md px-2 py-1 text-center w-full focus:outline-none focus:ring-2 focus:ring-sky-500">
+            </div>
+
+            <div class="flex flex-col gap-1">
+                <label for="companyCount" class="text-xs text-slate-400">企業数</label>
+                <input type="number" id="companyCount" value="8" min="2" max="20" step="2" class="bg-slate-800 border border-slate-600 rounded-md px-2 py-1 text-center w-full focus:outline-none focus:ring-2 focus:ring-sky-500">
+            </div>
+
+            <div class="flex flex-col gap-1 col-span-2">
+                <label for="simulationSpeed" class="text-xs text-slate-400">シミュレーション速度</label>
+                <input type="range" id="simulationSpeed" min="90" max="210" value="150" class="w-full">
+            </div>
+        </div>
+    </div>
+    
+    <main id="simulationGrid" class="flex-grow overflow-auto p-4 md:p-6">
+        <div id="gridContainer" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 md:gap-6">
+            <!-- Company cards will be injected here -->
+        </div>
+    </main>
+
+    <footer id="summaryPanel" class="bg-slate-900/80 backdrop-blur-sm p-4 border-t border-slate-700/50 flex-shrink-0">
+        <div class="container mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            <div>
+                <h3 class="text-sm text-slate-400 font-medium">シミュレーション期間</h3>
+                <p id="simulationTime" class="text-lg font-bold text-white">0 年 0 ヶ月</p>
+            </div>
+            <div>
+                <h3 class="text-sm text-slate-400 font-medium">合計投資額</h3>
+                <p id="totalInvestment" class="text-lg font-bold text-white">¥ 0</p>
+            </div>
+            <div>
+                <h3 class="text-sm text-slate-400 font-medium">合計評価額</h3>
+                <p id="totalValue" class="text-lg font-bold text-white">¥ 0</p>
+            </div>
+            <div>
+                <h3 class="text-sm text-slate-400 font-medium">合計損益</h3>
+                <p id="totalProfitLoss" class="text-lg font-bold text-white">¥ 0 (0.00%)</p>
+            </div>
+        </div>
+    </footer>
+
+
+<script>
+    const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const resetButton = document.getElementById('resetButton');
+    const monthlyInvestmentInput = document.getElementById('monthlyInvestment');
+    const companyCountInput = document.getElementById('companyCount');
+    const simulationSpeedInput = document.getElementById('simulationSpeed');
+    const gridContainer = document.getElementById('gridContainer');
+
+    const statusText = document.getElementById('statusText');
+    const liveIndicator = document.getElementById('liveIndicator');
+    
+    const timeDisplay = document.getElementById('simulationTime');
+    const totalInvestmentDisplay = document.getElementById('totalInvestment');
+    const totalValueDisplay = document.getElementById('totalValue');
+    const totalProfitLossDisplay = document.getElementById('totalProfitLoss');
+
+    let companies = [];
+    let simulationInterval = null;
+    let simulationTime = 0; // in days
+    let monthlyInvestment = 10000;
+    let companyCount = 8;
+    const CHART_HISTORY_LENGTH = 150;
+
+    const companyNamePrefixes = ["Quantum", "Apex", "Stellar", "Orion", "Nova", "Helios", "Cyber", "Bio", "Fusion", "Synergy"];
+    const growthSuffixes = ["Dynamics", "Growth", "Ventures", "Innovations", "Solutions", "Labs"];
+    const stagnantSuffixes = ["Industries", "Enterprises", "Corp", "Consolidated", "Group", "Manufacturing"];
+
+    class Company {
+        constructor(name, type) {
+            this.id = `company-${Math.random().toString(36).substr(2, 9)}`;
+            this.name = name;
+            this.type = type; // 'growth' or 'stagnant'
+            this.initialPrice = 50 + Math.random() * 150;
+            this.currentPrice = this.initialPrice;
+            this.priceHistory = Array(CHART_HISTORY_LENGTH).fill(this.initialPrice);
+            
+            this.volatility = 0.025 + Math.random() * 0.04;
+            this.drift = type === 'growth' 
+                ? (0.0005 + Math.random() * 0.0008) // Positive drift for growth
+                : (-0.0001 + Math.random() * 0.0003); // Near-zero/negative drift for stagnant
+
+            this.totalInvestment = 0;
+            this.totalShares = 0;
+        }
+
+        updatePrice() {
+            const randomFactor = (Math.random() - 0.5) * 2;
+            const changePercent = this.drift + this.volatility * randomFactor;
+            this.currentPrice *= (1 + changePercent);
+            this.currentPrice = Math.max(this.currentPrice, 1);
+            
+            this.priceHistory.push(this.currentPrice);
+            if (this.priceHistory.length > CHART_HISTORY_LENGTH) {
+                this.priceHistory.shift();
+            }
+        }
+
+        invest(amount) {
+            this.totalInvestment += amount;
+            const sharesBought = amount / this.currentPrice;
+            this.totalShares += sharesBought;
+        }
+
+        get portfolioValue() {
+            return this.totalShares * this.currentPrice;
+        }
+
+        get profitLoss() {
+            return this.portfolioValue - this.totalInvestment;
+        }
+
+        get profitLossPercent() {
+            if (this.totalInvestment === 0) return 0;
+            return (this.profitLoss / this.totalInvestment) * 100;
+        }
+    }
+
+    function formatCurrency(value) {
+        return `¥ ${Math.round(value).toLocaleString()}`;
+    }
+    
+    function formatPercent(value) {
+        return `${value.toFixed(2)}%`;
+    }
+
+    function createCompanyCard(company) {
+        const isGrowth = company.type === 'growth';
+        const card = document.createElement('div');
+        card.id = company.id;
+        card.className = 'bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4 shadow-lg flex flex-col gap-4 fade-in';
+        card.innerHTML = `
+            <div>
+                <div class="flex justify-between items-center">
+                    <h2 class="font-bold text-lg text-white">${company.name}</h2>
+                    <span class="text-xs font-semibold px-2 py-1 rounded-full ${isGrowth ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}">
+                        ${isGrowth ? '<i class="fas fa-arrow-trend-up"></i> 成長型' : '<i class="fas fa-arrows-left-right"></i> 停滞型'}
+                    </span>
+                </div>
+                <p class="text-sm text-slate-400">初期株価: ${formatCurrency(company.initialPrice)}</p>
+            </div>
+            
+            <div class="h-24 bg-slate-900/50 rounded-lg p-1">
+                <canvas id="chart-${company.id}"></canvas>
+            </div>
+
+            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div class="font-medium text-slate-400">現在株価:</div>
+                <div id="price-${company.id}" class="text-right font-mono font-semibold text-white"></div>
+                
+                <div class="font-medium text-slate-400">保有株数:</div>
+                <div id="shares-${company.id}" class="text-right font-mono text-white"></div>
+                
+                <div class="font-medium text-slate-400">投資総額:</div>
+                <div id="investment-${company.id}" class="text-right font-mono text-white"></div>
+
+                <div class="font-medium text-slate-400">評価額:</div>
+                <div id="value-${company.id}" class="text-right font-mono text-white"></div>
+            </div>
+            
+            <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                <p class="text-xs text-slate-400">評価損益</p>
+                <p id="pl-${company.id}" class="text-xl font-bold"></p>
+            </div>
+        `;
+        gridContainer.appendChild(card);
+    }
+    
+    function drawChart(canvasId, history, type) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width * devicePixelRatio;
+        canvas.height = rect.height * devicePixelRatio;
+        ctx.scale(devicePixelRatio, devicePixelRatio);
+        const width = canvas.width / devicePixelRatio;
+        const height = canvas.height / devicePixelRatio;
+
+        ctx.clearRect(0, 0, width, height);
+
+        const min = Math.min(...history);
+        const max = Math.max(...history);
+        const range = max - min === 0 ? 1 : max - min;
+        
+        const points = history.map((price, index) => ({
+            x: (index / (CHART_HISTORY_LENGTH - 1)) * width,
+            y: height - ((price - min) / range) * (height * 0.8) + (height * 0.1)
+        }));
+
+        const gradient = ctx.createLinearGradient(0, 0, 0, height);
+        if(type === 'growth') {
+            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.5)');
+            gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
+        } else {
+            gradient.addColorStop(0, 'rgba(245, 158, 11, 0.5)');
+            gradient.addColorStop(1, 'rgba(245, 158, 11, 0)');
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, height);
+        points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.lineTo(width, height);
+        ctx.closePath();
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        ctx.beginPath();
+        points.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.strokeStyle = type === 'growth' ? '#10b981' : '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke();
+    }
+
+    function updateUI() {
+        let grandTotalInvestment = 0;
+        let grandTotalValue = 0;
+        
+        companies.forEach(company => {
+            document.getElementById(`price-${company.id}`).textContent = formatCurrency(company.currentPrice);
+            document.getElementById(`shares-${company.id}`).textContent = company.totalShares.toFixed(4);
+            document.getElementById(`investment-${company.id}`).textContent = formatCurrency(company.totalInvestment);
+            document.getElementById(`value-${company.id}`).textContent = formatCurrency(company.portfolioValue);
+            
+            const plElement = document.getElementById(`pl-${company.id}`);
+            const profitLoss = company.profitLoss;
+            const profitLossPercent = company.profitLossPercent;
+
+            plElement.textContent = `${formatCurrency(profitLoss)} (${formatPercent(profitLossPercent)})`;
+            if (profitLoss > 0) {
+                plElement.className = 'text-xl font-bold text-emerald-400';
+            } else if (profitLoss < 0) {
+                plElement.className = 'text-xl font-bold text-rose-500';
+            } else {
+                plElement.className = 'text-xl font-bold text-slate-300';
+            }
+            
+            drawChart(`chart-${company.id}`, company.priceHistory, company.type);
+            
+            grandTotalInvestment += company.totalInvestment;
+            grandTotalValue += company.portfolioValue;
+        });
+
+        const years = Math.floor(simulationTime / 365);
+        const months = Math.floor((simulationTime % 365) / 30);
+        timeDisplay.textContent = `${years} 年 ${months} ヶ月`;
+        
+        totalInvestmentDisplay.textContent = formatCurrency(grandTotalInvestment);
+        totalValueDisplay.textContent = formatCurrency(grandTotalValue);
+        
+        const grandTotalProfitLoss = grandTotalValue - grandTotalInvestment;
+        const grandTotalProfitLossPercent = grandTotalInvestment === 0 ? 0 : (grandTotalProfitLoss / grandTotalInvestment) * 100;
+        
+        const plSummaryElement = document.getElementById('totalProfitLoss');
+        plSummaryElement.textContent = `${formatCurrency(grandTotalProfitLoss)} (${formatPercent(grandTotalProfitLossPercent)})`;
+
+        if (grandTotalProfitLoss > 0) {
+            plSummaryElement.className = 'text-lg font-bold text-emerald-400';
+        } else if (grandTotalProfitLoss < 0) {
+            plSummaryElement.className = 'text-lg font-bold text-rose-500';
+        } else {
+            plSummaryElement.className = 'text-lg font-bold text-white';
+        }
+    }
+
+    function gameTick() {
+        simulationTime++;
+        const isInvestmentDay = simulationTime % 30 === 0 && simulationTime > 0;
+
+        companies.forEach(company => {
+            company.updatePrice();
+            if (isInvestmentDay) {
+                company.invest(monthlyInvestment);
+            }
+        });
+
+        requestAnimationFrame(updateUI);
+    }
+    
+    function generateCompanyName(type) {
+        const prefix = companyNamePrefixes[Math.floor(Math.random() * companyNamePrefixes.length)];
+        const suffix = type === 'growth'
+            ? growthSuffixes[Math.floor(Math.random() * growthSuffixes.length)]
+            : stagnantSuffixes[Math.floor(Math.random() * stagnantSuffixes.length)];
+        return `${prefix} ${suffix}`;
+    }
+
+    function setupSimulation() {
+        gridContainer.innerHTML = '';
+        companies = [];
+        simulationTime = 0;
+        companyCount = parseInt(companyCountInput.value);
+        monthlyInvestment = parseInt(monthlyInvestmentInput.value);
+        
+        const growthCount = Math.ceil(companyCount / 2);
+        const stagnantCount = Math.floor(companyCount / 2);
+
+        for (let i = 0; i < growthCount; i++) {
+            companies.push(new Company(generateCompanyName('growth'), 'growth'));
+        }
+        for (let i = 0; i < stagnantCount; i++) {
+            companies.push(new Company(generateCompanyName('stagnant'), 'stagnant'));
+        }
+
+        companies.sort(() => Math.random() - 0.5);
+
+        companies.forEach(createCompanyCard);
+        updateUI();
+    }
+    
+    function startSimulation() {
+        if (simulationInterval) return;
+        
+        monthlyInvestment = parseInt(monthlyInvestmentInput.value);
+        if (isNaN(monthlyInvestment) || monthlyInvestment <= 0) {
+            alert('有効な投資額を入力してください。');
+            return;
+        }
+
+        const speed = 210 - simulationSpeedInput.value;
+        simulationInterval = setInterval(gameTick, speed);
+        
+        startButton.disabled = true;
+        stopButton.disabled = false;
+        resetButton.disabled = true;
+        companyCountInput.disabled = true;
+        monthlyInvestmentInput.disabled = true;
+        
+        statusText.textContent = '実行中';
+        statusText.classList.add('text-sky-400');
+        liveIndicator.classList.add('bg-sky-500', 'live-indicator');
+        liveIndicator.classList.remove('bg-slate-500');
+    }
+
+    function stopSimulation() {
+        clearInterval(simulationInterval);
+        simulationInterval = null;
+        
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        resetButton.disabled = false;
+        
+        statusText.textContent = '停止中';
+        statusText.classList.remove('text-sky-400');
+        liveIndicator.classList.remove('bg-sky-500', 'live-indicator');
+        liveIndicator.classList.add('bg-slate-500');
+    }
+
+    function resetSimulation() {
+        stopSimulation();
+        setupSimulation();
+        companyCountInput.disabled = false;
+        monthlyInvestmentInput.disabled = false;
+        
+        statusText.textContent = '待機中';
+    }
+
+    startButton.addEventListener('click', startSimulation);
+    stopButton.addEventListener('click', stopSimulation);
+    resetButton.addEventListener('click', resetSimulation);
+    companyCountInput.addEventListener('change', () => {
+        if (!simulationInterval) setupSimulation();
+    });
+    simulationSpeedInput.addEventListener('input', () => {
+        if (simulationInterval) {
+            stopSimulation();
+            startSimulation();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', setupSimulation);
+
+</script>
+
+</body>
+</html>
