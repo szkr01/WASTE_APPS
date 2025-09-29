@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creative Canvas</title>
+    <meta name="description" content="An interactive grid-based text editor with special syntax for creative writing and layout design, featuring a stretchable character display on an infinite canvas.">
+    <meta name="page:icon" content="fas fa-palette">
+    <meta name="page:color" content="#38bdf8">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        #canvas-container {
+            cursor: grab;
+        }
+
+        #canvas-container.is-selecting {
+            cursor: crosshair;
+        }
+        
+        #canvas-container:active:not(.is-selecting) {
+            cursor: grabbing;
+        }
+
+        .gradient-text {
+            background: linear-gradient(45deg, #60a5fa, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+
+        .control-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(209, 213, 219, 0.5);
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .resizer {
+            flex-shrink: 0;
+            background-color: #e2e8f0;
+            cursor: col-resize;
+            transition: background-color 0.2s ease;
+        }
+        .resizer:hover, .resizer.is-resizing {
+            background-color: #38bdf8;
+        }
+        
+        .font-mono-jp {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, 'BIZ UDGothic', 'Noto Sans Mono CJK JP', monospace;
+            font-feature-settings: "palt";
+        }
+
+        #text-note:focus,
+        .display-box:focus {
+             outline: none;
+             box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4);
+             border-color: #38bdf8;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 overflow-hidden h-screen w-screen flex">
+
+    <div class="flex flex-1 min-h-0 w-full">
+        <aside id="left-panel" style="width: 20rem;" class="flex-shrink-0 bg-white/80 backdrop-blur-md border-r border-slate-200 flex flex-col shadow-lg z-10">
+            <div class="p-4 flex-1 flex flex-col min-h-0">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-200 flex-shrink-0">
+                    <h2 class="text-xl font-bold gradient-text"><i class="fas fa-book-open mr-2"></i>SketchBook</h2>
+                    <button class="w-9 h-9 rounded-lg hover:bg-slate-200 transition-colors duration-200 flex items-center justify-center text-slate-600 hover:text-sky-500">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                </div>
+
+                <div class="flex flex-col flex-grow mt-4 min-h-0">
+                    <label for="text-note" class="block text-sm font-medium text-slate-700 mb-1 flex-shrink-0">ノート</label>
+                    <textarea id="text-note" spellcheck="false" class="w-full flex-grow p-3 border border-slate-300 rounded-md resize-none font-mono-jp bg-slate-50 transition-all text-sm" placeholder="ここにテキストを入力..."></textarea>
+                </div>
+
+                <div class="space-y-3 pt-4 flex-shrink-0">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">表示表記</label>
+                        <div id="display-notation" class="w-full p-3 bg-slate-100 border border-slate-300 rounded-md font-mono-jp text-slate-500 text-sm min-h-[4rem] max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
+                            <span class="text-slate-400">(選択範囲の文字)</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">読み表記</label>
+                        <div id="reading-notation" class="w-full p-3 bg-slate-100 border border-slate-300 rounded-md font-mono-jp text-slate-500 text-sm min-h-[4rem] max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
+                           <span class="text-slate-400">(せんたくはんいのもじ)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <div id="left-resizer" class="resizer w-1.5"></div>
+
+        <main class="flex-1 flex flex-col min-w-0">
+            <div id="canvas-container" class="relative flex-1 bg-gradient-to-br from-slate-50 to-slate-200">
+                <canvas id="gridCanvas"></canvas>
+                <div class="absolute top-2 left-2 flex items-center space-x-2">
+                    <div id="info-display" class="control-panel text-sm text-slate-600 px-3 py-1.5 rounded-lg shadow-sm">
+                        X: 0, Y: 0 | Zoom: 100%
+                    </div>
+                     <div id="clipboard-indicator" class="control-panel text-sm font-bold text-sky-600 px-3 py-1.5 rounded-lg shadow-sm opacity-0 transition-opacity duration-500">
+                        Copied!
+                    </div>
+                </div>
+                <div class="absolute top-2 right-2 flex flex-col space-y-1">
+                    <button id="zoom-in-btn" class="control-panel w-9 h-9 rounded-lg shadow-sm hover:bg-white transition-colors duration-200 flex items-center justify-center text-slate-600 hover:text-sky-500"><i class="fas fa-plus"></i></button>
+                    <button id="zoom-out-btn" class="control-panel w-9 h-9 rounded-lg shadow-sm hover:bg-white transition-colors duration-200 flex items-center justify-center text-slate-600 hover:text-sky-500"><i class="fas fa-minus"></i></button>
+                    <button id="reset-view-btn" class="control-panel w-9 h-9 rounded-lg shadow-sm hover:bg-white transition-colors duration-200 flex items-center justify-center text-slate-600 hover:text-sky-500"><i class="fas fa-compress"></i></button>
+                </div>
+            </div>
+
+            <footer class="flex-shrink-0 bg-white/80 backdrop-blur-md border-t border-slate-200 p-3 shadow-[0_-2px_10px_-5px_rgba(0,0,0,0.1)]">
+                <div class="max-w-4xl mx-auto flex items-center gap-4">
+                    <label for="text-input" class="text-slate-500 font-medium"><i class="fas fa-keyboard mr-2"></i>入力補助</label>
+                    <input type="text" id="text-input" placeholder="例: {和泉}[いずみ] or {日本}語" class="flex-grow bg-slate-100 border border-slate-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-shadow">
+                    <button id="insert-btn" class="bg-gradient-to-r from-sky-400 to-blue-500 text-white font-bold py-2 px-6 rounded-md hover:from-sky-500 hover:to-blue-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                        <i class="fas fa-pen-nib mr-2"></i>挿入
+                    </button>
+                </div>
+            </footer>
+        </main>
+        
+        <aside id="right-panel" class="w-72 flex-shrink-0 bg-white border-l border-slate-200 flex flex-col shadow-lg">
+            <div class="p-4 border-b border-slate-200">
+                <h2 class="text-lg font-bold gradient-text"><i class="fas fa-search-plus mr-2"></i>音韻検索(未実装)</h2>
+            </div>
+            <div class="flex-1 p-4 space-y-6 overflow-y-auto">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">検索クエリ</label>
+                    <div class="relative">
+                        <input type="text" placeholder="例: 「かんじ」" class="w-full bg-slate-100 border border-slate-300 rounded-md py-2 pl-3 pr-8 focus:outline-none focus:ring-1 focus:ring-sky-400 focus:border-sky-400 transition">
+                        <i class="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">条件</label>
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-600">母音が一致</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" value="" class="sr-only peer" checked>
+                                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-sky-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                            </label>
+                        </div>
+                         <div class="flex items-center justify-between">
+                            <span class="text-slate-600">子音が一致</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" value="" class="sr-only peer">
+                                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-sky-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                            </label>
+                        </div>
+                         <div class="flex items-center justify-between">
+                            <span class="text-slate-600">アクセント型</span>
+                             <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" value="" class="sr-only peer">
+                                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-sky-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="border-t border-slate-200 pt-4">
+                     <h3 class="font-semibold text-slate-800 mb-2">検索結果</h3>
+                     <div class="space-y-2 text-sm max-h-60 overflow-y-auto pr-2">
+                        <p class="text-slate-500 text-center py-4">検索結果はここに表示されます。</p>
+                     </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        const infoDisplay = document.getElementById('info-display');
+        const zoomInBtn = document.getElementById('zoom-in-btn');
+        const zoomOutBtn = document.getElementById('zoom-out-btn');
+        const resetViewBtn = document.getElementById('reset-view-btn');
+        const textInput = document.getElementById('text-input');
+        const insertBtn = document.getElementById('insert-btn');
+        const displayNotation = document.getElementById('display-notation');
+        const readingNotation = document.getElementById('reading-notation');
+
+        const GRID_BASE_SIZE = 40;
+        const MIN_ZOOM = 0.2;
+        const MAX_ZOOM = 3.0;
+        const SCROLL_SENSITIVITY = 0.001;
+        const GRID_LINE_COLOR_MAJOR = '#d1d5db';
+        const GRID_LINE_COLOR_MINOR = '#e5e7eb';
+        const FONT_COLOR = '#1f2937';
+        const SELECTION_COLOR = 'rgba(56, 189, 248, 0.2)';
+        const SELECTION_BORDER_COLOR = '#0ea5e9';
+        const CURSOR_COLOR = 'rgba(56, 189, 248, 0.4)';
+        const CURSOR_BORDER_COLOR = '#0284c7';
+        const MAX_HISTORY_SIZE = 100;
+
+        let cameraOffset = { x: 0, y: 0 };
+        let cameraZoom = 1;
+        let isPanning = false;
+        let panStart = { x: 0, y: 0 };
+        let gridData = {};
+        let selectedCell = { x: 0, y: 0 };
+        let selectedCells = new Set();
+        let isRectSelecting = false;
+        let rectSelectionStart = null;
+        let currentMouseCell = null;
+        let isComposing = false;
+        let internalClipboard = null;
+        let undoStack = [];
+        let redoStack = [];
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            const operation = undoStack.pop();
+            redoStack.push(operation);
+            
+            for (const [key, cellData] of operation.before.entries()) {
+                if (cellData === null) {
+                    delete gridData[key];
+                } else {
+                    gridData[key] = JSON.parse(JSON.stringify(cellData));
+                }
+            }
+            draw();
+            updateEditorDisplays();
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const operation = redoStack.pop();
+            undoStack.push(operation);
+
+            for (const [key, cellData] of operation.after.entries()) {
+                if (cellData === null) {
+                    delete gridData[key];
+                } else {
+                    gridData[key] = JSON.parse(JSON.stringify(cellData));
+                }
+            }
+            draw();
+            updateEditorDisplays();
+        }
+
+        function setupCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = container.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+            ctx.scale(dpr, dpr);
+            
+            if (cameraOffset.x === 0 && cameraOffset.y === 0) {
+                 cameraOffset.x = canvas.width / (2 * dpr);
+                 cameraOffset.y = canvas.height / (2 * dpr);
+            }
+
+            draw();
+        }
+
+        function draw() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvas.width;
+            ctx.scale(dpr, dpr);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(cameraOffset.x, cameraOffset.y);
+            ctx.scale(cameraZoom, cameraZoom);
+
+            const view = {
+                left: -cameraOffset.x / cameraZoom,
+                right: (canvas.width/dpr - cameraOffset.x) / cameraZoom,
+                top: -cameraOffset.y / cameraZoom,
+                bottom: (canvas.height/dpr - cameraOffset.y) / cameraZoom
+            };
+            
+            drawGrid(view);
+            drawText(view);
+            drawSelections();
+            drawCursor();
+            if (isRectSelecting && rectSelectionStart && currentMouseCell) {
+                drawSelectionPreview(currentMouseCell);
+            }
+            
+            ctx.restore();
+            updateInfoDisplay();
+        }
+
+        function drawGrid(view) {
+            const gridSize = GRID_BASE_SIZE;
+            const startCol = Math.floor(view.left / gridSize);
+            const endCol = Math.ceil(view.right / gridSize);
+            const startRow = Math.floor(view.top / gridSize);
+            const endRow = Math.ceil(view.bottom / gridSize);
+
+            ctx.lineWidth = 1 / cameraZoom;
+            
+            for (let i = startCol; i <= endCol; i++) {
+                ctx.beginPath();
+                ctx.strokeStyle = (i % 5 === 0) ? GRID_LINE_COLOR_MAJOR : GRID_LINE_COLOR_MINOR;
+                ctx.moveTo(i * gridSize, view.top);
+                ctx.lineTo(i * gridSize, view.bottom);
+                ctx.stroke();
+            }
+
+            for (let i = startRow; i <= endRow; i++) {
+                ctx.beginPath();
+                ctx.strokeStyle = (i % 5 === 0) ? GRID_LINE_COLOR_MAJOR : GRID_LINE_COLOR_MINOR;
+                ctx.moveTo(view.left, i * gridSize);
+                ctx.lineTo(view.right, i * gridSize);
+                ctx.stroke();
+            }
+        }
+        
+        function drawSelections() {
+            if (selectedCells.size === 0) return;
+            
+            ctx.fillStyle = SELECTION_COLOR;
+            const gridSize = GRID_BASE_SIZE;
+
+            for (const key of selectedCells) {
+                const [x, y] = key.split(',').map(Number);
+                ctx.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+            }
+        }
+
+        function drawSelectionPreview(endCell) {
+            if (!rectSelectionStart) return;
+            const startX = Math.min(rectSelectionStart.x, endCell.x);
+            const startY = Math.min(rectSelectionStart.y, endCell.y);
+            const endX = Math.max(rectSelectionStart.x, endCell.x);
+            const endY = Math.max(rectSelectionStart.y, endCell.y);
+
+            const gridSize = GRID_BASE_SIZE;
+            const x = startX * gridSize;
+            const y = startY * gridSize;
+            const width = (endX - startX + 1) * gridSize;
+            const height = (endY - startY + 1) * gridSize;
+
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+            ctx.strokeStyle = SELECTION_BORDER_COLOR;
+            ctx.lineWidth = 1.5 / cameraZoom;
+            ctx.setLineDash([6 / cameraZoom, 4 / cameraZoom]);
+            ctx.strokeRect(x, y, width, height);
+            ctx.fillRect(x, y, width, height);
+            ctx.setLineDash([]);
+        }
+
+        function drawCursor() {
+            if (selectedCells.size > 0) return;
+            const key = `${selectedCell.x},${selectedCell.y}`;
+            const cellData = gridData[key];
+            
+            let selectionX = selectedCell.x;
+            let selectionWidth = 1;
+
+            if (cellData) {
+                selectionX -= cellData.index;
+                selectionWidth = cellData.length;
+            }
+
+            const gridSize = GRID_BASE_SIZE;
+            ctx.fillStyle = CURSOR_COLOR;
+            ctx.strokeStyle = CURSOR_BORDER_COLOR;
+            ctx.lineWidth = 2 / cameraZoom;
+            const x = selectionX * gridSize;
+            const y = selectedCell.y * gridSize;
+            const width = selectionWidth * gridSize;
+            ctx.fillRect(x, y, width, gridSize);
+            ctx.strokeRect(x, y, width, gridSize);
+        }
+        
+        function drawText(view) {
+            const gridSize = GRID_BASE_SIZE;
+            const fontSize = Math.floor(gridSize * 0.8);
+            ctx.font = `bold ${fontSize}px sans-serif`;
+
+            for (const key in gridData) {
+                const cell = gridData[key];
+                if (cell.index !== 0) continue;
+
+                const [xStr, yStr] = key.split(',');
+                const x = parseInt(xStr, 10);
+                const y = parseInt(yStr, 10);
+                
+                const worldX = x * gridSize;
+                const worldY = y * gridSize;
+                const blockWidth = gridSize * cell.length;
+
+                if (worldX + blockWidth < view.left || worldX > view.right || worldY + gridSize < view.top || worldY > view.bottom) {
+                    continue;
+                }
+                
+                ctx.fillStyle = FONT_COLOR;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                const textToDraw = cell.display;
+                const textWidth = ctx.measureText(textToDraw).width;
+                
+                const availableWidth = blockWidth * 0.95;
+                const scaleX = (textWidth > 0) ? availableWidth / textWidth : 1;
+
+                const textCenterX = worldX + blockWidth / 2;
+                const textCenterY = worldY + gridSize / 2;
+
+                ctx.save();
+                ctx.translate(textCenterX, textCenterY);
+                ctx.scale(scaleX, 1);
+                ctx.fillText(textToDraw, 0, 0);
+                ctx.restore();
+            }
+        }
+
+        function updateInfoDisplay() {
+            const selCount = selectedCells.size;
+            const selectionInfo = selCount > 0 ? `| Sel: ${selCount}` : '';
+            infoDisplay.textContent = `X: ${selectedCell.x}, Y: ${selectedCell.y} | Zoom: ${Math.round(cameraZoom * 100)}% ${selectionInfo}`;
+        }
+        
+        function getEventLocation(e) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        function screenToWorld(x, y) {
+            return {
+                x: (x - cameraOffset.x) / cameraZoom,
+                y: (y - cameraOffset.y) / cameraZoom,
+            };
+        }
+
+        function worldToCell(x, y) {
+            return {
+                x: Math.floor(x / GRID_BASE_SIZE),
+                y: Math.floor(y / GRID_BASE_SIZE)
+            }
+        }
+
+        function onPointerDown(e) {
+            const mousePos = getEventLocation(e);
+            panStart = mousePos; 
+
+            const worldPos = screenToWorld(mousePos.x, mousePos.y);
+            const clickedCell = worldToCell(worldPos.x, worldPos.y);
+
+            if (e.shiftKey) {
+                e.preventDefault();
+                isRectSelecting = true;
+                isPanning = false;
+                rectSelectionStart = clickedCell;
+                container.classList.add('is-selecting');
+            } else if (e.ctrlKey) {
+                e.preventDefault();
+                isPanning = false;
+            } else {
+                isPanning = true;
+                container.style.cursor = 'grabbing';
+            }
+        }
+
+        function onPointerUp(e) {
+            const endPos = getEventLocation(e);
+            const worldPos = screenToWorld(endPos.x, endPos.y);
+            const endCell = worldToCell(worldPos.x, worldPos.y);
+            const dist = Math.hypot(endPos.x - panStart.x, endPos.y - panStart.y);
+
+            if (isRectSelecting) { 
+                if (dist < 5) { 
+                    selectedCells.clear();
+                    
+                    const startX = Math.min(selectedCell.x, endCell.x);
+                    const startY = Math.min(selectedCell.y, endCell.y);
+                    const endX = Math.max(selectedCell.x, endCell.x);
+                    const endY = Math.max(selectedCell.y, endCell.y);
+
+                    for (let y = startY; y <= endY; y++) {
+                        for (let x = startX; x <= endX; x++) {
+                            selectedCells.add(`${x},${y}`);
+                        }
+                    }
+                    selectedCell = endCell;
+                } else { 
+                    selectedCells.clear(); 
+                    const startX = Math.min(rectSelectionStart.x, endCell.x);
+                    const startY = Math.min(rectSelectionStart.y, endCell.y);
+                    const endX = Math.max(rectSelectionStart.x, endCell.x);
+                    const endY = Math.max(rectSelectionStart.y, endCell.y);
+
+                    for (let y = startY; y <= endY; y++) {
+                        for (let x = startX; x <= endX; x++) {
+                            selectedCells.add(`${x},${y}`);
+                        }
+                    }
+                    selectedCell = endCell;
+                }
+            } else if (e.ctrlKey && dist < 5) { 
+                const key = `${endCell.x},${endCell.y}`;
+                if (selectedCells.has(key)) {
+                    selectedCells.delete(key);
+                } else {
+                    selectedCells.add(key);
+                }
+                selectedCell = endCell;
+            } else if (isPanning) { 
+                if (dist < 5) {
+                    selectedCell = endCell;
+                    selectedCells.clear();
+                }
+            }
+            
+            isPanning = false;
+            isRectSelecting = false;
+            rectSelectionStart = null;
+            container.classList.remove('is-selecting');
+            container.style.cursor = 'grab';
+            draw();
+            updateEditorDisplays();
+        }
+
+        function onPointerMove(e) {
+             const mousePos = getEventLocation(e);
+             const worldPos = screenToWorld(mousePos.x, mousePos.y);
+             currentMouseCell = worldToCell(worldPos.x, worldPos.y);
+
+            if (isRectSelecting) {
+                draw();
+            } else if (isPanning) {
+                cameraOffset.x += mousePos.x - panStart.x;
+                cameraOffset.y += mousePos.y - panStart.y;
+                panStart = mousePos;
+                draw();
+            }
+        }
+
+        function handleWheel(e) {
+            e.preventDefault();
+            const zoomAmount = e.deltaY * SCROLL_SENSITIVITY;
+            
+            const mousePos = getEventLocation(e);
+            const worldPosBeforeZoom = screenToWorld(mousePos.x, mousePos.y);
+
+            cameraZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cameraZoom * (1 - zoomAmount)));
+            
+            const worldPosAfterZoom = screenToWorld(mousePos.x, mousePos.y);
+            
+            cameraOffset.x += (worldPosAfterZoom.x - worldPosBeforeZoom.x) * cameraZoom;
+            cameraOffset.y += (worldPosAfterZoom.y - worldPosBeforeZoom.y) * cameraZoom;
+
+            draw();
+        }
+        
+        function copySelection() {
+            let cellsToCopy = new Set(selectedCells);
+
+            if (cellsToCopy.size === 0) {
+                const key = `${selectedCell.x},${selectedCell.y}`;
+                const cellData = gridData[key];
+                if (!cellData) return;
+
+                const startX = selectedCell.x - cellData.index;
+                const startY = selectedCell.y;
+                for (let i = 0; i < cellData.length; i++) {
+                    cellsToCopy.add(`${startX + i},${startY}`);
+                }
+            }
+
+            if (cellsToCopy.size === 0) return;
+
+            const cells = Array.from(cellsToCopy).map(key => {
+                const [x, y] = key.split(',').map(Number);
+                return { x, y };
+            });
+
+            const minX = Math.min(...cells.map(c => c.x));
+            const minY = Math.min(...cells.map(c => c.y));
+
+            const copiedData = [];
+            for (const key of cellsToCopy) {
+                const [x, y] = key.split(',').map(Number);
+                const cellData = gridData[key] ? JSON.parse(JSON.stringify(gridData[key])) : null;
+                copiedData.push({
+                    relX: x - minX,
+                    relY: y - minY,
+                    data: cellData
+                });
+            }
+
+            internalClipboard = { data: copiedData };
+            
+            const indicator = document.getElementById('clipboard-indicator');
+            indicator.style.opacity = '1';
+            setTimeout(() => {
+                indicator.style.opacity = '0';
+            }, 1500);
+        }
+
+        function cutSelection() {
+            copySelection();
+            if (!internalClipboard) return;
+            performDeleteSelection(false);
+        }
+
+        function pasteFromClipboard() {
+            if (!internalClipboard || internalClipboard.data.length === 0) return;
+
+            const beforeState = new Map();
+            const afterState = new Map();
+            const allAffectedKeys = new Set();
+            
+            const pasteOriginX = selectedCell.x;
+            const pasteOriginY = selectedCell.y;
+
+            for (const item of internalClipboard.data) {
+                const targetX = pasteOriginX + item.relX;
+                const targetY = pasteOriginY + item.relY;
+                const key = `${targetX},${targetY}`;
+                allAffectedKeys.add(key);
+
+                const existingCell = gridData[key];
+                if (existingCell) {
+                    const startX = targetX - existingCell.index;
+                    for(let i=0; i<existingCell.length; i++) {
+                        allAffectedKeys.add(`${startX + i},${targetY}`);
+                    }
+                }
+            }
+
+            allAffectedKeys.forEach(key => {
+                const data = gridData[key];
+                beforeState.set(key, data ? JSON.parse(JSON.stringify(data)) : null);
+            });
+
+            const charsToDelete = new Map();
+            for (const item of internalClipboard.data) {
+                const targetX = pasteOriginX + item.relX;
+                const targetY = pasteOriginY + item.relY;
+                const key = `${targetX},${targetY}`;
+                const existingCell = gridData[key];
+                if (existingCell) {
+                    const startX = targetX - existingCell.index;
+                    const charKey = `${startX},${targetY}`;
+                    if (!charsToDelete.has(charKey)) {
+                        charsToDelete.set(charKey, existingCell.length);
+                    }
+                }
+            }
+            for (const [charKey, length] of charsToDelete.entries()) {
+                const [startX, startY] = charKey.split(',').map(Number);
+                for (let i = 0; i < length; i++) {
+                    delete gridData[`${startX + i},${startY}`];
+                }
+            }
+            const newSelection = new Set();
+            for (const item of internalClipboard.data) {
+                if (!item.data) continue;
+                const targetX = pasteOriginX + item.relX;
+                const targetY = pasteOriginY + item.relY;
+                const key = `${targetX},${targetY}`;
+                gridData[key] = JSON.parse(JSON.stringify(item.data));
+                newSelection.add(key);
+            }
+
+            allAffectedKeys.forEach(key => {
+                const data = gridData[key];
+                afterState.set(key, data ? JSON.parse(JSON.stringify(data)) : null);
+            });
+            
+            undoStack.push({ before: beforeState, after: afterState });
+            if (undoStack.length > MAX_HISTORY_SIZE) undoStack.shift();
+            redoStack = [];
+
+            selectedCells.clear();
+            newSelection.forEach(key => selectedCells.add(key));
+
+            draw();
+            updateEditorDisplays();
+        }
+
+        function handleGlobalKeyDown(e) {
+            const isTypingElement = document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA';
+            if (isComposing || (isTypingElement && e.key !== 'Escape')) return;
+
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key.toLowerCase()) {
+                    case 'c': e.preventDefault(); copySelection(); return;
+                    case 'x': e.preventDefault(); cutSelection(); return;
+                    case 'v': e.preventDefault(); pasteFromClipboard(); return;
+                    case 'z': e.preventDefault(); undo(); return;
+                    case 'y': e.preventDefault(); redo(); return;
+                }
+            }
+
+            switch (e.key) {
+                case 'ArrowUp': selectedCells.clear(); selectedCell.y--; break;
+                case 'ArrowDown': selectedCells.clear(); selectedCell.y++; break;
+                case 'ArrowLeft': selectedCells.clear(); selectedCell.x--; break;
+                case 'ArrowRight': selectedCells.clear(); selectedCell.x++; break;
+                case 'Backspace': deleteCharacter(true); break;
+                case 'Delete': deleteCharacter(false); break;
+                case 'Escape': 
+                    if (selectedCells.size > 0) selectedCells.clear();
+                    else if (document.activeElement !== document.body) document.activeElement.blur();
+                    break;
+                default:
+                    if (!isTypingElement && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                        textInput.focus();
+                        return;
+                    }
+                    return;
+            }
+
+            e.preventDefault();
+            draw();
+            updateEditorDisplays();
+        }
+        
+        function zoom(factor) {
+            const dpr = window.devicePixelRatio || 1;
+            const center = { x: (canvas.width / dpr) / 2, y: (canvas.height / dpr) / 2 };
+            const worldPosBeforeZoom = screenToWorld(center.x, center.y);
+            cameraZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cameraZoom * factor));
+            const worldPosAfterZoom = screenToWorld(center.x, center.y);
+            cameraOffset.x += (worldPosAfterZoom.x - worldPosBeforeZoom.x) * cameraZoom;
+            cameraOffset.y += (worldPosAfterZoom.y - worldPosBeforeZoom.y) * cameraZoom;
+            draw();
+        }
+
+        function resetView() {
+            const dpr = window.devicePixelRatio || 1;
+            cameraOffset.x = canvas.width / (2 * dpr);
+            cameraOffset.y = canvas.height / (2 * dpr);
+            cameraZoom = 1;
+            selectedCell = { x: 0, y: 0 };
+            selectedCells.clear();
+            draw();
+        }
+        
+        function parseInput(text) {
+            const parsed = [];
+            const regex = /{([^}]+)}(?:\[([^\]]+)\])?|(\S)\[([^\]]+)\]|([\s\S])/g;
+            let match;
+
+            const processMatch = (display, yomi) => {
+                if (yomi && yomi.length > 0) {
+                    const length = yomi.length;
+                    for (let i = 0; i < length; i++) {
+                        parsed.push({ display, yomi: yomi, index: i, length });
+                    }
+                } else {
+                    parsed.push({ display, yomi: undefined, index: 0, length: 1 });
+                }
+            };
+
+            while ((match = regex.exec(text)) !== null) {
+                if (match[1]) {
+                    processMatch(match[1], match[2]);
+                } else if (match[3] && match[4]) {
+                    processMatch(match[3], match[4]);
+                } else if (match[5]) {
+                    parsed.push({ display: match[5], yomi: undefined, index: 0, length: 1 });
+                }
+            }
+            return parsed;
+        }
+
+        function insertText() {
+            const text = textInput.value;
+            if (!text) return;
+            const parsedChars = parseInput(text);
+            if (parsedChars.length === 0) return;
+            
+            const beforeState = new Map();
+            const afterState = new Map();
+            const allAffectedKeys = new Set();
+            
+            selectedCells.clear();
+            const startX = selectedCell.x;
+            const startY = selectedCell.y;
+            
+            const newTextLength = parsedChars.reduce((acc, charData) => (charData.index === 0) ? acc + charData.length : acc, 0);
+
+            const keysToDelete = new Set();
+            for (let i = 0; i < newTextLength; i++) {
+                const key = `${startX + i},${startY}`;
+                const existingCell = gridData[key];
+                if (existingCell) {
+                    const charStartX = startX + i - existingCell.index;
+                    for (let j = 0; j < existingCell.length; j++) {
+                        keysToDelete.add(`${charStartX + j},${startY}`);
+                    }
+                }
+            }
+            keysToDelete.forEach(key => allAffectedKeys.add(key));
+            
+            let currentXCheck = startX;
+            for (const charData of parsedChars) {
+                if (charData.index === 0) {
+                    for (let i = 0; i < charData.length; i++) {
+                        allAffectedKeys.add(`${currentXCheck + i},${startY}`);
+                    }
+                    currentXCheck += charData.length;
+                }
+            }
+            
+            allAffectedKeys.forEach(key => {
+                const data = gridData[key];
+                beforeState.set(key, data ? JSON.parse(JSON.stringify(data)) : null);
+            });
+
+            keysToDelete.forEach(key => delete gridData[key]);
+            let currentX = startX;
+            for (const charData of parsedChars) {
+                if (charData.index === 0) {
+                    for (let i = 0; i < charData.length; i++) {
+                        const key = `${currentX + i},${startY}`;
+                        gridData[key] = {
+                            display: charData.display,
+                            yomi: charData.yomi,
+                            index: i,
+                            length: charData.length
+                        };
+                    }
+                    currentX += charData.length;
+                }
+            }
+
+            allAffectedKeys.forEach(key => {
+                const data = gridData[key];
+                afterState.set(key, data ? JSON.parse(JSON.stringify(data)) : null);
+            });
+            
+            undoStack.push({ before: beforeState, after: afterState });
+            if (undoStack.length > MAX_HISTORY_SIZE) undoStack.shift();
+            redoStack = [];
+
+            selectedCell.x = currentX;
+            textInput.value = '';
+            draw();
+            updateEditorDisplays();
+        }
+        
+        function performDeleteSelection() {
+            if (selectedCells.size === 0) return;
+
+            const beforeState = new Map();
+            const afterState = new Map();
+            const allAffectedKeys = new Set();
+            const blocksToDelete = new Set();
+
+            selectedCells.forEach(key => {
+                const cell = gridData[key];
+                if(cell) {
+                    const startX = parseInt(key.split(',')[0], 10) - cell.index;
+                    const startY = parseInt(key.split(',')[1], 10);
+                    blocksToDelete.add(`${startX},${startY},${cell.length}`);
+                }
+            });
+
+            blocksToDelete.forEach(blockKey => {
+                const [startX, startY, length] = blockKey.split(',').map(Number);
+                for (let i=0; i < length; i++) {
+                    allAffectedKeys.add(`${startX+i},${startY}`);
+                }
+            });
+            
+            if (allAffectedKeys.size === 0) return;
+
+            allAffectedKeys.forEach(key => {
+                const data = gridData[key];
+                beforeState.set(key, data ? JSON.parse(JSON.stringify(data)) : null);
+            });
+
+            allAffectedKeys.forEach(key => {
+                delete gridData[key];
+            });
+
+            allAffectedKeys.forEach(key => afterState.set(key, null));
+
+            undoStack.push({ before: beforeState, after: afterState });
+            if (undoStack.length > MAX_HISTORY_SIZE) undoStack.shift();
+            redoStack = [];
+
+            selectedCells.clear();
+            draw();
+            updateEditorDisplays();
+        }
+
+        function deleteCharacter(isBackspace) {
+            if (selectedCells.size > 0) {
+                performDeleteSelection();
+                return;
+            }
+
+            const beforeState = new Map();
+            const afterState = new Map();
+            const allAffectedKeys = new Set();
+
+            const targetX = isBackspace ? selectedCell.x - 1 : selectedCell.x;
+            const targetY = selectedCell.y;
+            if (isBackspace && selectedCell.x <= 0 && !gridData[`${targetX},${targetY}`]) return;
+
+            const key = `${targetX},${targetY}`;
+            const cellToDelete = gridData[key];
+
+            if (cellToDelete) {
+                const startX = targetX - cellToDelete.index;
+                for (let i = 0; i < cellToDelete.length; i++) {
+                    allAffectedKeys.add(`${startX + i},${targetY}`);
+                }
+
+                allAffectedKeys.forEach(k => {
+                    const data = gridData[k];
+                    beforeState.set(k, data ? JSON.parse(JSON.stringify(data)) : null);
+                });
+
+                allAffectedKeys.forEach(k => {
+                    delete gridData[k];
+                    afterState.set(k, null);
+                });
+                
+                undoStack.push({ before: beforeState, after: afterState });
+                if (undoStack.length > MAX_HISTORY_SIZE) undoStack.shift();
+                redoStack = [];
+                
+                if (isBackspace) {
+                    selectedCell.x = startX;
+                }
+            }
+        }
+        
+        function setupResizer() {
+            const leftResizer = document.getElementById('left-resizer');
+            const leftPanel = document.getElementById('left-panel');
+            const MIN_WIDTH = 280;
+            const MAX_WIDTH = 600;
+
+            const resizeLeft = (e) => {
+                const newWidth = e.clientX;
+                if (newWidth > MIN_WIDTH && newWidth < MAX_WIDTH) {
+                    leftPanel.style.width = newWidth + 'px';
+                }
+            };
+
+            const stopResize = () => {
+                window.removeEventListener('mousemove', resizeLeft);
+                window.removeEventListener('mouseup', stopResize);
+                document.body.style.cursor = 'default';
+                document.body.style.userSelect = 'auto';
+                leftResizer.classList.remove('is-resizing');
+                setupCanvas();
+            };
+
+            leftResizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                leftResizer.classList.add('is-resizing');
+                window.addEventListener('mousemove', resizeLeft);
+                window.addEventListener('mouseup', stopResize);
+            });
+        }
+        
+        function updateEditorDisplays() {
+            if (selectedCells.size === 0) {
+                displayNotation.innerHTML = `<span class="text-slate-400">(選択範囲の文字)</span>`;
+                readingNotation.innerHTML = `<span class="text-slate-400">(せんたくはんいのもじ)</span>`;
+                return;
+            }
+
+            const cells = Array.from(selectedCells).map(key => {
+                const [x, y] = key.split(',').map(Number);
+                return { x, y };
+            });
+
+            cells.sort((a, b) => {
+                if (a.y !== b.y) return a.y - b.y;
+                return a.x - b.x;
+            });
+
+            let displayString = '';
+            let readingString = '';
+            const visitedStartCoords = new Set();
+            let lastY = cells.length > 0 ? cells[0].y : -1;
+
+            for (const coord of cells) {
+                if (coord.y > lastY && lastY !== -1) {
+                    displayString += '\n';
+                    readingString += '\n';
+                }
+                lastY = coord.y;
+                
+                const key = `${coord.x},${coord.y}`;
+                const data = gridData[key];
+
+                if (!data) continue;
+
+                const startCoordKey = `${coord.x - data.index},${coord.y}`;
+                if (visitedStartCoords.has(startCoordKey)) continue;
+
+                visitedStartCoords.add(startCoordKey);
+                displayString += data.display;
+
+                let blockReading = "";
+                const startX = coord.x - data.index;
+                for (let i = 0; i < data.length; i++) {
+                    const partDataKey = `${startX + i},${coord.y}`;
+                    if (!selectedCells.has(partDataKey)) continue;
+
+                    const partData = gridData[partDataKey];
+                    if (partData) {
+                        if (partData.yomi) {
+                            blockReading += partData.yomi[partData.index] || '';
+                        } else {
+                            if (partData.index === 0) {
+                               blockReading += partData.display;
+                            }
+                        }
+                    }
+                }
+                readingString += blockReading;
+            }
+            
+            displayNotation.textContent = displayString.trim() ? displayString : '(選択範囲に文字がありません)';
+            readingNotation.textContent = readingString.trim() ? readingString : '(選択範囲に文字がありません)';
+        }
+
+        container.addEventListener('mousedown', onPointerDown);
+        container.addEventListener('mouseup', onPointerUp);
+        container.addEventListener('mouseleave', (e) => {
+            if (isPanning || isRectSelecting) onPointerUp(e);
+        });
+        container.addEventListener('mousemove', onPointerMove);
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        window.addEventListener('resize', setupCanvas);
+
+        textInput.addEventListener('compositionstart', () => { isComposing = true; });
+        textInput.addEventListener('compositionend', () => { isComposing = false; });
+        
+        zoomInBtn.addEventListener('click', () => zoom(1.2));
+        zoomOutBtn.addEventListener('click', () => zoom(0.8));
+        resetViewBtn.addEventListener('click', resetView);
+        insertBtn.addEventListener('click', insertText);
+        
+        textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !isComposing) {
+                e.preventDefault();
+                insertText();
+                return;
+            }
+
+            const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+            if (isArrowKey && textInput.value === '') {
+                e.preventDefault();
+                selectedCells.clear();
+                switch (e.key) {
+                    case 'ArrowUp': selectedCell.y--; break;
+                    case 'ArrowDown': selectedCell.y++; break;
+                    case 'ArrowLeft': selectedCell.x--; break;
+                    case 'ArrowRight': selectedCell.x++; break;
+                }
+                draw();
+            }
+        });
+
+        setupCanvas();
+        setupResizer();
+        updateEditorDisplays();
+    </script>
+</body>
+</html>
