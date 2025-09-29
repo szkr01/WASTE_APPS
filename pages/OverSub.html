@@ -264,7 +264,7 @@
                 <div class="max-w-4xl mx-auto flex items-center gap-4">
                     <label for="text-input" class="text-slate-500 font-medium"><i class="fas fa-keyboard mr-2"></i>input</label>
                     <div class="flex-grow relative">
-                        <input type="text" id="text-input" placeholder="例: {和泉}[いずみ] or 置換[かん] or ?u?i (母音パターン)" class="w-full bg-slate-100 border border-slate-300 rounded-md py-2 px-3 pr-10 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-shadow">
+                        <input type="text" id="text-input" placeholder="例: {和泉}[いずみ] or 置換[かん]" class="w-full bg-slate-100 border border-slate-300 rounded-md py-2 px-3 pr-10 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-shadow">
                         <div class="absolute right-3 top-1/2 -translate-y-1/2">
                             <i class="fas fa-question-circle text-gray-400 cursor-help" id="input-help-icon"></i>
                             <div id="input-help-tooltip" class="invisible absolute z-20 w-80 p-3 text-sm font-light text-gray-600 bg-white rounded-lg border border-gray-200 shadow-lg" role="tooltip">
@@ -461,6 +461,28 @@
         </div>
     </div>
 
+    <div id="save-confirm-modal" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex justify-center items-center p-4 z-[70] opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out">
+        <div id="save-confirm-modal-panel" class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform opacity-0 scale-95 transition-all duration-300 ease-in-out">
+            <div class="flex justify-between items-center p-5 border-b border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fas fa-save mr-2 text-blue-500"></i>データを保存</h2>
+                <button id="save-confirm-close-btn" class="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center transition-colors">
+                    <i class="fas fa-times text-sm"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-700 mb-4">選択したデータ名に現在の状態を保存しますか？</p>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <p class="text-sm text-blue-800"><strong>保存先:</strong> <span id="save-confirm-filename" class="font-mono"></span></p>
+                </div>
+                <div class="text-xs text-gray-500">※既存のデータは上書きされます</div>
+            </div>
+            <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-2xl flex justify-end space-x-3">
+                <button id="save-confirm-cancel-btn" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">キャンセル</button>
+                <button id="save-confirm-save-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">保存</button>
+            </div>
+        </div>
+    </div>
+
     <div id="word-detail-modal" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex justify-center items-center p-4 z-50 opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out">
         <div id="modal-panel" class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col transform opacity-0 scale-95 transition-all duration-300 ease-in-out">
             <div class="flex justify-between items-center p-5 border-b border-gray-200">
@@ -548,6 +570,7 @@
         let autosaveTimer = null;
         let lastAutosaveTime = null;
         let savedFiles = new Map();
+        let rhymeOverlays = {};
 
         function undo() {
             if (undoStack.length === 0) return;
@@ -1151,24 +1174,6 @@
         
         function parseInput(text) {
             const parsed = [];
-            
-            // 母音パターンの検査（a,i,u,e,o,n,?のみで構成されているか）
-            const vowelPattern = /^[aiueon?]+$/i;
-            if (vowelPattern.test(text)) {
-                // 母音パターンの場合は、右パネルの検索入力欄に設定して検索実行
-                const searchInput = document.getElementById('searchInput');
-                if (searchInput) {
-                    searchInput.value = text.toLowerCase();
-                    searchInput.dispatchEvent(new Event('input'));
-                    // 検索ボタンがあれば実行
-                    const searchButton = document.getElementById('searchButton');
-                    if (searchButton) {
-                        searchButton.click();
-                    }
-                }
-                return []; // 空の配列を返してキャンバスへの挿入を防ぐ
-            }
-            
             const regex = /{([^}]+)}(?:\[([^\]]+)\])?|(\S)\[([^\]]+)\]|([\s\S])/g;
             let match;
 
@@ -2004,6 +2009,68 @@
                 closeMenuModal();
                 openSaveNameModal();
             });
+
+            // Save Confirm Modal
+            function showSaveConfirmModal(fileName) {
+                document.getElementById('save-confirm-filename').textContent = fileName;
+                const modal = document.getElementById('save-confirm-modal');
+                const panel = document.getElementById('save-confirm-modal-panel');
+                
+                modal.classList.remove('opacity-0', 'pointer-events-none');
+                modal.classList.add('opacity-100');
+                
+                setTimeout(() => {
+                    panel.classList.remove('opacity-0', 'scale-95');
+                    panel.classList.add('opacity-100', 'scale-100');
+                }, 10);
+            }
+
+            function hideSaveConfirmModal() {
+                const modal = document.getElementById('save-confirm-modal');
+                const panel = document.getElementById('save-confirm-modal-panel');
+                
+                panel.classList.remove('opacity-100', 'scale-100');
+                panel.classList.add('opacity-0', 'scale-95');
+                
+                setTimeout(() => {
+                    modal.classList.remove('opacity-100');
+                    modal.classList.add('opacity-0', 'pointer-events-none');
+                }, 300);
+            }
+
+            document.getElementById('save-confirm-close-btn').addEventListener('click', hideSaveConfirmModal);
+            document.getElementById('save-confirm-cancel-btn').addEventListener('click', hideSaveConfirmModal);
+            
+            document.getElementById('save-confirm-save-btn').addEventListener('click', function() {
+                const fileName = document.getElementById('save-confirm-filename').textContent;
+                if (fileName) {
+                    const saveData = {
+                        canvas: gridData,
+                        rhymes: rhymeOverlays || {},
+                        timestamp: new Date().toISOString(),
+                        note: document.getElementById('text-note').value || ''
+                    };
+                    
+                    const fileData = {
+                        name: fileName,
+                        data: saveData,
+                        timestamp: saveData.timestamp
+                    };
+                    
+                    savedFiles.set(fileName, fileData);
+                    saveSavedFilesList();
+                    updateSavedFilesUI();
+                    hideSaveConfirmModal();
+                    closeMenuModal();
+                }
+            });
+
+            // Close modal on backdrop click
+            document.getElementById('save-confirm-modal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    hideSaveConfirmModal();
+                }
+            });
             
             saveNameCloseBtn.addEventListener('click', closeSaveNameModal);
             document.getElementById('save-name-cancel-btn').addEventListener('click', closeSaveNameModal);
@@ -2040,7 +2107,9 @@
                 
                 if (loadBtn) {
                     e.stopPropagation();
-                    if (loadNamedSave(loadBtn.dataset.fileName)) closeMenuModal();
+                    const fileName = loadBtn.dataset.fileName;
+                    const confirmed = confirm(`「${fileName}」をロードしますか？\n\n現在のデータは失われます。\n（保存していない変更がある場合は先に保存してください）`);
+                    if (confirmed && loadNamedSave(fileName)) closeMenuModal();
                 } else if (deleteBtn) {
                     e.stopPropagation();
                     deleteNamedSave(deleteBtn.dataset.fileName);
@@ -2049,7 +2118,7 @@
                     duplicateSaveFile(duplicateBtn.dataset.fileName);
                 } else if (fileCard) {
                     const fileName = fileCard.querySelector('.save-file-load').dataset.fileName;
-                    if (loadNamedSave(fileName)) closeMenuModal();
+                    showSaveConfirmModal(fileName);
                 }
             });
             
