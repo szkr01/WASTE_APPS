@@ -163,6 +163,47 @@
             left: 50%;
             transform: translateX(-50%);
         }
+
+        .tab-button {
+            color: #475569;
+            background-color: transparent;
+        }
+        .tab-button:hover {
+            background-color: #f1f5f9;
+            color: #0f172a;
+        }
+        .tab-button.active-tab {
+            color: #fff;
+            background-image: linear-gradient(to right, #38bdf8, #3b82f6);
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        .save-card {
+            transition: all 0.2s ease;
+        }
+
+        .save-card:hover .save-card-actions {
+            opacity: 1;
+        }
+
+        .save-card-actions {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .search-highlight {
+            background-color: #fef08a;
+            padding: 1px 2px;
+            border-radius: 2px;
+        }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 overflow-hidden h-screen w-screen flex">
@@ -180,8 +221,8 @@
             <div class="p-4 flex-1 flex flex-col min-h-0">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-200 flex-shrink-0">
                     <h2 class="text-xl font-bold gradient-text"><i class="fas fa-book-open mr-2"></i>SketchBook</h2>
-                    <button class="w-9 h-9 rounded-lg hover:bg-slate-200 transition-colors duration-200 flex items-center justify-center text-slate-600 hover:text-sky-500">
-                        <i class="fas fa-bars"></i>
+                    <button id="menu-btn" class="px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors duration-200 flex items-center justify-center text-slate-600 hover:text-sky-500">
+                        <i class="fas fa-bars mr-2"></i>menu
                     </button>
                 </div>
 
@@ -308,6 +349,104 @@
         </aside>
     </div>
 
+    <div id="menu-container" class="fixed inset-0 z-[60] pointer-events-none opacity-0 transition-opacity duration-300">
+        <div id="menu-backdrop" class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
+        <div id="menu-panel" class="absolute top-0 left-0 h-full w-full max-w-md bg-slate-50 shadow-2xl flex flex-col transform -translate-x-full transition-transform duration-300 ease-in-out">
+            <div class="flex justify-between items-center p-4 border-b border-slate-200 flex-shrink-0 bg-white">
+                <h2 class="text-xl font-bold text-slate-800 flex items-center">
+                    <i class="fas fa-bars mr-3 text-sky-500"></i>Menu
+                </h2>
+                <button id="menu-close-btn" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full w-9 h-9 flex items-center justify-center transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+
+            <div class="flex-shrink-0 border-b border-slate-200 bg-white p-1.5">
+                <nav class="flex space-x-1" aria-label="Tabs">
+                    <button id="tab-saves" class="tab-button flex-1 px-3 py-2 text-sm font-medium text-center rounded-md transition-colors active-tab">
+                        <i class="fas fa-save mr-1.5"></i>保存データ
+                    </button>
+                    <button id="tab-settings" class="tab-button flex-1 px-3 py-2 text-sm font-medium text-center rounded-md transition-colors">
+                        <i class="fas fa-sliders-h mr-1.5"></i>設定
+                    </button>
+                    <button id="tab-files" class="tab-button flex-1 px-3 py-2 text-sm font-medium text-center rounded-md transition-colors">
+                        <i class="fas fa-file-import mr-1.5"></i>ファイル操作
+                    </button>
+                </nav>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto">
+                <div id="tab-content-saves" class="tab-content flex-col h-full">
+                    <div class="p-4 flex-shrink-0 bg-slate-100 border-b border-slate-200">
+                         <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-base font-semibold text-slate-700">保存データ管理</h3>
+                            <button id="save-named-btn" class="bg-gradient-to-r from-sky-500 to-blue-500 text-white px-4 py-2 text-sm font-semibold rounded-lg hover:from-sky-600 hover:to-blue-600 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-px flex items-center">
+                                <i class="fas fa-plus mr-2"></i>新規保存
+                            </button>
+                        </div>
+                        <div class="relative">
+                            <input type="text" id="saves-search" placeholder="保存データを検索..." class="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white">
+                            <i class="fas fa-search absolute left-3.5 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                        </div>
+                    </div>
+                    <div class="p-4 flex-1">
+                        <div id="saved-files-grid" class="grid grid-cols-1 gap-3"></div>
+                        <div class="text-center py-8 text-slate-500" id="no-saves-message">
+                            <i class="fas fa-archive text-5xl mb-4 text-slate-300"></i>
+                            <p class="text-lg font-medium">保存されたデータはありません</p>
+                            <p class="text-sm">「新規保存」ボタンで最初のセーブを作成しましょう</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="tab-content-settings" class="tab-content flex-col h-full p-6 hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-6">アプリケーション設定</h3>
+                    <div class="space-y-6">
+                        <div class="bg-white border border-slate-200 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center"><i class="fas fa-clock mr-3 text-sky-600"></i><h4 class="font-medium text-gray-800">オートセーブ</h4></div>
+                                <label class="relative inline-flex items-center cursor-pointer"><input type="checkbox" id="autosave-toggle" class="sr-only peer" checked><div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div></label>
+                            </div>
+                            <p class="text-sm text-gray-600 mb-2">変更時に自動的にデータを保存します</p>
+                            <div class="text-xs text-gray-500" id="autosave-status">最新の変更が自動保存されています</div>
+                        </div>
+                        <div class="bg-slate-100 border border-slate-200 rounded-lg p-4 opacity-60"><h4 class="font-medium text-gray-800 mb-2 flex items-center"><i class="fas fa-palette mr-2 text-gray-600"></i>表示設定</h4><p class="text-sm text-gray-600">テーマやレイアウトの設定（今後実装予定）</p></div>
+                        <div class="bg-slate-100 border border-slate-200 rounded-lg p-4 opacity-60"><h4 class="font-medium text-gray-800 mb-2 flex items-center"><i class="fas fa-keyboard mr-2 text-gray-600"></i>キーボードショートカット</h4><p class="text-sm text-gray-600">ショートカットキーの設定（今後実装予定）</p></div>
+                    </div>
+                </div>
+
+                <div id="tab-content-files" class="tab-content flex-col h-full p-6 hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-6">ファイル操作</h3>
+                    <div class="grid grid-cols-1 gap-4">
+                        <button id="download-json-btn" class="p-6 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 hover:border-sky-400 transition-colors text-left"><div class="flex items-center mb-3"><i class="fas fa-download text-2xl text-purple-600 mr-4"></i><div><div class="font-medium text-gray-800 text-lg">JSONファイルをダウンロード</div></div></div><p class="text-sm text-gray-600">現在の状態をJSONファイルとして保存します</p></button>
+                        <div class="relative"><input type="file" id="upload-json-input" accept=".json" class="sr-only"><button id="upload-json-btn" class="w-full h-full p-6 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 hover:border-sky-400 transition-colors text-left"><div class="flex items-center mb-3"><i class="fas fa-upload text-2xl text-orange-600 mr-4"></i><div><div class="font-medium text-gray-800 text-lg">JSONファイルを読み込み</div></div></div><p class="text-sm text-gray-600">JSONファイルから状態を復元します</p></button></div>
+                        <button id="clear-data-btn" class="p-6 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors text-left"><div class="flex items-center mb-3"><i class="fas fa-trash text-2xl text-red-600 mr-4"></i><div><div class="font-medium text-gray-800 text-lg">全データをクリア</div></div></div><p class="text-sm text-gray-600">全てのデータを削除します（この操作は元に戻せません）</p></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="save-name-modal" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex justify-center items-center p-4 z-[70] opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out">
+        <div id="save-name-modal-panel" class="bg-white rounded-2xl shadow-2xl w-full max-w-sm transform opacity-0 scale-95 transition-all duration-300 ease-in-out">
+            <div class="flex justify-between items-center p-5 border-b border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fas fa-save mr-2 text-blue-500"></i>名前を付けて保存</h2>
+                <button id="save-name-close-btn" class="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center transition-colors">
+                    <i class="fas fa-times text-sm"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <label for="save-name-input" class="block text-sm font-medium text-gray-700 mb-2">ファイル名</label>
+                <input type="text" id="save-name-input" placeholder="例: プロジェクト名" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                <div class="text-xs text-gray-500 mt-1">英数字、ひらがな、カタカナ、漢字が使用できます</div>
+            </div>
+            <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-2xl flex justify-end space-x-3">
+                <button id="save-name-cancel-btn" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">キャンセル</button>
+                <button id="save-name-confirm-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">保存</button>
+            </div>
+        </div>
+    </div>
+
     <div id="word-detail-modal" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex justify-center items-center p-4 z-50 opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out">
         <div id="modal-panel" class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col transform opacity-0 scale-95 transition-all duration-300 ease-in-out">
             <div class="flex justify-between items-center p-5 border-b border-gray-200">
@@ -339,6 +478,26 @@
         const textInput = document.getElementById('text-input');
         const insertBtn = document.getElementById('insert-btn');
         const displayNotation = document.getElementById('display-notation');
+        const menuBtn = document.getElementById('menu-btn');
+        const menuContainer = document.getElementById('menu-container');
+        const menuBackdrop = document.getElementById('menu-backdrop');
+        const menuCloseBtn = document.getElementById('menu-close-btn');
+        const saveNameModal = document.getElementById('save-name-modal');
+        const saveNameModalPanel = document.getElementById('save-name-modal-panel');
+        const saveNameCloseBtn = document.getElementById('save-name-close-btn');
+        const saveNameInput = document.getElementById('save-name-input');
+        const autosaveToggle = document.getElementById('autosave-toggle');
+        const autosaveStatus = document.getElementById('autosave-status');
+        const savedFilesGrid = document.getElementById('saved-files-grid');
+        const noSavesMessage = document.getElementById('no-saves-message');
+        const savesSearch = document.getElementById('saves-search');
+        
+        const tabSaves = document.getElementById('tab-saves');
+        const tabSettings = document.getElementById('tab-settings'); 
+        const tabFiles = document.getElementById('tab-files');
+        const tabContentSaves = document.getElementById('tab-content-saves');
+        const tabContentSettings = document.getElementById('tab-content-settings');
+        const tabContentFiles = document.getElementById('tab-content-files');
 
         const GRID_BASE_SIZE = 40;
         const MIN_ZOOM = 0.2;
@@ -352,6 +511,10 @@
         const CURSOR_COLOR = 'rgba(56, 189, 248, 0.4)';
         const CURSOR_BORDER_COLOR = '#0284c7';
         const MAX_HISTORY_SIZE = 100;
+        const AUTOSAVE_KEY = 'oversub-autosave';
+        const SAVED_FILES_KEY = 'oversub-saved-files';
+        const AUTOSAVE_ENABLED_KEY = 'oversub-autosave-enabled';
+        const AUTOSAVE_DEBOUNCE_MS = 1000;
 
         let cameraOffset = { x: 0, y: 0 };
         let cameraZoom = 1;
@@ -367,6 +530,10 @@
         let internalClipboard = null;
         let undoStack = [];
         let redoStack = [];
+        let autosaveEnabled = true;
+        let autosaveTimer = null;
+        let lastAutosaveTime = null;
+        let savedFiles = new Map();
 
         function undo() {
             if (undoStack.length === 0) return;
@@ -382,6 +549,7 @@
             }
             draw();
             updateEditorDisplays();
+            scheduleAutosave();
         }
 
         function redo() {
@@ -398,6 +566,7 @@
             }
             draw();
             updateEditorDisplays();
+            scheduleAutosave();
         }
 
         function setupCanvas() {
@@ -560,7 +729,12 @@
                 const textWidth = ctx.measureText(textToDraw).width;
                 
                 const availableWidth = blockWidth * 0.95;
-                const scaleX =  cell.length / textToDraw.length;
+                let scaleX;
+                if (cell.length === textToDraw.length) {
+                    scaleX = 1;
+                } else {
+                    scaleX = availableWidth / textWidth;
+                }
 
                 const textCenterX = worldX + blockWidth / 2;
                 const textCenterY = worldY + gridSize / 2;
@@ -640,7 +814,7 @@
                             selectedCells.add(`${x},${y}`);
                         }
                     }
-                    selectedCell = endCell;
+                    //selectedCell = endCell;
                 } else { 
                     selectedCells.clear(); 
                     const startX = Math.min(rectSelectionStart.x, endCell.x);
@@ -653,7 +827,7 @@
                             selectedCells.add(`${x},${y}`);
                         }
                     }
-                    selectedCell = endCell;
+                    //selectedCell = endCell;
                 }
             } else if (e.ctrlKey && dist < 5) { 
                 const key = `${endCell.x},${endCell.y}`;
@@ -664,7 +838,7 @@
                 }
                 selectedCell = endCell;
             } else if (isPanning) { 
-                if (dist < 5) {
+                if (dist < 5 && e.button !== 1) {
                     selectedCell = endCell;
                     selectedCells.clear();
                 }
@@ -759,7 +933,39 @@
         function cutSelection() {
             copySelection();
             if (!internalClipboard) return;
-            performDeleteSelection(false);
+            
+            if (selectedCells.size === 0) {
+                // 範囲選択がない場合は、カーソル位置の文字を削除
+                const key = `${selectedCell.x},${selectedCell.y}`;
+                const cellData = gridData[key];
+                if (cellData) {
+                    const beforeState = new Map();
+                    const afterState = new Map();
+                    const allAffectedKeys = new Set();
+                    
+                    const startX = selectedCell.x - cellData.index;
+                    const startY = selectedCell.y;
+                    
+                    for (let i = 0; i < cellData.length; i++) {
+                        const deleteKey = `${startX + i},${startY}`;
+                        allAffectedKeys.add(deleteKey);
+                        const data = gridData[deleteKey];
+                        beforeState.set(deleteKey, data ? JSON.parse(JSON.stringify(data)) : null);
+                        delete gridData[deleteKey];
+                        afterState.set(deleteKey, null);
+                    }
+                    
+                    undoStack.push({ before: beforeState, after: afterState });
+                    if (undoStack.length > MAX_HISTORY_SIZE) undoStack.shift();
+                    redoStack = [];
+                    
+                    draw();
+                    updateEditorDisplays();
+                    scheduleAutosave();
+                }
+            } else {
+                performDeleteSelection();
+            }
         }
 
         function pasteFromClipboard() {
@@ -836,6 +1042,7 @@
 
             draw();
             updateEditorDisplays();
+            scheduleAutosave();
         }
 
         function handleGlobalKeyDown(e) {
@@ -859,56 +1066,49 @@
 
             if (e.ctrlKey || e.metaKey) {
                 switch (e.key.toLowerCase()) {
-                    case 'c':
-                        e.preventDefault();
-                        copySelection();
-                        return;
-                    case 'x':
-                        e.preventDefault();
-                        cutSelection();
-                        return;
-                    case 'v':
-                        e.preventDefault();
-                        pasteFromClipboard();
-                        return;
-                    case 'z':
-                        e.preventDefault();
-                        undo();
-                        return;
-                    case 'y':
-                        e.preventDefault();
-                        redo();
-                        return;
+                    case 'c': e.preventDefault(); copySelection(); return;
+                    case 'x': e.preventDefault(); cutSelection(); return;
+                    case 'v': e.preventDefault(); pasteFromClipboard(); return;
+                    case 'z': e.preventDefault(); undo(); return;
+                    case 'y': e.preventDefault(); redo(); return;
                 }
             }
             
-            const isRhymeFinderModalOpen = !document.getElementById('word-detail-modal').classList.contains('pointer-events-none');
-            if (isRhymeFinderModalOpen) {
-                if (e.key === 'Escape') {
-                    // The rhyme finder script will handle this
-                }
-                return;
-            }
-
-            switch (e.key) {
-                case 'ArrowUp': selectedCells.clear(); selectedCell.y--; break;
-                case 'ArrowDown': selectedCells.clear(); selectedCell.y++; break;
-                case 'ArrowLeft': selectedCells.clear(); selectedCell.x--; break;
-                case 'ArrowRight': selectedCells.clear(); selectedCell.x++; break;
-                case 'Backspace': deleteCharacter(true); break;
-                case 'Delete': deleteCharacter(false); break;
-                case 'Escape': 
-                    if (selectedCells.size > 0) selectedCells.clear();
-                    else if (document.activeElement !== document.body) document.activeElement.blur();
-                    break;
-                default:
-                    if (!isTypingElement && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-                        textInput.focus();
-                        return;
-                    }
+            if (e.key === 'Escape') {
+                if (!menuContainer.classList.contains('pointer-events-none')) {
+                    closeMenuModal();
                     return;
+                }
+                if (!document.getElementById('word-detail-modal').classList.contains('pointer-events-none')) {
+                    return;
+                }
+                 if (selectedCells.size > 0) {
+                    selectedCells.clear();
+                 } else if (document.activeElement !== document.body) {
+                    document.activeElement.blur();
+                 }
+            } else {
+                const isMenuOpen = !menuContainer.classList.contains('pointer-events-none');
+                if (isMenuOpen) return;
+                
+                const isRhymeFinderModalOpen = !document.getElementById('word-detail-modal').classList.contains('pointer-events-none');
+                if (isRhymeFinderModalOpen) return;
+                
+                switch (e.key) {
+                    case 'ArrowUp': selectedCells.clear(); selectedCell.y--; break;
+                    case 'ArrowDown': selectedCells.clear(); selectedCell.y++; break;
+                    case 'ArrowLeft': selectedCells.clear(); selectedCell.x--; break;
+                    case 'ArrowRight': selectedCells.clear(); selectedCell.x++; break;
+                    case 'Backspace': deleteCharacter(true); break;
+                    case 'Delete': deleteCharacter(false); break;
+                    default:
+                        if (!isTypingElement && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                            textInput.focus();
+                            return;
+                        }
+                        return;
+                }
             }
-
             e.preventDefault();
             draw();
             updateEditorDisplays();
@@ -1037,6 +1237,7 @@
             textInput.value = '';
             draw();
             updateEditorDisplays();
+            scheduleAutosave();
         }
         
         function performDeleteSelection() {
@@ -1129,7 +1330,6 @@
         }
         
         function setupResizer() {
-            // Left panel resizer
             const leftResizer = document.getElementById('left-resizer');
             const leftPanel = document.getElementById('left-panel');
             const LEFT_MIN_WIDTH = 280;
@@ -1160,7 +1360,6 @@
                 window.addEventListener('mouseup', stopLeftResize);
             });
 
-            // Right panel resizer
             const rightResizer = document.getElementById('right-resizer');
             const rightPanel = document.getElementById('right-panel');
             const RIGHT_MIN_WIDTH = 300;
@@ -1193,6 +1392,384 @@
             });
         }
         
+        function switchTab(activeTabId) {
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active-tab');
+            });
+            
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+                content.classList.add('hidden');
+            });
+            
+            document.getElementById(activeTabId).classList.add('active-tab');
+            
+            const contentId = activeTabId.replace('tab-', 'tab-content-');
+            const content = document.getElementById(contentId);
+            content.classList.add('active');
+            content.classList.remove('hidden');
+        }
+
+        function updateSavedFilesUI() {
+            savedFilesGrid.innerHTML = '';
+            
+            if (savedFiles.size === 0) {
+                noSavesMessage.style.display = 'block';
+                return;
+            }
+
+            noSavesMessage.style.display = 'none';
+            
+            const searchTerm = savesSearch.value.toLowerCase();
+            const sortedFiles = Array.from(savedFiles.values())
+                .filter(file => searchTerm === '' || file.name.toLowerCase().includes(searchTerm))
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+            sortedFiles.forEach(file => {
+                const fileCard = document.createElement('div');
+                fileCard.className = 'save-card bg-white border border-slate-200 rounded-lg p-3 hover:border-sky-400 hover:shadow-md transition-all cursor-pointer flex items-center justify-between';
+                
+                const date = new Date(file.timestamp);
+                const dateStr = date.toLocaleDateString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' });
+                const timeStr = date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+                
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMinutes = Math.floor(diffMs / (1000 * 60));
+                let relativeTime;
+                if (diffMinutes < 60) {
+                    relativeTime = diffMinutes <= 1 ? 'たった今' : `${diffMinutes}分前`;
+                } else {
+                    const diffHours = Math.floor(diffMinutes / 60);
+                    relativeTime = diffHours < 24 ? `${diffHours}時間前` : `${Math.floor(diffHours / 24)}日前`;
+                }
+
+                const displayName = highlightSearchTerm(file.name, searchTerm);
+                
+                fileCard.innerHTML = `
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-semibold text-slate-800 text-base truncate" title="${file.name}">${displayName}</h4>
+                        <div class="text-sm text-slate-500 mt-1">
+                            <span>${dateStr}</span>
+                            <span class="mx-1.5">&middot;</span>
+                            <span>${relativeTime}</span>
+                        </div>
+                    </div>
+                    <div class="save-card-actions flex space-x-1 ml-4 flex-shrink-0">
+                        <button class="save-file-load w-8 h-8 flex items-center justify-center text-green-600 hover:bg-green-100 rounded-full transition-colors" data-file-name="${file.name}" title="読み込み"><i class="fas fa-upload text-sm"></i></button>
+                        <button class="save-file-duplicate w-8 h-8 flex items-center justify-center text-blue-600 hover:bg-blue-100 rounded-full transition-colors" data-file-name="${file.name}" title="複製"><i class="fas fa-copy text-sm"></i></button>
+                        <button class="save-file-delete w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-100 rounded-full transition-colors" data-file-name="${file.name}" title="削除"><i class="fas fa-trash text-sm"></i></button>
+                    </div>
+                `;
+                savedFilesGrid.appendChild(fileCard);
+            });
+        }
+
+        function highlightSearchTerm(text, searchTerm) {
+            if (!searchTerm) return text;
+            const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return text.replace(regex, '<span class="search-highlight">$1</span>');
+        }
+
+        function duplicateSaveFile(originalName) {
+            const originalFile = savedFiles.get(originalName);
+            if (!originalFile) return;
+
+            let duplicateName = `${originalName} のコピー`;
+            let counter = 1;
+            
+            while (savedFiles.has(duplicateName)) {
+                duplicateName = `${originalName} のコピー ${counter}`;
+                counter++;
+            }
+
+            const duplicateFile = {
+                name: duplicateName,
+                timestamp: new Date().toISOString(),
+                data: JSON.parse(JSON.stringify(originalFile.data))
+            };
+            
+            duplicateFile.data.timestamp = duplicateFile.timestamp;
+            
+            savedFiles.set(duplicateName, duplicateFile);
+            saveSavedFilesList();
+            updateSavedFilesUI();
+        }
+
+        function initializeAutosave() {
+            const savedAutosaveEnabled = localStorage.getItem(AUTOSAVE_ENABLED_KEY);
+            if (savedAutosaveEnabled !== null) {
+                autosaveEnabled = JSON.parse(savedAutosaveEnabled);
+                autosaveToggle.checked = autosaveEnabled;
+            }
+
+            loadSavedFilesList();
+            loadAutosave();
+            updateAutosaveStatus();
+        }
+
+        function loadSavedFilesList() {
+            try {
+                const savedFilesData = localStorage.getItem(SAVED_FILES_KEY);
+                if (savedFilesData) {
+                    const filesArray = JSON.parse(savedFilesData);
+                    savedFiles.clear();
+                    filesArray.forEach(file => {
+                        savedFiles.set(file.name, file);
+                    });
+                }
+                updateSavedFilesUI();
+            } catch (error) {
+                console.error('Error loading saved files list:', error);
+            }
+        }
+
+        function saveSavedFilesList() {
+            try {
+                const filesArray = Array.from(savedFiles.values()).sort((a, b) => 
+                    new Date(b.timestamp) - new Date(a.timestamp)
+                );
+                localStorage.setItem(SAVED_FILES_KEY, JSON.stringify(filesArray));
+            } catch (error) {
+                console.error('Error saving files list:', error);
+            }
+        }
+
+        function scheduleAutosave() {
+            if (!autosaveEnabled) return;
+            if (autosaveTimer) clearTimeout(autosaveTimer);
+            autosaveTimer = setTimeout(performAutosave, AUTOSAVE_DEBOUNCE_MS);
+        }
+
+        function performAutosave() {
+            if (!autosaveEnabled) return;
+            try {
+                const state = getCurrentState();
+                localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(state));
+                lastAutosaveTime = new Date();
+                updateAutosaveStatus();
+            } catch (error) {
+                console.error('Autosave failed:', error);
+                updateAutosaveStatus('エラー: オートセーブに失敗しました');
+            }
+        }
+
+        function loadAutosave() {
+            try {
+                const autosaveData = localStorage.getItem(AUTOSAVE_KEY);
+                if (autosaveData) {
+                    const state = JSON.parse(autosaveData);
+                    if (loadState(state)) {
+                        lastAutosaveTime = new Date(state.timestamp);
+                        updateAutosaveStatus();
+                        return true;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading autosave:', error);
+            }
+            return false;
+        }
+
+        function updateAutosaveStatus(message = null) {
+            if (message) {
+                autosaveStatus.textContent = message;
+                return;
+            }
+            if (!autosaveEnabled) {
+                autosaveStatus.textContent = 'オートセーブが無効です';
+                return;
+            }
+            if (lastAutosaveTime) {
+                const timeStr = lastAutosaveTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+                autosaveStatus.textContent = `最終保存: ${timeStr}`;
+            } else {
+                autosaveStatus.textContent = '変更を保存中...';
+            }
+        }
+
+        function openSaveNameModal() {
+            document.body.style.overflow = 'hidden';
+            saveNameModal.classList.remove('opacity-0', 'pointer-events-none');
+            requestAnimationFrame(() => {
+                saveNameModalPanel.classList.remove('opacity-0', 'scale-95');
+                saveNameInput.focus();
+            });
+        }
+
+        function closeSaveNameModal() {
+            saveNameModalPanel.classList.add('opacity-0', 'scale-95');
+            saveNameModal.classList.add('opacity-0');
+            setTimeout(() => {
+                saveNameModal.classList.add('pointer-events-none');
+                document.body.style.overflow = '';
+                saveNameInput.value = '';
+            }, 300);
+        }
+
+        function saveWithName(name) {
+            if (!name.trim()) {
+                alert('ファイル名を入力してください。');
+                return false;
+            }
+            const cleanName = name.trim();
+            if (savedFiles.has(cleanName)) {
+                if (!confirm(`"${cleanName}" は既に存在します。上書きしますか？`)) {
+                    return false;
+                }
+            }
+            try {
+                const state = getCurrentState();
+                const fileData = { name: cleanName, timestamp: state.timestamp, data: state };
+                savedFiles.set(cleanName, fileData);
+                saveSavedFilesList();
+                updateSavedFilesUI();
+                return true;
+            } catch (error) {
+                console.error('Save error:', error);
+                alert('保存に失敗しました。');
+                return false;
+            }
+        }
+
+        function loadNamedSave(name) {
+            const fileData = savedFiles.get(name);
+            if (!fileData) {
+                alert('ファイルが見つかりません。');
+                return false;
+            }
+            try {
+                if (loadState(fileData.data)) {
+                    return true;
+                }
+            } catch (error) {
+                console.error('Load error:', error);
+                alert('ファイルの読み込みに失敗しました。');
+            }
+            return false;
+        }
+
+        function deleteNamedSave(name) {
+            if (!confirm(`"${name}" を削除しますか？この操作は元に戻せません。`)) {
+                return false;
+            }
+            savedFiles.delete(name);
+            saveSavedFilesList();
+            updateSavedFilesUI();
+            return true;
+        }
+
+        function openMenuModal() {
+            updateSavedFilesUI();
+            switchTab('tab-saves');
+            document.body.style.overflow = 'hidden';
+            menuContainer.classList.remove('pointer-events-none');
+            menuContainer.classList.add('opacity-100');
+            document.getElementById('menu-panel').classList.remove('-translate-x-full');
+        }
+
+        function closeMenuModal() {
+            document.body.style.overflow = '';
+            menuContainer.classList.add('pointer-events-none');
+            menuContainer.classList.remove('opacity-100');
+            document.getElementById('menu-panel').classList.add('-translate-x-full');
+        }
+
+        function getCurrentState() {
+            return {
+                version: '1.0', timestamp: new Date().toISOString(), gridData: gridData, selectedCell: selectedCell, selectedCells: Array.from(selectedCells), cameraOffset: cameraOffset, cameraZoom: cameraZoom, textNote: document.getElementById('text-note').value, undoStack: undoStack.slice(-10), redoStack: redoStack.slice(-10)
+            };
+        }
+
+        function loadState(state) {
+            if (!state || state.version !== '1.0') {
+                alert('無効なデータ形式です。');
+                return false;
+            }
+            try {
+                gridData = state.gridData || {};
+                selectedCell = state.selectedCell || { x: 0, y: 0 };
+                selectedCells = new Set(state.selectedCells || []);
+                cameraOffset = state.cameraOffset || { x: 0, y: 0 };
+                cameraZoom = state.cameraZoom || 1;
+                document.getElementById('text-note').value = state.textNote || '';
+                undoStack = state.undoStack || [];
+                redoStack = state.redoStack || [];
+                draw();
+                updateEditorDisplays();
+                return true;
+            } catch (error) {
+                console.error('State loading error:', error);
+                alert('データの読み込みに失敗しました。');
+                return false;
+            }
+        }
+
+        function downloadJSON() {
+            try {
+                const state = getCurrentState();
+                const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `creative-canvas-data-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('ダウンロードに失敗しました。');
+            }
+        }
+
+        function uploadJSON() {
+            document.getElementById('upload-json-input').click();
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const state = JSON.parse(e.target.result);
+                    if (loadState(state)) {
+                        alert('ファイルからデータを読み込みました！');
+                        closeMenuModal();
+                    }
+                } catch (error) {
+                    console.error('File upload error:', error);
+                    alert('ファイルの読み込みに失敗しました。正しいJSONファイルか確認してください。');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function clearAllData() {
+            if (confirm('全てのデータを削除しますか？この操作は元に戻せません。')) {
+                gridData = {};
+                selectedCell = { x: 0, y: 0 };
+                selectedCells.clear();
+                cameraOffset = { x: 0, y: 0 };
+                cameraZoom = 1;
+                document.getElementById('text-note').value = '';
+                undoStack = [];
+                redoStack = [];
+                localStorage.removeItem(AUTOSAVE_KEY);
+                localStorage.removeItem(SAVED_FILES_KEY);
+                savedFiles.clear();
+                lastAutosaveTime = null;
+                setupCanvas();
+                draw();
+                updateEditorDisplays();
+                updateSavedFilesUI();
+                updateAutosaveStatus();
+                alert('全てのデータを削除しました。');
+            }
+        }
+
         function updateEditorDisplays() {
             if (selectedCells.size === 0) {
                 displayNotation.value = '';
@@ -1259,12 +1836,14 @@
 
             displayNotation.value = displayString.trim() ? displayString.split("\n").map(e=>e.trim()).join("\n") : '';
             displayNotation.placeholder = displayString.trim() ? '' : '(選択範囲に文字がありません)';
+            scheduleAutosave();
         }
         
         document.addEventListener('DOMContentLoaded', () => {
             setupCanvas();
             setupResizer();
-            updateEditorDisplays();
+            initializeAutosave();
+            switchTab('tab-saves');
             
             container.addEventListener('mousedown', onPointerDown);
             container.addEventListener('mouseup', onPointerUp);
@@ -1284,13 +1863,90 @@
             resetViewBtn.addEventListener('click', resetView);
             insertBtn.addEventListener('click', insertText);
             
+            menuBtn.addEventListener('click', openMenuModal);
+            menuCloseBtn.addEventListener('click', closeMenuModal);
+            menuBackdrop.addEventListener('click', closeMenuModal);
+            
+            tabSaves.addEventListener('click', () => switchTab('tab-saves'));
+            tabSettings.addEventListener('click', () => switchTab('tab-settings'));
+            tabFiles.addEventListener('click', () => switchTab('tab-files'));
+            
+            savesSearch.addEventListener('input', updateSavedFilesUI);
+            
+            document.getElementById('save-named-btn').addEventListener('click', () => {
+                closeMenuModal();
+                openSaveNameModal();
+            });
+            
+            saveNameCloseBtn.addEventListener('click', closeSaveNameModal);
+            document.getElementById('save-name-cancel-btn').addEventListener('click', closeSaveNameModal);
+            document.getElementById('save-name-confirm-btn').addEventListener('click', () => {
+                const name = saveNameInput.value.trim();
+                if (saveWithName(name)) {
+                    closeSaveNameModal();
+                }
+            });
+            saveNameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const name = saveNameInput.value.trim();
+                    if (saveWithName(name)) closeSaveNameModal();
+                } else if (e.key === 'Escape') {
+                    closeSaveNameModal();
+                }
+            });
+            saveNameModal.addEventListener('click', (e) => {
+                if (e.target === saveNameModal) closeSaveNameModal();
+            });
+            
+            autosaveToggle.addEventListener('change', (e) => {
+                autosaveEnabled = e.target.checked;
+                localStorage.setItem(AUTOSAVE_ENABLED_KEY, JSON.stringify(autosaveEnabled));
+                updateAutosaveStatus();
+                if (autosaveEnabled) scheduleAutosave();
+            });
+            
+            savedFilesGrid.addEventListener('click', (e) => {
+                const loadBtn = e.target.closest('.save-file-load');
+                const deleteBtn = e.target.closest('.save-file-delete');
+                const duplicateBtn = e.target.closest('.save-file-duplicate');
+                const fileCard = e.target.closest('.save-card');
+                
+                if (loadBtn) {
+                    e.stopPropagation();
+                    if (loadNamedSave(loadBtn.dataset.fileName)) closeMenuModal();
+                } else if (deleteBtn) {
+                    e.stopPropagation();
+                    deleteNamedSave(deleteBtn.dataset.fileName);
+                } else if (duplicateBtn) {
+                    e.stopPropagation();
+                    duplicateSaveFile(duplicateBtn.dataset.fileName);
+                } else if (fileCard) {
+                    const fileName = fileCard.querySelector('.save-file-load').dataset.fileName;
+                    if (loadNamedSave(fileName)) closeMenuModal();
+                }
+            });
+            
+            document.getElementById('download-json-btn').addEventListener('click', () => {
+                downloadJSON();
+                closeMenuModal();
+            });
+            
+            document.getElementById('upload-json-btn').addEventListener('click', uploadJSON);
+            document.getElementById('upload-json-input').addEventListener('change', handleFileUpload);
+            
+            document.getElementById('clear-data-btn').addEventListener('click', () => {
+                clearAllData();
+                closeMenuModal();
+            });
+            
+            document.getElementById('text-note').addEventListener('input', scheduleAutosave);
+            
             textInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !isComposing) {
                     e.preventDefault();
                     insertText();
                     return;
                 }
-
                 const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
                 if (isArrowKey && textInput.value === '') {
                     e.preventDefault();
@@ -1308,16 +1964,12 @@
     </script>
     <script>
         class PrefixTree {
-            constructor() {
-                this.root = new Node();
-            }
+            constructor() { this.root = new Node(); }
             add(word, wordObject) {
                 let node = this.root;
                 for (let i = 0; i < word.length; i++) {
                     let c = word[i];
-                    if (!node.children[c]) {
-                        node.children[c] = new Node();
-                    }
+                    if (!node.children[c]) node.children[c] = new Node();
                     node = node.children[c];
                 }
                 word = word.split('').reverse().join('');
@@ -1328,24 +1980,15 @@
                 let node = this.root;
                 for (let i = 0; i < word.length; i++) {
                     let c = word[i];
-                    if (!node.children[c]) {
-                        return [];
-                    }
+                    if (!node.children[c]) return [];
                     node = node.children[c];
                 }
                 return this._searchAll(node);
             }
             _searchAll(node) {
                 let res = [];
-                if (node.values.size > 0) {
-                    res.push({
-                        vowel: node.vowel,
-                        set: node.values
-                    });
-                }
-                for (let c in node.children) {
-                    res = res.concat(this._searchAll(node.children[c]));
-                }
+                if (node.values.size > 0) res.push({ vowel: node.vowel, set: node.values });
+                for (let c in node.children) res = res.concat(this._searchAll(node.children[c]));
                 return res;
             }
             searchWithWildcard(pattern) {
@@ -1354,25 +1997,17 @@
             }
             _searchWithWildcardRecursive(node, subpattern) {
                 if (!node) return [];
-                if (subpattern.length === 0) {
-                    return this._searchAll(node);
-                }
-
+                if (subpattern.length === 0) return this._searchAll(node);
                 const char = subpattern[0];
                 const remainingPattern = subpattern.substring(1);
                 let results = [];
-
                 if (char === '?') {
                     const wildcards = ['a', 'i', 'u', 'e', 'o', 'n'];
                     for (const wc of wildcards) {
-                        if (node.children[wc]) {
-                            results.push(...this._searchWithWildcardRecursive(node.children[wc], remainingPattern));
-                        }
+                        if (node.children[wc]) results.push(...this._searchWithWildcardRecursive(node.children[wc], remainingPattern));
                     }
                 } else {
-                    if (node.children[char]) {
-                        results.push(...this._searchWithWildcardRecursive(node.children[char], remainingPattern));
-                    }
+                    if (node.children[char]) results.push(...this._searchWithWildcardRecursive(node.children[char], remainingPattern));
                 }
                 return results;
             }
@@ -1381,9 +2016,7 @@
                 for (const result of results) {
                     const currentSet = merged.get(result.vowel);
                     if (currentSet) {
-                        for (const wordObj of result.set) {
-                            currentSet.add(wordObj);
-                        }
+                        for (const wordObj of result.set) currentSet.add(wordObj);
                     } else {
                         merged.set(result.vowel, new Set(result.set));
                     }
@@ -1391,18 +2024,10 @@
                 return Array.from(merged.entries()).map(([vowel, set]) => ({ vowel, set }));
             }
         }
-
-        class Node {
-            constructor() {
-                this.children = {};
-                this.values = new Set();
-                this.vowel = null;
-            }
-        }
-        
+        class Node { constructor() { this.children = {}; this.values = new Set(); this.vowel = null; } }
         class YomiUtil {
              constructor() {
-                this.roma_to_hira = { "a": "あ", "ba": "ば", "be": "べ", "bi": "び", "bo": "ぼ", "bu": "ぶ", "bya": "びゃ", "bye": "びぇ", "byi": "びぃ", "byo": "びょ", "byu": "びゅ", "ca": "か", "ce": "せ", "cha": "ちゃ", "che": "ちぇ", "chi": "ち", "cho": "ちょ", "chu": "ちゅ", "ci": "し", "co": "こ", "cu": "く", "cya": "ちゃ", "cye": "ちぇ", "cyi": "ちぃ", "cyo": "ちょ", "cyu": "ちゅ", "da": "だ", "de": "で", "dha": "でゃ", "dhe": "でぇ", "dhi": "でぃ", "dho": "でょ", "dhu": "でゅ", "di": "ぢ", "do": "ど", "du": "づ", "dwa": "どぁ", "dwe": "どぇ", "dwi": "どぃ", "dwo": "どぉ", "dwu": "どぅ", "dya": "ぢゃ", "dye": "ぢぇ", "dyi": "ぢぃ", "dyo": "ぢょ", "dyu": "ぢゅ", "e": "え", "fa": "ふぁ", "fe": "ふぇ", "fi": "ふぃ", "fo": "ふぉ", "fu": "ふ", "fwa": "ふぁ", "fwe": "ふぇ", "fwi": "ふぃ", "fwo": "ふぉ", "fwu": "ふぅ", "fya": "ふゃ", "fye": "ふぇ", "fyi": "ふぃ", "fyo": "ふょ", "fyu": "ふゅ", "ga": "が", "ge": "げ", "gi": "ぎ", "go": "ご", "gu": "ぐ", "gwa": "ぐぁ", "gwe": "ぐぇ", "gwi": "ぐぃ", "gwo": "ぐぉ", "gwu": "ぐぅ", "gya": "ぎゃ", "gye": "ぎぇ", "gyi": "ぎぃ", "gyo": "ぎょ", "gyu": "ぎゅ", "ha": "は", "he": "へ", "hi": "ひ", "ho": "ほ", "hu": "ふ", "hya": "ひゃ", "hye": "ひぇ", "hyi": "ひぃ", "hyo": "ひょ", "hyu": "ひゅ", "i": "い", "ja": "じゃ", "je": "じぇ", "ji": "じ", "jo": "じょ", "ju": "じゅ", "jya": "じゃ", "jye": "じぇ", "jyi": "じぃ", "jyo": "じょ", "jyu": "じゅ", "ka": "か", "ke": "け", "ki": "き", "ko": "こ", "ku": "く", "kwa": "くぁ", "kya": "きゃ", "kye": "きぇ", "kyi": "きぃ", "kyo": "きょ", "kyu": "きゅ", "la": "ぁ", "le": "ぇ", "li": "ぃ", "lka": "ヵ", "lke": "ヶ", "lo": "ぉ", "lu": "ぅ", "lwa": "ゎ", "lya": "ゃ", "lye": "ぇ", "lyi": "ぃ", "lyo": "ょ", "lyu": "ゅ", "ma": "ま", "me": "め", "mi": "み", "mo": "も", "mu": "む", "mya": "みゃ", "mye": "みぇ", "myi": "みぃ", "myo": "みょ", "myu": "みゅ", "n": "ん", "na": "な", "ne": "ね", "ni": "に", "nn": "ん", "no": "の", "nu": "ぬ", "nya": "にゃ", "nye": "にぇ", "nyi": "にぃ", "nyo": "にょ", "nyu": "にゅ", "o": "お", "pa": "ぱ", "pe": "ぺ", "pi": "ぴ", "po": "ぽ", "pu": "ぷ", "pya": "ぴゃ", "pye": "ぴぇ", "pyi": "ぴぃ", "pyo": "ぴょ", "pyu": "ぴゅ", "qa": "くぁ", "qe": "くぇ", "qi": "くぃ", "qo": "くぉ", "qu": "く", "qwa": "くぁ", "qwe": "くぇ", "qwi": "くぃ", "qwo": "くぉ", "qwu": "くぅ", "qya": "くゃ", "qye": "くぇ", "qyi": "くぃ", "qyo": "くょ", "qyu": "くゅ", "ra": "ら", "re": "れ", "ri": "り", "ro": "ろ", "ru": "る", "rya": "りゃ", "rye": "りぇ", "ryi": "りぃ", "ryo": "りょ", "ryu": "りゅ", "sa": "さ", "se": "せ", "sha": "しゃ", "she": "しぇ", "shi": "し", "sho": "しょ", "shu": "しゅ", "si": "し", "so": "そ", "su": "す", "swa": "すぁ", "swe": "すぇ", "swi": "すぃ", "swo": "すぉ", "swu": "すぅ", "sya": "しゃ", "sye": "しぇ", "syi": "しぃ", "syo": "しょ", "syu": "しゅ", "ta": "た", "te": "て", "tha": "てゃ", "the": "てぇ", "thi": "てぃ", "tho": "てょ", "thu": "てゅ", "ti": "ち", "to": "と", "tsa": "つぁ", "tse": "つぇ", "tsi": "つぃ", "tso": "つぉ", "tsu": "つ", "tu": "つ", "twa": "とぁ", "twe": "とぇ", "twi": "とぃ", "two": "とぉ", "twu": "とぅ", "tya": "ちゃ", "tye": "ちぇ", "tyi": "ちぃ", "tyo": "ちょ", "tyu": "ちゅ", "u": "う", "va": "ヴぁ", "ve": "ヴぇ", "vi": "ヴぃ", "vo": "ヴぉ", "vu": "ヴ", "vya": "ヴゃ", "vye": "ヴぇ", "vyi": "ヴぃ", "vyo": "ヴょ", "vyu": "ヴゅ", "wa": "わ", "we": "うぇ", "wha": "うぁ", "whe": "うぇ", "whi": "うぃ", "who": "うぉ", "whu": "う", "wi": "うぃ", "wo": "を", "wu": "う", "wye": "ゑ", "wyi": "ゐ", "xa": "ぁ", "xe": "ぇ", "xi": "ぃ", "xka": "ヵ", "xke": "ヶ", "xo": "ぉ", "xu": "ぅ", "xwa": "ゎ", "xya": "ゃ", "xye": "ぇ", "xyi": "ぃ", "xyo": "ょ", "xyu": "ゅ", "ya": "や", "ye": "いぇ", "yi": "い", "yo": "よ", "yu": "ゆ", "za": "ざ", "ze": "ぜ", "zi": "じ", "zo": "ぞ", "zu": "ず", "zya": "じゃ", "zye": "じぇ", "zyi": "じぃ", "zyo": "じょ", "zyu": "じゅ", }
+                this.roma_to_hira = { "a":"あ","ba":"ば","be":"べ","bi":"び","bo":"ぼ","bu":"ぶ","bya":"びゃ","bye":"びぇ","byi":"びぃ","byo":"びょ","byu":"びゅ","ca":"か","ce":"せ","cha":"ちゃ","che":"ちぇ","chi":"ち","cho":"ちょ","chu":"ちゅ","ci":"し","co":"こ","cu":"く","cya":"ちゃ","cye":"ちぇ","cyi":"ちぃ","cyo":"ちょ","cyu":"ちゅ","da":"だ","de":"で","dha":"でゃ","dhe":"でぇ","dhi":"でぃ","dho":"でょ","dhu":"でゅ","di":"ぢ","do":"ど","du":"づ","dwa":"どぁ","dwe":"どぇ","dwi":"どぃ","dwo":"どぉ","dwu":"どぅ","dya":"ぢゃ","dye":"ぢぇ","dyi":"ぢぃ","dyo":"ぢょ","dyu":"ぢゅ","e":"え","fa":"ふぁ","fe":"ふぇ","fi":"ふぃ","fo":"ふぉ","fu":"ふ","fwa":"ふぁ","fwe":"ふぇ","fwi":"ふぃ","fwo":"ふぉ","fwu":"ふぅ","fya":"ふゃ","fye":"ふぇ","fyi":"ふぃ","fyo":"ふょ","fyu":"ふゅ","ga":"が","ge":"げ","gi":"ぎ","go":"ご","gu":"ぐ","gwa":"ぐぁ","gwe":"ぐぇ","gwi":"ぐぃ","gwo":"ぐぉ","gwu":"ぐぅ","gya":"ぎゃ","gye":"ぎぇ","gyi":"ぎぃ","gyo":"ぎょ","gyu":"ぎゅ","ha":"は","he":"へ","hi":"ひ","ho":"ほ","hu":"ふ","hya":"ひゃ","hye":"ひぇ","hyi":"ひぃ","hyo":"ひょ","hyu":"ひゅ","i":"い","ja":"じゃ","je":"じぇ","ji":"じ","jo":"じょ","ju":"じゅ","jya":"じゃ","jye":"じぇ","jyi":"じぃ","jyo":"じょ","jyu":"じゅ","ka":"か","ke":"け","ki":"き","ko":"こ","ku":"く","kwa":"くぁ","kya":"きゃ","kye":"きぇ","kyi":"きぃ","kyo":"きょ","kyu":"きゅ","la":"ぁ","le":"ぇ","li":"ぃ","lka":"ヵ","lke":"ヶ","lo":"ぉ","lu":"ぅ","lwa":"ゎ","lya":"ゃ","lye":"ぇ","lyi":"ぃ","lyo":"ょ","lyu":"ゅ","ma":"ま","me":"め","mi":"み","mo":"も","mu":"む","mya":"みゃ","mye":"みぇ","myi":"みぃ","myo":"みょ","myu":"みゅ","n":"ん","na":"な","ne":"ね","ni":"に","nn":"ん","no":"の","nu":"ぬ","nya":"にゃ","nye":"にぇ","nyi":"にぃ","nyo":"にょ","nyu":"にゅ","o":"お","pa":"ぱ","pe":"ぺ","pi":"ぴ","po":"ぽ","pu":"ぷ","pya":"ぴゃ","pye":"ぴぇ","pyi":"ぴぃ","pyo":"ぴょ","pyu":"ぴゅ","qa":"くぁ","qe":"くぇ","qi":"くぃ","qo":"くぉ","qu":"く","qwa":"くぁ","qwe":"くぇ","qwi":"くぃ","qwo":"くぉ","qwu":"くぅ","qya":"くゃ","qye":"くぇ","qyi":"くぃ","qyo":"くょ","qyu":"くゅ","ra":"ら","re":"れ","ri":"り","ro":"ろ","ru":"る","rya":"りゃ","rye":"りぇ","ryi":"りぃ","ryo":"りょ","ryu":"りゅ","sa":"さ","se":"せ","sha":"しゃ","she":"しぇ","shi":"し","sho":"しょ","shu":"しゅ","si":"し","so":"そ","su":"す","swa":"すぁ","swe":"すぇ","swi":"すぃ","swo":"すぉ","swu":"すぅ","sya":"しゃ","sye":"しぇ","syi":"しぃ","syo":"しょ","syu":"しゅ","ta":"た","te":"て","tha":"てゃ","the":"てぇ","thi":"てぃ","tho":"てょ","thu":"てゅ","ti":"ち","to":"と","tsa":"つぁ","tse":"つぇ","tsi":"つぃ","tso":"つぉ","tsu":"つ","tu":"つ","twa":"とぁ","twe":"とぇ","twi":"とぃ","two":"とぉ","twu":"とぅ","tya":"ちゃ","tye":"ちぇ","tyi":"ちぃ","tyo":"ちょ","tyu":"ちゅ","u":"う","va":"ヴぁ","ve":"ヴぇ","vi":"ヴぃ","vo":"ヴぉ","vu":"ヴ","vya":"ヴゃ","vye":"ヴぇ","vyi":"ヴぃ","vyo":"ヴょ","vyu":"ヴゅ","wa":"わ","we":"うぇ","wha":"うぁ","whe":"うぇ","whi":"うぃ","who":"うぉ","whu":"う","wi":"うぃ","wo":"を","wu":"う","wye":"ゑ","wyi":"ゐ","xa":"ぁ","xe":"ぇ","xi":"ぃ","xka":"ヵ","xke":"ヶ","xo":"ぉ","xu":"ぅ","xwa":"ゎ","xya":"ゃ","xye":"ぇ","xyi":"ぃ","xyo":"ょ","xyu":"ゅ","ya":"や","ye":"いぇ","yi":"い","yo":"よ","yu":"ゆ","za":"ざ","ze":"ぜ","zi":"じ","zo":"ぞ","zu":"ず","zya":"じゃ","zye":"じぇ","zyi":"じぃ","zyo":"じょ","zyu":"じゅ", }
                 this.kana_to_roma = {};
                 for (let roma in this.roma_to_hira) {
                     let hira = this.roma_to_hira[roma];
@@ -1411,435 +2036,60 @@
                     this.kana_to_roma[kana] = roma;
                 }
             }
-            hira2kana(str) {
-                return str.replace(/[\u3041-\u3096]/g, match => String.fromCharCode(match.charCodeAt(0) + 0x60));
-            }
+            hira2kana(str) { return str.replace(/[\u3041-\u3096]/g, match => String.fromCharCode(match.charCodeAt(0) + 0x60)); }
             kana2roma(str) {
-                const res = [];
-                let i = 0;
+                const res = []; let i = 0;
                 while (i < str.length) {
                     let c = str[i];
                     if (i + 1 < str.length) {
                         let cc = c + str[i + 1];
-                        if (this.kana_to_roma[cc]) {
-                            res.push(this.kana_to_roma[cc]);
-                            i += 2;
-                            continue;
-                        }
+                        if (this.kana_to_roma[cc]) { res.push(this.kana_to_roma[cc]); i += 2; continue; }
                     }
-                    if (this.kana_to_roma[c]) {
-                        res.push(this.kana_to_roma[c]);
-                    }
+                    if (this.kana_to_roma[c]) res.push(this.kana_to_roma[c]);
                     i++;
                 }
                 return res;
             }
         }
-
         document.addEventListener('DOMContentLoaded', () => {
-            const dom = {
-                loadingOverlay: document.getElementById('loading-overlay'),
-                loadingText: document.getElementById('loading-text'),
-                loadingProgress: document.getElementById('loading-progress'),
-                appContainer: document.getElementById('app-container'),
-                searchInput: document.getElementById('searchInput'),
-                searchButton: document.getElementById('searchButton'),
-                historyList: document.getElementById('historyList'),
-                clearHistoryButton: document.getElementById('clearHistoryButton'),
-                resultsHeader: document.getElementById('results-header'),
-                resultsSummary: document.getElementById('results-summary'),
-                resultsSection: document.getElementById('results-section'),
-                welcomeMessage: document.getElementById('welcome-message'),
-                sortSelect: document.getElementById('sort-select'),
-                limitSelect: document.getElementById('limit-select'),
-                dictionaryFilterList: document.getElementById('dictionary-filter-list'),
-                filterSelectAll: document.getElementById('filter-select-all'),
-                filterDeselectAll: document.getElementById('filter-deselect-all'),
-                wordDetailModal: document.getElementById('word-detail-modal'),
-                modalPanel: document.getElementById('modal-panel'),
-                modalTitle: document.getElementById('modal-title'),
-                modalContent: document.getElementById('modal-content'),
-                modalCloseBtn: document.getElementById('modal-close-btn'),
-                modalCloseBtnFooter: document.getElementById('modal-close-btn-footer'),
-            };
-
+            const dom = { loadingOverlay: document.getElementById('loading-overlay'), loadingText: document.getElementById('loading-text'), loadingProgress: document.getElementById('loading-progress'), appContainer: document.getElementById('app-container'), searchInput: document.getElementById('searchInput'), searchButton: document.getElementById('searchButton'), historyList: document.getElementById('historyList'), clearHistoryButton: document.getElementById('clearHistoryButton'), resultsHeader: document.getElementById('results-header'), resultsSummary: document.getElementById('results-summary'), resultsSection: document.getElementById('results-section'), welcomeMessage: document.getElementById('welcome-message'), sortSelect: document.getElementById('sort-select'), limitSelect: document.getElementById('limit-select'), dictionaryFilterList: document.getElementById('dictionary-filter-list'), filterSelectAll: document.getElementById('filter-select-all'), filterDeselectAll: document.getElementById('filter-deselect-all'), wordDetailModal: document.getElementById('word-detail-modal'), modalPanel: document.getElementById('modal-panel'), modalTitle: document.getElementById('modal-title'), modalContent: document.getElementById('modal-content'), modalCloseBtn: document.getElementById('modal-close-btn'), modalCloseBtnFooter: document.getElementById('modal-close-btn-footer'), };
             const YU = new YomiUtil();
             const pt = new PrefixTree();
             const wordToReadingMap = new Map();
             const wordDetailsMap = new Map();
             let searchHistory = JSON.parse(localStorage.getItem('rhymeSearchHistory')) || [];
             let currentResults = [];
-
-            const csvList = [
-                "../Assets/dict/Adj.csv", "../Assets/dict/Adnominal.csv", "../Assets/dict/Adverb.csv", "../Assets/dict/Auxil.csv",
-                "../Assets/dict/Conjunction.csv", "../Assets/dict/Filler.csv", "../Assets/dict/Interjection.csv",
-                "../Assets/dict/Noun.adjv.csv", "../Assets/dict/Noun.adverbal.csv", "../Assets/dict/Noun.csv",
-                "../Assets/dict/Noun.demonst.csv", "../Assets/dict/Noun.nai.csv", "../Assets/dict/Noun.name.csv",
-                "../Assets/dict/Noun.number.csv", "../Assets/dict/Noun.org.csv", "../Assets/dict/Noun.others.csv",
-                "../Assets/dict/Noun.place.csv", "../Assets/dict/Noun.proper.csv", "../Assets/dict/Noun.verbal.csv",
-                "../Assets/dict/Others.csv", "../Assets/dict/Postp-col.csv", "../Assets/dict/Postp.csv",
-                "../Assets/dict/Prefix.csv", "../Assets/dict/Suffix.csv", "../Assets/dict/Symbol.csv", "../Assets/dict/Verb.csv"
-            ];
-            
-            const dictionaryConfig = {
-                'Noun': { name: '名詞', color: 'blue' }, 'Verb': { name: '動詞', color: 'green' }, 'Adj': { name: '形容詞', color: 'pink' }, 'Adverb': { name: '副詞', color: 'purple' }, 'Adnominal': { name: '連体詞', color: 'fuchsia' }, 'Conjunction': { name: '接続詞', color: 'indigo' }, 'Interjection': { name: '感動詞', color: 'yellow' }, 'Postp': { name: '助詞', color: 'cyan' }, 'Auxil': { name: '助動詞', color: 'violet' }, 'Prefix': { name: '接頭辞', color: 'emerald' }, 'Suffix': { name: '接尾辞', color: 'lime' }, 'Symbol': { name: '記号', color: 'orange' }, 'Filler': { name: 'フィラー', color: 'gray' }, 'Others': { name: 'その他', color: 'slate' }
-            };
-            
-            const sortOptions = [
-                { value: 'count', text: '単語数' },
-                { value: 'vowel_len_asc', text: '文字数 (昇順)' },
-                { value: 'vowel_len_desc', text: '文字数 (降順)' },
-            ];
-            sortOptions.forEach(opt => {
-                const option = document.createElement('option');
-                option.value = opt.value;
-                option.textContent = opt.text;
-                dom.sortSelect.appendChild(option);
-            });
-
-
-            function getTailwindColorClasses(source) {
-                const color = dictionaryConfig[source]?.color || 'gray';
-                const classMap = { 'pink': 'bg-pink-100 text-pink-800 hover:bg-pink-200 hover:border-pink-400', 'fuchsia': 'bg-fuchsia-100 text-fuchsia-800 hover:bg-fuchsia-200 hover:border-fuchsia-400', 'purple': 'bg-purple-100 text-purple-800 hover:bg-purple-200 hover:border-purple-400', 'violet': 'bg-violet-100 text-violet-800 hover:bg-violet-200 hover:border-violet-400', 'indigo': 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200 hover:border-indigo-400', 'gray': 'bg-gray-100 text-gray-800 hover:bg-gray-200 hover:border-gray-400', 'yellow': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 hover:border-yellow-400', 'blue': 'bg-blue-100 text-blue-800 hover:bg-blue-200 hover:border-blue-400', 'slate': 'bg-slate-100 text-slate-800 hover:bg-slate-200 hover:border-slate-400', 'cyan': 'bg-cyan-100 text-cyan-800 hover:bg-cyan-200 hover:border-cyan-400', 'emerald': 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 hover:border-emerald-400', 'lime': 'bg-lime-100 text-lime-800 hover:bg-lime-200 hover:border-lime-400', 'orange': 'bg-orange-100 text-orange-800 hover:bg-orange-200 hover:border-orange-400', 'green': 'bg-green-100 text-green-800 hover:bg-green-200 hover:border-green-400', };
-                return classMap[color] || classMap['gray'];
-            }
-            
-            function getTailwindFilterChipColors(color) {
-                const sets = { 'pink':      { base: 'bg-white', text: 'text-pink-700',    border: 'border-pink-300',    hover: 'hover:bg-pink-50 hover:border-pink-400',    checked_bg: 'bg-pink-500',    checked_text: 'text-white', checked_border: 'border-pink-500' }, 'fuchsia':   { base: 'bg-white', text: 'text-fuchsia-700', border: 'border-fuchsia-300', hover: 'hover:bg-fuchsia-50 hover:border-fuchsia-400', checked_bg: 'bg-fuchsia-500', checked_text: 'text-white', checked_border: 'border-fuchsia-500' }, 'purple':    { base: 'bg-white', text: 'text-purple-700',  border: 'border-purple-300',  hover: 'hover:bg-purple-50 hover:border-purple-400',  checked_bg: 'bg-purple-500',  checked_text: 'text-white', checked_border: 'border-purple-500' }, 'violet':    { base: 'bg-white', text: 'text-violet-700',  border: 'border-violet-300',  hover: 'hover:bg-violet-50 hover:border-violet-400',  checked_bg: 'bg-violet-500',  checked_text: 'text-white', checked_border: 'border-violet-500' }, 'indigo':    { base: 'bg-white', text: 'text-indigo-700',  border: 'border-indigo-300',  hover: 'hover:bg-indigo-50 hover:border-indigo-400',  checked_bg: 'bg-indigo-500',  checked_text: 'text-white', checked_border: 'border-indigo-500' }, 'blue':      { base: 'bg-white', text: 'text-blue-700',    border: 'border-blue-300',    hover: 'hover:bg-blue-50 hover:border-blue-400',    checked_bg: 'bg-blue-500',    checked_text: 'text-white', checked_border: 'border-blue-500' }, 'cyan':      { base: 'bg-white', text: 'text-cyan-700',    border: 'border-cyan-300',    hover: 'hover:bg-cyan-50 hover:border-cyan-400',    checked_bg: 'bg-cyan-500',    checked_text: 'text-white', checked_border: 'border-cyan-500' }, 'green':     { base: 'bg-white', text: 'text-green-700',   border: 'border-green-300',   hover: 'hover:bg-green-50 hover:border-green-400',   checked_bg: 'bg-green-500',   checked_text: 'text-white', checked_border: 'border-green-500' }, 'lime':      { base: 'bg-white', text: 'text-lime-700',    border: 'border-lime-300',    hover: 'hover:bg-lime-50 hover:border-lime-400',    checked_bg: 'bg-lime-500',    checked_text: 'text-white', checked_border: 'border-lime-500' }, 'yellow':    { base: 'bg-white', text: 'text-yellow-700',  border: 'border-yellow-300',  hover: 'hover:bg-yellow-50 hover:border-yellow-400',  checked_bg: 'bg-yellow-500',  checked_text: 'text-white', checked_border: 'border-yellow-500' }, 'orange':    { base: 'bg-white', text: 'text-orange-700',  border: 'border-orange-300',  hover: 'hover:bg-orange-50 hover:border-orange-400',  checked_bg: 'bg-orange-500',  checked_text: 'text-white', checked_border: 'border-orange-500' }, 'slate':     { base: 'bg-white', text: 'text-slate-700',   border: 'border-slate-300',   hover: 'hover:bg-slate-50 hover:border-slate-400',   checked_bg: 'bg-slate-500',   checked_text: 'text-white', checked_border: 'border-slate-500' }, 'gray':      { base: 'bg-white', text: 'text-gray-700',    border: 'border-gray-300',    hover: 'hover:bg-gray-50 hover:border-gray-400',    checked_bg: 'bg-gray-500',    checked_text: 'text-white', checked_border: 'border-gray-500' }, };
-                return sets[color] || sets['gray'];
-            }
-
-            function getTypeFromPath(path) {
-                const fileName = path.split('/').pop();
-                const baseType = fileName.split('.')[0];
-                return dictionaryConfig[baseType] ? baseType : 'Others';
-            }
-
-            function getReversedVowelString(kanaString) {
-                if (!kanaString) return '';
-                const cleanKana = kanaString.replace(/ー/g, '');
-                const romajiArray = YU.kana2roma(cleanKana);
-                if (!romajiArray) return '';
-                return romajiArray.map(e => e[e.length - 1]).reverse().join('');
-            }
-
-            async function initialize() {
-                try {
-                    let loadedCount = 0;
-                    for (const csvPath of csvList) {
-                        const response = await fetch(csvPath);
-                        if (!response.ok) { 
-                            console.warn(`Could not load ${csvPath}, skipping.`);
-                            continue;
-                        }
-                        const data = await response.text();
-                        const rows = data.trim().split('\n');
-                        const source = getTypeFromPath(csvPath);
-
-                        for (const line of rows) {
-                            const row = line.split(',');
-                            if (row && row.length > 11 && row[0] && row[11]) {
-                                const surfaceWord = row[0];
-                                const yomi = row[11];
-                                
-                                if (!wordDetailsMap.has(surfaceWord)) {
-                                    wordDetailsMap.set(surfaceWord, []);
-                                }
-                                const detail = {
-                                    surface: row[0] || '', pos1: row[4] || '*', pos2: row[5] || '*', pos3: row[6] || '*', pos4: row[7] || '*', conjForm: row[8] || '*', conjType: row[9] || '*', baseForm: row[10] || '*', yomi: row[11] || '', pronunciation: row[12] || '', source: source
-                                };
-                                wordDetailsMap.get(surfaceWord).push(detail);
-
-                                if (!wordToReadingMap.has(surfaceWord)) wordToReadingMap.set(surfaceWord, { yomi, source });
-                                const reversedVowels = getReversedVowelString(yomi);
-                                if (reversedVowels) pt.add(reversedVowels, { word: surfaceWord, source });
-                            }
-                        }
-                        loadedCount++;
-                        const progress = (loadedCount / csvList.length) * 100;
-                        dom.loadingProgress.style.width = `${progress}%`;
-                        dom.loadingText.textContent = `辞書を処理中... (${loadedCount}/${csvList.length})`;
-                    }
-                    
-                    setupFilters();
-                    
-                    dom.loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
-                    dom.searchInput.focus();
-                    updateHistoryUI();
-                } catch (error) {
-                    console.error('Initialization failed:', error);
-                    dom.loadingText.innerHTML = `エラー: 辞書ファイルの読み込みに失敗しました。<br>ファイルが指定の場所にあるか確認してください。`;
-                    dom.loadingText.classList.add('text-red-500');
-                    dom.loadingProgress.parentElement.classList.add('hidden');
-                }
-            }
-            
-            function setupFilters() {
-                dom.dictionaryFilterList.innerHTML = '';
-                Object.entries(dictionaryConfig).forEach(([key, {name, color}]) => {
-                    const colors = getTailwindFilterChipColors(color);
-                    const label = document.createElement('label');
-                    label.className = `cursor-pointer`;
-                    label.innerHTML = `
-                        <input type="checkbox" data-filter-type="${key}" class="filter-checkbox sr-only peer" checked>
-                        <span class="peer-checked:${colors.checked_bg} peer-checked:${colors.checked_text} peer-checked:${colors.checked_border} ${colors.base} ${colors.text} ${colors.border} inline-block text-xs font-medium px-2.5 py-1 rounded-full border-2 transition-all duration-200 ${colors.hover}">
-                            ${name}
-                        </span>
-                    `;
-                    dom.dictionaryFilterList.appendChild(label);
-                });
-            }
-            
-            function updateHistoryUI() {
-                dom.historyList.innerHTML = '';
-                if (searchHistory.length === 0) {
-                    dom.historyList.innerHTML = `<li class="text-center text-xs text-slate-400 px-3 py-2">履歴はありません</li>`;
-                    dom.clearHistoryButton.classList.add('hidden');
-                } else {
-                    searchHistory.forEach(term => {
-                        const li = document.createElement('li');
-                        li.className = 'group flex justify-between items-center rounded-md hover:bg-slate-100 cursor-pointer text-slate-700 text-sm';
-                        li.innerHTML = `<span class="history-term flex-grow px-3 py-1.5">${term}</span>
-                                        <button class="history-delete text-slate-400 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity" data-term="${term}"><i class="fas fa-times"></i></button>`;
-                        dom.historyList.appendChild(li);
-                    });
-                    dom.clearHistoryButton.classList.remove('hidden');
-                }
-            }
-
-            function addToHistory(term) {
-                if (!term) return;
-                searchHistory = searchHistory.filter(t => t.toLowerCase() !== term.toLowerCase());
-                searchHistory.unshift(term);
-                if (searchHistory.length > 20) searchHistory.pop();
-                localStorage.setItem('rhymeSearchHistory', JSON.stringify(searchHistory));
-                updateHistoryUI();
-            }
-            
-            function runFilterAndSort() {
-                const query = dom.searchInput.value.trim();
-                if (!query || currentResults.length === 0) return;
-                const isVowelQuery = /^[aiueon?]+$/i.test(query);
-                displayResults(query, isVowelQuery);
-            }
-
-            function displayResults(query, isVowelSearch = false) {
-                const activeFilters = new Set(Array.from(document.querySelectorAll('.filter-checkbox:checked')).map(cb => cb.dataset.filterType));
-                
-                let filteredResults = currentResults.map(group => ({
-                    ...group,
-                    set: new Set(Array.from(group.set).filter(wordObj => activeFilters.has(wordObj.source)))
-                })).filter(group => group.set.size > 0);
-                
-                const sortType = dom.sortSelect.value;
-                if (sortType === 'vowel_len_desc') {
-                    filteredResults.sort((a, b) => b.vowel.length - a.vowel.length || b.set.size - a.set.size);
-                } else if (sortType === 'vowel_len_asc') {
-                    filteredResults.sort((a, b) => a.vowel.length - b.vowel.length || b.set.size - a.set.size);
-                } else if (sortType === 'count') {
-                    filteredResults.sort((a, b) => b.set.size - a.set.size || b.vowel.length - a.vowel.length);
-                }
-                
-                const limit = parseInt(dom.limitSelect.value, 10) || 50;
-                const limitedResults = filteredResults.slice(0, limit);
-                
-                dom.resultsSection.innerHTML = '';
-                dom.welcomeMessage.classList.add('hidden');
-
-                let summaryText;
-                if (isVowelSearch) {
-                    summaryText = `母音: <span class="font-bold text-sky-500 font-mono">${query}</span>`;
-                } else {
-                    const readingInfo = wordToReadingMap.get(query);
-                    const readingVowels = readingInfo ? getReversedVowelString(readingInfo.yomi).split('').reverse().join('') : '不明';
-                    summaryText = `「<span class="font-bold text-sky-500">${query}</span>」 (母音: <span class="font-mono">${readingVowels}</span>)`;
-                }
-
-                if (limitedResults.length === 0) {
-                    dom.resultsHeader.classList.remove('hidden');
-                    dom.resultsSummary.innerHTML = `${summaryText} に一致する単語は見つかりませんでした。`;
-                    dom.resultsSection.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-center bg-white rounded-lg border-2 border-dashed border-slate-300 p-4">
-                        <i class="fas fa-search-minus text-4xl text-slate-300 mb-4"></i>
-                        <h3 class="text-lg font-bold text-slate-700">結果なし</h3>
-                        <p class="mt-1 text-sm max-w-md text-slate-500">別の単語で試すか、フィルター設定を確認してください。</p>
-                    </div>`;
-                    return;
-                }
-
-                dom.resultsHeader.classList.remove('hidden');
-                const totalWords = filteredResults.reduce((acc, r) => acc + r.set.size, 0);
-                dom.resultsSummary.innerHTML = `${summaryText} の検索結果: <span class="font-bold">${totalWords}</span>語（上位${limitedResults.length}件を表示）`;
-
-                limitedResults.forEach((result, index) => {
-                    const card = document.createElement('div');
-                    card.className = 'stagger-card bg-white border border-slate-200 rounded-xl p-4 mb-3';
-                    card.style.animationDelay = `${index * 50}ms`;
-                    
-                    const vowelSequence = result.vowel.split('').map(v => `<span class="font-mono">${v}</span>`).join('<span class="text-gray-300 mx-px">·</span>');
-                    
-                    const words = Array.from(result.set).sort((a, b) => a.word.localeCompare(b.word, 'ja'));
-                    const wordChips = words.map(wordObj => {
-                        const colorClasses = getTailwindColorClasses(wordObj.source);
-                        return `<button data-word="${wordObj.word}" class="word-chip ${colorClasses} font-medium py-1 px-2.5 rounded-full border border-transparent text-xs hover:shadow-md transition-all cursor-pointer" title="${dictionaryConfig[wordObj.source]?.name || ''}">${wordObj.word}</button>`
-                    }).join('');
-
-                    card.innerHTML = `
-                        <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-200">
-                            <h4 class="text-base font-bold text-sky-600 flex items-center gap-2">
-                                <i class="fas fa-signature text-sky-400 text-sm"></i>
-                                <span class="text-slate-800">${vowelSequence}</span>
-                            </h4>
-                            <span class="text-xs font-medium bg-sky-100 text-sky-700 py-0.5 px-2 rounded-full">${words.length}語</span>
-                        </div>
-                        <div class="flex flex-wrap gap-1.5">${wordChips}</div>`;
-                    dom.resultsSection.appendChild(card);
-                });
-            }
-
-            function performSearch() {
-                const query = dom.searchInput.value.trim();
-                if (!query) return;
-
-                const originalSearchButtonIcon = dom.searchButton.innerHTML;
-                dom.searchButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
-                dom.searchButton.disabled = true;
-
-                setTimeout(() => {
-                    const isVowelQuery = /^[aiueon?]+$/i.test(query);
-                    const lowerQuery = query.toLowerCase();
-
-                    if (isVowelQuery) {
-                        const reversedPattern = lowerQuery.split('').reverse().join('');
-                        if (lowerQuery.includes('?')) {
-                            currentResults = pt.searchWithWildcard(reversedPattern);
-                        } else {
-                            currentResults = pt.searchAll(reversedPattern);
-                        }
-                    } else {
-                        let readingInfo = wordToReadingMap.get(query);
-                        let reading = readingInfo ? readingInfo.yomi : YU.hira2kana(query);
-                        const reversedVowelsForSearch = getReversedVowelString(reading);
-                        currentResults = reversedVowelsForSearch ? pt.searchAll(reversedVowelsForSearch) : [];
-                    }
-
-                    displayResults(query, isVowelQuery);
-                    addToHistory(query);
-                    dom.searchButton.innerHTML = originalSearchButtonIcon;
-                    dom.searchButton.disabled = false;
-                }, 100); 
-            }
-
-            function openWordDetailModal(word) {
-                const details = wordDetailsMap.get(word);
-                if (!details || details.length === 0) { return; }
-
-                dom.modalTitle.textContent = word;
-                dom.modalContent.innerHTML = '';
-
-                details.forEach((detail, index) => {
-                    const pos = [detail.pos1, detail.pos2, detail.pos3, detail.pos4].filter(p => p && p !== '*' && p !== '').join(' - ');
-                    const { name, color } = dictionaryConfig[detail.source] || { name: '不明', color: 'gray' };
-                    const colors = getTailwindFilterChipColors(color);
-                    
-                    const detailCard = document.createElement('div');
-                    detailCard.className = 'bg-white border border-gray-200 rounded-lg p-4';
-                    
-                    detailCard.innerHTML = `
-                        <div class="flex justify-between items-start mb-3">
-                            <h4 class="font-bold text-gray-700">エントリー ${index + 1}</h4>
-                            <span class="${colors.checked_bg} ${colors.checked_text} text-xs font-bold px-3 py-1 rounded-full">${name}</span>
-                        </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                            <div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">読み</span><span class="text-gray-800 font-mono">${detail.yomi || 'N/A'}</span></div>
-                            <div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">発音</span><span class="text-gray-800 font-mono">${detail.pronunciation || 'N/A'}</span></div>
-                            <div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">原形</span><span class="text-gray-800">${detail.baseForm === '*' ? detail.surface : detail.baseForm}</span></div>
-                            <div class="flex flex-col col-span-1 sm:col-span-2"><span class="text-xs text-gray-500 font-semibold">品詞</span><span class="text-gray-800">${pos || 'N/A'}</span></div>
-                            <div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">活用形</span><span class="text-gray-800">${detail.conjForm === '*' ? 'N/A' : detail.conjForm}</span></div>
-                            <div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">活用型</span><span class="text-gray-800">${detail.conjType === '*' ? 'N/A' : detail.conjType}</span></div>
-                        </div>
-                    `;
-                    dom.modalContent.appendChild(detailCard);
-                });
-
-                document.body.classList.add('overflow-hidden');
-                dom.wordDetailModal.classList.remove('opacity-0', 'pointer-events-none');
-                requestAnimationFrame(() => {
-                    dom.modalPanel.classList.remove('opacity-0', 'scale-95');
-                });
-            }
-
-            function closeWordDetailModal() {
-                dom.modalPanel.classList.add('opacity-0', 'scale-95');
-                dom.wordDetailModal.classList.add('opacity-0');
-                
-                setTimeout(() => {
-                    dom.wordDetailModal.classList.add('pointer-events-none');
-                    document.body.classList.remove('overflow-hidden');
-                }, 300);
-            }
-            
+            const csvList = ["../Assets/dict/Adj.csv", "../Assets/dict/Adnominal.csv", "../Assets/dict/Adverb.csv", "../Assets/dict/Auxil.csv", "../Assets/dict/Conjunction.csv", "../Assets/dict/Filler.csv", "../Assets/dict/Interjection.csv", "../Assets/dict/Noun.adjv.csv", "../Assets/dict/Noun.adverbal.csv", "../Assets/dict/Noun.csv", "../Assets/dict/Noun.demonst.csv", "../Assets/dict/Noun.nai.csv", "../Assets/dict/Noun.name.csv", "../Assets/dict/Noun.number.csv", "../Assets/dict/Noun.org.csv", "../Assets/dict/Noun.others.csv", "../Assets/dict/Noun.place.csv", "../Assets/dict/Noun.proper.csv", "../Assets/dict/Noun.verbal.csv", "../Assets/dict/Others.csv", "../Assets/dict/Postp-col.csv", "../Assets/dict/Postp.csv", "../Assets/dict/Prefix.csv", "../Assets/dict/Suffix.csv", "../Assets/dict/Symbol.csv", "../Assets/dict/Verb.csv"];
+            const dictionaryConfig = { 'Noun': { name: '名詞', color: 'blue' }, 'Verb': { name: '動詞', color: 'green' }, 'Adj': { name: '形容詞', color: 'pink' }, 'Adverb': { name: '副詞', color: 'purple' }, 'Adnominal': { name: '連体詞', color: 'fuchsia' }, 'Conjunction': { name: '接続詞', color: 'indigo' }, 'Interjection': { name: '感動詞', color: 'yellow' }, 'Postp': { name: '助詞', color: 'cyan' }, 'Auxil': { name: '助動詞', color: 'violet' }, 'Prefix': { name: '接頭辞', color: 'emerald' }, 'Suffix': { name: '接尾辞', color: 'lime' }, 'Symbol': { name: '記号', color: 'orange' }, 'Filler': { name: 'フィラー', color: 'gray' }, 'Others': { name: 'その他', color: 'slate' } };
+            const sortOptions = [ { value: 'count', text: '単語数' }, { value: 'vowel_len_asc', text: '文字数 (昇順)' }, { value: 'vowel_len_desc', text: '文字数 (降順)' }, ];
+            sortOptions.forEach(opt => { const option = document.createElement('option'); option.value = opt.value; option.textContent = opt.text; dom.sortSelect.appendChild(option); });
+            function getTailwindColorClasses(source) { const color = dictionaryConfig[source]?.color || 'gray'; const classMap = { 'pink': 'bg-pink-100 text-pink-800 hover:bg-pink-200 hover:border-pink-400', 'fuchsia': 'bg-fuchsia-100 text-fuchsia-800 hover:bg-fuchsia-200 hover:border-fuchsia-400', 'purple': 'bg-purple-100 text-purple-800 hover:bg-purple-200 hover:border-purple-400', 'violet': 'bg-violet-100 text-violet-800 hover:bg-violet-200 hover:border-violet-400', 'indigo': 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200 hover:border-indigo-400', 'gray': 'bg-gray-100 text-gray-800 hover:bg-gray-200 hover:border-gray-400', 'yellow': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 hover:border-yellow-400', 'blue': 'bg-blue-100 text-blue-800 hover:bg-blue-200 hover:border-blue-400', 'slate': 'bg-slate-100 text-slate-800 hover:bg-slate-200 hover:border-slate-400', 'cyan': 'bg-cyan-100 text-cyan-800 hover:bg-cyan-200 hover:border-cyan-400', 'emerald': 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 hover:border-emerald-400', 'lime': 'bg-lime-100 text-lime-800 hover:bg-lime-200 hover:border-lime-400', 'orange': 'bg-orange-100 text-orange-800 hover:bg-orange-200 hover:border-orange-400', 'green': 'bg-green-100 text-green-800 hover:bg-green-200 hover:border-green-400', }; return classMap[color] || classMap['gray']; }
+            function getTailwindFilterChipColors(color) { const sets = { 'pink':{base:'bg-white',text:'text-pink-700',border:'border-pink-300',hover:'hover:bg-pink-50 hover:border-pink-400',checked_bg:'bg-pink-500',checked_text:'text-white',checked_border:'border-pink-500'},'fuchsia':{base:'bg-white',text:'text-fuchsia-700',border:'border-fuchsia-300',hover:'hover:bg-fuchsia-50 hover:border-fuchsia-400',checked_bg:'bg-fuchsia-500',checked_text:'text-white',checked_border:'border-fuchsia-500'},'purple':{base:'bg-white',text:'text-purple-700',border:'border-purple-300',hover:'hover:bg-purple-50 hover:border-purple-400',checked_bg:'bg-purple-500',checked_text:'text-white',checked_border:'border-purple-500'},'violet':{base:'bg-white',text:'text-violet-700',border:'border-violet-300',hover:'hover:bg-violet-50 hover:border-violet-400',checked_bg:'bg-violet-500',checked_text:'text-white',checked_border:'border-violet-500'},'indigo':{base:'bg-white',text:'text-indigo-700',border:'border-indigo-300',hover:'hover:bg-indigo-50 hover:border-indigo-400',checked_bg:'bg-indigo-500',checked_text:'text-white',checked_border:'border-indigo-500'},'blue':{base:'bg-white',text:'text-blue-700',border:'border-blue-300',hover:'hover:bg-blue-50 hover:border-blue-400',checked_bg:'bg-blue-500',checked_text:'text-white',checked_border:'border-blue-500'},'cyan':{base:'bg-white',text:'text-cyan-700',border:'border-cyan-300',hover:'hover:bg-cyan-50 hover:border-cyan-400',checked_bg:'bg-cyan-500',checked_text:'text-white',checked_border:'border-cyan-500'},'green':{base:'bg-white',text:'text-green-700',border:'border-green-300',hover:'hover:bg-green-50 hover:border-green-400',checked_bg:'bg-green-500',checked_text:'text-white',checked_border:'border-green-500'},'lime':{base:'bg-white',text:'text-lime-700',border:'border-lime-300',hover:'hover:bg-lime-50 hover:border-lime-400',checked_bg:'bg-lime-500',checked_text:'text-white',checked_border:'border-lime-500'},'yellow':{base:'bg-white',text:'text-yellow-700',border:'border-yellow-300',hover:'hover:bg-yellow-50 hover:border-yellow-400',checked_bg:'bg-yellow-500',checked_text:'text-white',checked_border:'border-yellow-500'},'orange':{base:'bg-white',text:'text-orange-700',border:'border-orange-300',hover:'hover:bg-orange-50 hover:border-orange-400',checked_bg:'bg-orange-500',checked_text:'text-white',checked_border:'border-orange-500'},'slate':{base:'bg-white',text:'text-slate-700',border:'border-slate-300',hover:'hover:bg-slate-50 hover:border-slate-400',checked_bg:'bg-slate-500',checked_text:'text-white',checked_border:'border-slate-500'},'gray':{base:'bg-white',text:'text-gray-700',border:'border-gray-300',hover:'hover:bg-gray-50 hover:border-gray-400',checked_bg:'bg-gray-500',checked_text:'text-white',checked_border:'border-gray-500'}, }; return sets[color] || sets['gray']; }
+            function getTypeFromPath(path) { const fileName = path.split('/').pop(); const baseType = fileName.split('.')[0]; return dictionaryConfig[baseType] ? baseType : 'Others'; }
+            function getReversedVowelString(kanaString) { if (!kanaString) return ''; const cleanKana = kanaString.replace(/ー/g, ''); const romajiArray = YU.kana2roma(cleanKana); if (!romajiArray) return ''; return romajiArray.map(e => e[e.length - 1]).reverse().join(''); }
+            async function initialize() { try { let loadedCount = 0; for (const csvPath of csvList) { const response = await fetch(csvPath); if (!response.ok) { console.warn(`Could not load ${csvPath}, skipping.`); continue; } const data = await response.text(); const rows = data.trim().split('\n'); const source = getTypeFromPath(csvPath); for (const line of rows) { const row = line.split(','); if (row && row.length > 11 && row[0] && row[11]) { const surfaceWord = row[0]; const yomi = row[11]; if (!wordDetailsMap.has(surfaceWord)) wordDetailsMap.set(surfaceWord, []); const detail = { surface: row[0] || '', pos1: row[4] || '*', pos2: row[5] || '*', pos3: row[6] || '*', pos4: row[7] || '*', conjForm: row[8] || '*', conjType: row[9] || '*', baseForm: row[10] || '*', yomi: row[11] || '', pronunciation: row[12] || '', source: source }; wordDetailsMap.get(surfaceWord).push(detail); if (!wordToReadingMap.has(surfaceWord)) wordToReadingMap.set(surfaceWord, { yomi, source }); const reversedVowels = getReversedVowelString(yomi); if (reversedVowels) pt.add(reversedVowels, { word: surfaceWord, source }); } } loadedCount++; const progress = (loadedCount / csvList.length) * 100; dom.loadingProgress.style.width = `${progress}%`; dom.loadingText.textContent = `辞書を処理中... (${loadedCount}/${csvList.length})`; } setupFilters(); dom.loadingOverlay.classList.add('opacity-0', 'pointer-events-none'); dom.searchInput.focus(); updateHistoryUI(); } catch (error) { console.error('Initialization failed:', error); dom.loadingText.innerHTML = `エラー: 辞書ファイルの読み込みに失敗しました。<br>ファイルが指定の場所にあるか確認してください。`; dom.loadingText.classList.add('text-red-500'); dom.loadingProgress.parentElement.classList.add('hidden'); } }
+            function setupFilters() { dom.dictionaryFilterList.innerHTML = ''; Object.entries(dictionaryConfig).forEach(([key, {name, color}]) => { const colors = getTailwindFilterChipColors(color); const label = document.createElement('label'); label.className = `cursor-pointer`; label.innerHTML = `<input type="checkbox" data-filter-type="${key}" class="filter-checkbox sr-only peer" checked><span class="peer-checked:${colors.checked_bg} peer-checked:${colors.checked_text} peer-checked:${colors.checked_border} ${colors.base} ${colors.text} ${colors.border} inline-block text-xs font-medium px-2.5 py-1 rounded-full border-2 transition-all duration-200 ${colors.hover}">${name}</span>`; dom.dictionaryFilterList.appendChild(label); }); }
+            function updateHistoryUI() { dom.historyList.innerHTML = ''; if (searchHistory.length === 0) { dom.historyList.innerHTML = `<li class="text-center text-xs text-slate-400 px-3 py-2">履歴はありません</li>`; dom.clearHistoryButton.classList.add('hidden'); } else { searchHistory.forEach(term => { const li = document.createElement('li'); li.className = 'group flex justify-between items-center rounded-md hover:bg-slate-100 cursor-pointer text-slate-700 text-sm'; li.innerHTML = `<span class="history-term flex-grow px-3 py-1.5">${term}</span><button class="history-delete text-slate-400 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity" data-term="${term}"><i class="fas fa-times"></i></button>`; dom.historyList.appendChild(li); }); dom.clearHistoryButton.classList.remove('hidden'); } }
+            function addToHistory(term) { if (!term) return; searchHistory = searchHistory.filter(t => t.toLowerCase() !== term.toLowerCase()); searchHistory.unshift(term); if (searchHistory.length > 20) searchHistory.pop(); localStorage.setItem('rhymeSearchHistory', JSON.stringify(searchHistory)); updateHistoryUI(); }
+            function runFilterAndSort() { const query = dom.searchInput.value.trim(); if (!query || currentResults.length === 0) return; const isVowelQuery = /^[aiueon?]+$/i.test(query); displayResults(query, isVowelQuery); }
+            function displayResults(query, isVowelSearch = false) { const activeFilters = new Set(Array.from(document.querySelectorAll('.filter-checkbox:checked')).map(cb => cb.dataset.filterType)); let filteredResults = currentResults.map(group => ({ ...group, set: new Set(Array.from(group.set).filter(wordObj => activeFilters.has(wordObj.source))) })).filter(group => group.set.size > 0); const sortType = dom.sortSelect.value; if (sortType === 'vowel_len_desc') { filteredResults.sort((a, b) => b.vowel.length - a.vowel.length || b.set.size - a.set.size); } else if (sortType === 'vowel_len_asc') { filteredResults.sort((a, b) => a.vowel.length - b.vowel.length || b.set.size - a.set.size); } else if (sortType === 'count') { filteredResults.sort((a, b) => b.set.size - a.set.size || b.vowel.length - a.vowel.length); } const limit = parseInt(dom.limitSelect.value, 10) || 50; const limitedResults = filteredResults.slice(0, limit); dom.resultsSection.innerHTML = ''; dom.welcomeMessage.classList.add('hidden'); let summaryText; if (isVowelSearch) { summaryText = `母音: <span class="font-bold text-sky-500 font-mono">${query}</span>`; } else { const readingInfo = wordToReadingMap.get(query); const readingVowels = readingInfo ? getReversedVowelString(readingInfo.yomi).split('').reverse().join('') : '不明'; summaryText = `「<span class="font-bold text-sky-500">${query}</span>」 (母音: <span class="font-mono">${readingVowels}</span>)`; } if (limitedResults.length === 0) { dom.resultsHeader.classList.remove('hidden'); dom.resultsSummary.innerHTML = `${summaryText} に一致する単語は見つかりませんでした。`; dom.resultsSection.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-center bg-white rounded-lg border-2 border-dashed border-slate-300 p-4"><i class="fas fa-search-minus text-4xl text-slate-300 mb-4"></i><h3 class="text-lg font-bold text-slate-700">結果なし</h3><p class="mt-1 text-sm max-w-md text-slate-500">別の単語で試すか、フィルター設定を確認してください。</p></div>`; return; } dom.resultsHeader.classList.remove('hidden'); const totalWords = filteredResults.reduce((acc, r) => acc + r.set.size, 0); dom.resultsSummary.innerHTML = `${summaryText} の検索結果: <span class="font-bold">${totalWords}</span>語（上位${limitedResults.length}件を表示）`; limitedResults.forEach((result, index) => { const card = document.createElement('div'); card.className = 'stagger-card bg-white border border-slate-200 rounded-xl p-4 mb-3'; card.style.animationDelay = `${index * 50}ms`; const vowelSequence = result.vowel.split('').map(v => `<span class="font-mono">${v}</span>`).join('<span class="text-gray-300 mx-px">·</span>'); const words = Array.from(result.set).sort((a, b) => a.word.localeCompare(b.word, 'ja')); const wordChips = words.map(wordObj => { const colorClasses = getTailwindColorClasses(wordObj.source); return `<button data-word="${wordObj.word}" class="word-chip ${colorClasses} font-medium py-1 px-2.5 rounded-full border border-transparent text-xs hover:shadow-md transition-all cursor-pointer" title="${dictionaryConfig[wordObj.source]?.name || ''}">${wordObj.word}</button>` }).join(''); card.innerHTML = `<div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-200"><h4 class="text-base font-bold text-sky-600 flex items-center gap-2"><i class="fas fa-signature text-sky-400 text-sm"></i><span class="text-slate-800">${vowelSequence}</span></h4><span class="text-xs font-medium bg-sky-100 text-sky-700 py-0.5 px-2 rounded-full">${words.length}語</span></div><div class="flex flex-wrap gap-1.5">${wordChips}</div>`; dom.resultsSection.appendChild(card); }); }
+            function performSearch() { const query = dom.searchInput.value.trim(); if (!query) return; const originalSearchButtonIcon = dom.searchButton.innerHTML; dom.searchButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`; dom.searchButton.disabled = true; setTimeout(() => { const isVowelQuery = /^[aiueon?]+$/i.test(query); const lowerQuery = query.toLowerCase(); if (isVowelQuery) { const reversedPattern = lowerQuery.split('').reverse().join(''); if (lowerQuery.includes('?')) { currentResults = pt.searchWithWildcard(reversedPattern); } else { currentResults = pt.searchAll(reversedPattern); } } else { let readingInfo = wordToReadingMap.get(query); let reading = readingInfo ? readingInfo.yomi : YU.hira2kana(query); const reversedVowelsForSearch = getReversedVowelString(reading); currentResults = reversedVowelsForSearch ? pt.searchAll(reversedVowelsForSearch) : []; } displayResults(query, isVowelQuery); addToHistory(query); dom.searchButton.innerHTML = originalSearchButtonIcon; dom.searchButton.disabled = false; }, 100); }
+            function openWordDetailModal(word) { const details = wordDetailsMap.get(word); if (!details || details.length === 0) { return; } dom.modalTitle.textContent = word; dom.modalContent.innerHTML = ''; details.forEach((detail, index) => { const pos = [detail.pos1, detail.pos2, detail.pos3, detail.pos4].filter(p => p && p !== '*' && p !== '').join(' - '); const { name, color } = dictionaryConfig[detail.source] || { name: '不明', color: 'gray' }; const colors = getTailwindFilterChipColors(color); const detailCard = document.createElement('div'); detailCard.className = 'bg-white border border-gray-200 rounded-lg p-4'; detailCard.innerHTML = `<div class="flex justify-between items-start mb-3"><h4 class="font-bold text-gray-700">エントリー ${index + 1}</h4><span class="${colors.checked_bg} ${colors.checked_text} text-xs font-bold px-3 py-1 rounded-full">${name}</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm"><div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">読み</span><span class="text-gray-800 font-mono">${detail.yomi || 'N/A'}</span></div><div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">発音</span><span class="text-gray-800 font-mono">${detail.pronunciation || 'N/A'}</span></div><div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">原形</span><span class="text-gray-800">${detail.baseForm === '*' ? detail.surface : detail.baseForm}</span></div><div class="flex flex-col col-span-1 sm:col-span-2"><span class="text-xs text-gray-500 font-semibold">品詞</span><span class="text-gray-800">${pos || 'N/A'}</span></div><div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">活用形</span><span class="text-gray-800">${detail.conjForm === '*' ? 'N/A' : detail.conjForm}</span></div><div class="flex flex-col"><span class="text-xs text-gray-500 font-semibold">活用型</span><span class="text-gray-800">${detail.conjType === '*' ? 'N/A' : detail.conjType}</span></div></div>`; dom.modalContent.appendChild(detailCard); }); document.body.style.overflow = 'hidden'; dom.wordDetailModal.classList.remove('opacity-0', 'pointer-events-none'); requestAnimationFrame(() => { dom.modalPanel.classList.remove('opacity-0', 'scale-95'); }); }
+            function closeWordDetailModal() { dom.modalPanel.classList.add('opacity-0', 'scale-95'); dom.wordDetailModal.classList.add('opacity-0'); setTimeout(() => { dom.wordDetailModal.classList.add('pointer-events-none'); document.body.style.overflow = ''; }, 300); }
             dom.searchButton.addEventListener('click', performSearch);
             dom.searchInput.addEventListener('keydown', (e) => e.key === 'Enter' && performSearch());
-            
             dom.sortSelect.addEventListener('change', runFilterAndSort);
             dom.limitSelect.addEventListener('change', runFilterAndSort);
             dom.dictionaryFilterList.addEventListener('change', runFilterAndSort);
-            
-            dom.filterSelectAll.addEventListener('click', () => {
-                document.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = true);
-                runFilterAndSort();
-            });
-            dom.filterDeselectAll.addEventListener('click', () => {
-                document.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = false);
-                runFilterAndSort();
-            });
-            
-            dom.clearHistoryButton.addEventListener('click', () => {
-                if (confirm('検索履歴をすべて消去しますか？')) {
-                    searchHistory = [];
-                    localStorage.removeItem('rhymeSearchHistory');
-                    updateHistoryUI();
-                }
-            });
-
-            dom.historyList.addEventListener('click', (e) => {
-                const termSpan = e.target.closest('.history-term');
-                const deleteBtn = e.target.closest('.history-delete');
-                
-                if (deleteBtn) {
-                    const termToDelete = deleteBtn.dataset.term;
-                    searchHistory = searchHistory.filter(t => t !== termToDelete);
-                    localStorage.setItem('rhymeSearchHistory', JSON.stringify(searchHistory));
-                    updateHistoryUI();
-                    return;
-                }
-                
-                if (termSpan) {
-                    dom.searchInput.value = termSpan.textContent;
-                    performSearch();
-                }
-            });
-
-            dom.resultsSection.addEventListener('click', e => {
-                const wordChip = e.target.closest('.word-chip');
-                if (wordChip) {
-                    openWordDetailModal(wordChip.dataset.word);
-                }
-            });
-
+            dom.filterSelectAll.addEventListener('click', () => { document.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = true); runFilterAndSort(); });
+            dom.filterDeselectAll.addEventListener('click', () => { document.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = false); runFilterAndSort(); });
+            dom.clearHistoryButton.addEventListener('click', () => { if (confirm('検索履歴をすべて消去しますか？')) { searchHistory = []; localStorage.removeItem('rhymeSearchHistory'); updateHistoryUI(); } });
+            dom.historyList.addEventListener('click', (e) => { const termSpan = e.target.closest('.history-term'); const deleteBtn = e.target.closest('.history-delete'); if (deleteBtn) { const termToDelete = deleteBtn.dataset.term; searchHistory = searchHistory.filter(t => t !== termToDelete); localStorage.setItem('rhymeSearchHistory', JSON.stringify(searchHistory)); updateHistoryUI(); return; } if (termSpan) { dom.searchInput.value = termSpan.textContent; performSearch(); } });
+            dom.resultsSection.addEventListener('click', e => { const wordChip = e.target.closest('.word-chip'); if (wordChip) openWordDetailModal(wordChip.dataset.word); });
             dom.modalCloseBtn.addEventListener('click', closeWordDetailModal);
             dom.modalCloseBtnFooter.addEventListener('click', closeWordDetailModal);
-            dom.wordDetailModal.addEventListener('click', (e) => {
-                if (e.target === dom.wordDetailModal) {
-                    closeWordDetailModal();
-                }
-            });
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && !dom.wordDetailModal.classList.contains('pointer-events-none')) {
-                    closeWordDetailModal();
-                }
-            });
-
+            dom.wordDetailModal.addEventListener('click', (e) => { if (e.target === dom.wordDetailModal) closeWordDetailModal(); });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !dom.wordDetailModal.classList.contains('pointer-events-none')) closeWordDetailModal(); });
             initialize();
         });
     </script>
