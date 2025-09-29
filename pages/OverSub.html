@@ -230,6 +230,8 @@
             </footer>
         </main>
         
+        <div id="right-resizer" class="resizer w-1.5"></div>
+        
         <aside id="right-panel" class="w-96 flex-shrink-0 bg-white/90 backdrop-blur-md border-l border-slate-200 flex flex-col shadow-lg z-10">
             <div class="p-4 border-b border-slate-200 flex-shrink-0">
                 <div class="flex items-center space-x-3">
@@ -1127,21 +1129,22 @@
         }
         
         function setupResizer() {
+            // Left panel resizer
             const leftResizer = document.getElementById('left-resizer');
             const leftPanel = document.getElementById('left-panel');
-            const MIN_WIDTH = 280;
-            const MAX_WIDTH = 600;
+            const LEFT_MIN_WIDTH = 280;
+            const LEFT_MAX_WIDTH = 600;
 
             const resizeLeft = (e) => {
                 const newWidth = e.clientX;
-                if (newWidth > MIN_WIDTH && newWidth < MAX_WIDTH) {
+                if (newWidth > LEFT_MIN_WIDTH && newWidth < LEFT_MAX_WIDTH) {
                     leftPanel.style.width = newWidth + 'px';
                 }
             };
 
-            const stopResize = () => {
+            const stopLeftResize = () => {
                 window.removeEventListener('mousemove', resizeLeft);
-                window.removeEventListener('mouseup', stopResize);
+                window.removeEventListener('mouseup', stopLeftResize);
                 document.body.style.cursor = 'default';
                 document.body.style.userSelect = 'auto';
                 leftResizer.classList.remove('is-resizing');
@@ -1154,7 +1157,39 @@
                 document.body.style.userSelect = 'none';
                 leftResizer.classList.add('is-resizing');
                 window.addEventListener('mousemove', resizeLeft);
-                window.addEventListener('mouseup', stopResize);
+                window.addEventListener('mouseup', stopLeftResize);
+            });
+
+            // Right panel resizer
+            const rightResizer = document.getElementById('right-resizer');
+            const rightPanel = document.getElementById('right-panel');
+            const RIGHT_MIN_WIDTH = 300;
+            const RIGHT_MAX_WIDTH = 800;
+
+            const resizeRight = (e) => {
+                const containerRect = document.body.getBoundingClientRect();
+                const newWidth = containerRect.right - e.clientX;
+                if (newWidth > RIGHT_MIN_WIDTH && newWidth < RIGHT_MAX_WIDTH) {
+                    rightPanel.style.width = newWidth + 'px';
+                }
+            };
+
+            const stopRightResize = () => {
+                window.removeEventListener('mousemove', resizeRight);
+                window.removeEventListener('mouseup', stopRightResize);
+                document.body.style.cursor = 'default';
+                document.body.style.userSelect = 'auto';
+                rightResizer.classList.remove('is-resizing');
+                setupCanvas();
+            };
+
+            rightResizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                rightResizer.classList.add('is-resizing');
+                window.addEventListener('mousemove', resizeRight);
+                window.addEventListener('mouseup', stopRightResize);
             });
         }
         
