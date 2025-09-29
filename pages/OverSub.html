@@ -204,6 +204,22 @@
             padding: 1px 2px;
             border-radius: 2px;
         }
+
+        #canvas-container {
+            cursor: default;
+        }
+
+        #canvas-container.is-selecting {
+            cursor: crosshair;
+        }
+
+        #canvas-container:hover {
+            cursor: grab;
+        }
+
+        #canvas-container:active {
+            cursor: grabbing;
+        }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 overflow-hidden h-screen w-screen flex">
@@ -556,6 +572,7 @@
         let cameraZoom = 1;
         let isPanning = false;
         let panStart = { x: 0, y: 0 };
+        let originalPanStart = { x: 0, y: 0 };
         let gridData = {};
         let selectedCell = { x: 0, y: 0 };
         let selectedCells = new Set();
@@ -811,20 +828,22 @@
 
         function onPointerDown(e) {
             const mousePos = getEventLocation(e);
-            panStart = mousePos; 
+            panStart = mousePos;
+            originalPanStart = { x: mousePos.x, y: mousePos.y }; 
 
             const worldPos = screenToWorld(mousePos.x, mousePos.y);
             const clickedCell = worldToCell(worldPos.x, worldPos.y);
-
             if (e.shiftKey) {
                 e.preventDefault();
                 isRectSelecting = true;
                 isPanning = false;
                 rectSelectionStart = clickedCell;
                 container.classList.add('is-selecting');
+                container.style.cursor = 'crosshair';
             } else if (e.ctrlKey) {
                 e.preventDefault();
                 isPanning = false;
+                container.style.cursor = 'pointer';
             } else {
                 isPanning = true;
                 container.style.cursor = 'grabbing';
@@ -835,7 +854,7 @@
             const endPos = getEventLocation(e);
             const worldPos = screenToWorld(endPos.x, endPos.y);
             const endCell = worldToCell(worldPos.x, worldPos.y);
-            const dist = Math.hypot(endPos.x - panStart.x, endPos.y - panStart.y);
+            const dist = Math.hypot(endPos.x - originalPanStart.x, endPos.y - originalPanStart.y);
 
             if (isRectSelecting) { 
                 if (dist < 5) { 
@@ -875,6 +894,7 @@
                 }
                 selectedCell = endCell;
             } else if (isPanning) { 
+                console.log(dist)
                 if (dist < 5 && e.button !== 1) {
                     selectedCell = endCell;
                     selectedCells.clear();
@@ -885,7 +905,7 @@
             isRectSelecting = false;
             rectSelectionStart = null;
             container.classList.remove('is-selecting');
-            container.style.cursor = 'grab';
+            container.style.cursor = 'default';
             draw();
             updateEditorDisplays();
         }
