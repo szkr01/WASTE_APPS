@@ -263,7 +263,21 @@
             <footer class="flex-shrink-0 bg-white/80 backdrop-blur-md border-t border-slate-200 p-3 shadow-[0_-2px_10px_-5px_rgba(0,0,0,0.1)]">
                 <div class="max-w-4xl mx-auto flex items-center gap-4">
                     <label for="text-input" class="text-slate-500 font-medium"><i class="fas fa-keyboard mr-2"></i>input</label>
-                    <input type="text" id="text-input" placeholder="例: {和泉}[いずみ] or 置換[かん]" class="flex-grow bg-slate-100 border border-slate-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-shadow">
+                    <div class="flex-grow relative">
+                        <input type="text" id="text-input" placeholder="例: {和泉}[いずみ] or 置換[かん] or ?u?i (母音パターン)" class="w-full bg-slate-100 border border-slate-300 rounded-md py-2 px-3 pr-10 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-shadow">
+                        <div class="absolute right-3 top-1/2 -translate-y-1/2">
+                            <i class="fas fa-question-circle text-gray-400 cursor-help" id="input-help-icon"></i>
+                            <div id="input-help-tooltip" class="invisible absolute z-20 w-80 p-3 text-sm font-light text-gray-600 bg-white rounded-lg border border-gray-200 shadow-lg" role="tooltip">
+                                <p class="mb-2"><strong>入力方法:</strong></p>
+                                <ul class="text-xs space-y-1 mb-2">
+                                    <li>• <code class="font-mono bg-red-100 px-1 rounded">{表示文字}[読み]</code> - <code class="font-mono bg-red-100 text-xs py-0.5 px-1 rounded">{}</code>で囲んだ文字を1つの塊とみなす。<code class="font-mono bg-blue-100 text-xs py-0.5 px-1 rounded">[]</code>を複数の文字に適応できる。</li>
+                                    <br class="my-0.1"/>
+                                    <li>• <code class="font-mono bg-blue-100 px-1 rounded">字[読み]</code> - 左側に隣接する字に読みを指定する。読みの長さ分、字をひき伸ばせる。</li>
+                                </ul>
+                                <div class="tooltip-arrow border-gray-200"></div>
+                            </div>
+                        </div>
+                    </div>
                     <button id="insert-btn" class="bg-gradient-to-r from-sky-400 to-blue-500 text-white font-bold py-2 px-6 rounded-md hover:from-sky-500 hover:to-blue-600 transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
                         <i class="fas fa-pen-nib mr-2"></i>挿入
                     </button>
@@ -1137,6 +1151,24 @@
         
         function parseInput(text) {
             const parsed = [];
+            
+            // 母音パターンの検査（a,i,u,e,o,n,?のみで構成されているか）
+            const vowelPattern = /^[aiueon?]+$/i;
+            if (vowelPattern.test(text)) {
+                // 母音パターンの場合は、右パネルの検索入力欄に設定して検索実行
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    searchInput.value = text.toLowerCase();
+                    searchInput.dispatchEvent(new Event('input'));
+                    // 検索ボタンがあれば実行
+                    const searchButton = document.getElementById('searchButton');
+                    if (searchButton) {
+                        searchButton.click();
+                    }
+                }
+                return []; // 空の配列を返してキャンバスへの挿入を防ぐ
+            }
+            
             const regex = /{([^}]+)}(?:\[([^\]]+)\])?|(\S)\[([^\]]+)\]|([\s\S])/g;
             let match;
 
@@ -1905,6 +1937,53 @@
             helpIcon.addEventListener('mouseleave', hideTooltip);
             helpTooltip.addEventListener('mouseenter', () => clearTimeout(tooltipTimeout));
             helpTooltip.addEventListener('mouseleave', hideTooltip);
+            
+            // 入力フィールドのヘルプツールチップ
+            const inputHelpIcon = document.getElementById('input-help-icon');
+            const inputHelpTooltip = document.getElementById('input-help-tooltip');
+            let inputTooltipTimeout;
+
+            function showInputTooltip() {
+                clearTimeout(inputTooltipTimeout);
+                const iconRect = inputHelpIcon.getBoundingClientRect();
+                const viewportHeight = window.innerHeight;
+                
+                // ツールチップを表示
+                inputHelpTooltip.classList.remove('invisible');
+                
+                // 位置を計算
+                const spaceAbove = iconRect.top;
+                const spaceBelow = viewportHeight - iconRect.bottom;
+                
+                if (spaceAbove >= 200) {
+                    // 上に十分なスペースがある場合は上に表示
+                    inputHelpTooltip.style.bottom = '100%';
+                    inputHelpTooltip.style.top = '';
+                    inputHelpTooltip.style.marginBottom = '8px';
+                    inputHelpTooltip.style.marginTop = '';
+                } else {
+                    // 上にスペースがない場合は下に表示
+                    inputHelpTooltip.style.top = '100%';
+                    inputHelpTooltip.style.bottom = '';
+                    inputHelpTooltip.style.marginTop = '8px';
+                    inputHelpTooltip.style.marginBottom = '';
+                }
+                
+                // 右揃え
+                inputHelpTooltip.style.right = '0';
+                inputHelpTooltip.style.left = '';
+            }
+
+            function hideInputTooltip() {
+                inputTooltipTimeout = setTimeout(() => {
+                    inputHelpTooltip.classList.add('invisible');
+                }, 100);
+            }
+
+            inputHelpIcon.addEventListener('mouseenter', showInputTooltip);
+            inputHelpIcon.addEventListener('mouseleave', hideInputTooltip);
+            inputHelpTooltip.addEventListener('mouseenter', () => clearTimeout(inputTooltipTimeout));
+            inputHelpTooltip.addEventListener('mouseleave', hideInputTooltip);
             
             zoomInBtn.addEventListener('click', () => zoom(1.2));
             zoomOutBtn.addEventListener('click', () => zoom(0.8));
