@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gradient Frame Studio</title>
-    <meta name="description" content="Upload an image, select a square area, and apply a beautiful custom gradient frame. Download your creation in high quality.">
-    <meta name="page:icon" content="fas fa-crop-alt">
-    <meta name="page:color" content="#8b5cf6">
+    <title>Creative Canvas</title>
+    <meta name="description" content="An interactive drawing application built with the HTML5 Canvas API. Explore different brushes and colors.">
+    <meta name="page:icon" content="fas fa-palette">
+    <meta name="page:color" content="#38bdf8">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -86,21 +86,21 @@
 
         input[type="color"] {
             -webkit-appearance: none;
-            width: 48px;
-            height: 48px;
+            width: 32px;
+            height: 32px;
             border: none;
             padding: 0;
-            border-radius: 50%;
+            border-radius: 6px;
             cursor: pointer;
             transition: transform 0.2s ease-in-out;
         }
         input[type="color"]::-webkit-color-swatch-wrapper {
             padding: 0;
-            border-radius: 50%;
+            border-radius: 6px;
         }
         input[type="color"]::-webkit-color-swatch {
             border: 2px solid #e5e7eb;
-            border-radius: 50%;
+            border-radius: 6px;
         }
         input[type="color"]:hover {
             transform: scale(1.1);
@@ -164,12 +164,16 @@
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #c7c7c7; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
     </style>
 </head>
 <body class="text-gray-800 antialiased">
 
     <div class="main-container">
-        <!-- CONTROLS PANEL -->
         <div id="controls-panel" class="panel lg:rounded-r-2xl p-6 flex flex-col space-y-6 lg:w-[320px] lg:flex-shrink-0 overflow-y-auto no-scrollbar">
             <div class="flex items-center space-x-3">
                 <div class="w-12 h-12 bg-violet-500 rounded-lg flex items-center justify-center">
@@ -182,7 +186,6 @@
             </div>
 
             <div class="flex-grow flex flex-col space-y-6">
-                <!-- 1. IMAGE UPLOAD -->
                 <div>
                     <h2 class="control-group-title"><i class="fas fa-image w-4 text-center"></i><span>画像</span></h2>
                     <label for="imageLoader" class="custom-file-upload mt-2 p-6 rounded-lg text-center">
@@ -195,17 +198,36 @@
                     <input type="file" id="imageLoader" name="imageLoader" accept="image/*" class="hidden"/>
                 </div>
 
-                <!-- 2. GRADIENT COLORS -->
                 <div>
                     <h2 class="control-group-title"><i class="fas fa-palette w-4 text-center"></i><span>グラデーション</span></h2>
-                    <div class="mt-3 flex items-center justify-around bg-gray-50 p-3 rounded-lg border border-gray-200">
-                        <input type="color" id="color1" value="#8b5cf6">
-                        <i class="fas fa-arrow-right text-gray-400"></i>
-                        <input type="color" id="color2" value="#ec4899">
+                    <div class="mt-3 space-y-3">
+                        <div id="gradient-preview" class="w-full h-10 rounded-lg border border-gray-300 shadow-inner bg-gray-100" style="background-image: linear-gradient(to right, rgb(139, 92, 246), rgb(236, 72, 153));"></div>
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="color1" value="#8b5cf6">
+                                <label for="color1" class="text-sm font-medium text-gray-600">開始色</label>
+                            </div>
+                            <i class="fas fa-arrow-right text-gray-400"></i>
+                            <div class="flex items-center gap-2">
+                                 <input type="color" id="color2" value="#ec4899">
+                                 <label for="color2" class="text-sm font-medium text-gray-600">終了色</label>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- 3. GRADIENT STYLE -->
+                <div>
+                    <h2 class="control-group-title"><i class="fas fa-swatchbook w-4 text-center"></i><span>パレット</span></h2>
+                    <div class="mt-3 space-y-3">
+                        <div id="palette-grid" class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                        </div>
+                        <button id="savePaletteBtn" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg text-sm transition-colors duration-200 flex items-center justify-center space-x-2">
+                            <i class="fas fa-plus-circle"></i>
+                            <span>現在のグラデーションを保存</span>
+                        </button>
+                    </div>
+                </div>
+
                  <div>
                     <h2 class="control-group-title"><i class="fas fa-drafting-compass w-4 text-center"></i><span>スタイル</span></h2>
                     <select id="gradientDirection" class="mt-3 w-full bg-gray-50 border border-gray-300 rounded-lg p-2 focus:ring-violet-500 focus:border-violet-500 text-sm text-gray-800">
@@ -217,7 +239,6 @@
                     </select>
                 </div>
 
-                <!-- 4. FRAME WIDTH -->
                 <div>
                     <h2 class="control-group-title"><i class="fas fa-ruler-horizontal w-4 text-center"></i><span>フレーム幅 (割合)</span></h2>
                     <div class="mt-3 flex items-center space-x-4">
@@ -227,7 +248,6 @@
                 </div>
             </div>
 
-            <!-- ACTION BUTTON -->
             <button id="downloadBtn" class="w-full bg-violet-600 hover:bg-violet-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2">
                 <i class="fas fa-download"></i>
                 <span>ダウンロード</span>
@@ -236,7 +256,6 @@
 
         <div class="content-wrapper p-4 lg:p-6 gap-4 lg:gap-6">
              <div class="workspace-container">
-                <!-- EDITOR PANEL -->
                 <div id="editor-panel" class="panel rounded-2xl flex-1 min-w-0 flex items-center justify-center p-2 relative overflow-hidden">
                     <div id="editor-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-center text-gray-400 p-4 pointer-events-none">
                         <i class="fas fa-image text-6xl"></i>
@@ -248,7 +267,6 @@
                 
                 <div id="resizer" class="hidden lg:flex"></div>
     
-                <!-- PREVIEW PANEL -->
                 <div id="preview-panel" class="panel rounded-2xl flex-1 min-w-0 flex flex-col items-center justify-center p-6 space-y-4">
                     <h2 class="text-lg font-bold text-gray-900 tracking-wider">リアルタイムプレビュー</h2>
                     <div id="preview-wrapper" class="w-full h-full min-h-0 flex-1 flex items-center justify-center overflow-hidden">
@@ -283,6 +301,23 @@
 
         const resizer = document.getElementById('resizer');
 
+        const gradientPreview = document.getElementById('gradient-preview');
+        const savePaletteBtn = document.getElementById('savePaletteBtn');
+        const paletteGrid = document.getElementById('palette-grid');
+        const PALETTE_STORAGE_KEY = 'gradientFrameStudioPalettes';
+
+        const defaultPalettes = [
+            { c1: '#ff7e5f', c2: '#feb47b', d: 1 }, { c1: '#00c6ff', c2: '#0072ff', d: 1 },
+            { c1: '#86fde8', c2: '#86a8e7', d: 1 }, { c1: '#ff0844', c2: '#ffb199', d: 1 },
+            { c1: '#a770ef', c2: '#cf8bf3', d: 1 }, { c1: '#f5af19', c2: '#f12711', d: 1 },
+            { c1: '#5a3f37', c2: '#2c7744', d: 1 }, { c1: '#2c3e50', c2: '#4ca1af', d: 1 },
+            { c1: '#eb3349', c2: '#f45c43', d: 1 }, { c1: '#e0eafc', c2: '#cfdef3', d: 1 },
+            { c1: '#dd5e89', c2: '#f7bb97', d: 1 }, { c1: '#9d50bb', c2: '#6e48aa', d: 1 },
+            { c1: '#348f50', c2: '#56b4d3', d: 1 }, { c1: '#757f9a', c2: '#d7dde8', d: 1 },
+            { c1: '#ff512f', c2: '#dd2476', d: 1 }, { c1: '#4776e6', c2: '#8e54e9', d: 1 },
+        ];
+        let currentPalettes = [];
+
         let sourceImage = null;
         let cropRect = { x: 0, y: 0, size: 0 };
         let view = { x: 0, y: 0, scale: 1 };
@@ -296,6 +331,61 @@
         
         const HANDLE_SIZE = 10;
         const MIN_CROP_SIZE = 30;
+
+        function updateGradientDisplay() {
+            if(!gradientPreview) return;
+            gradientPreview.style.background = `linear-gradient(to right, ${color1Input.value}, ${color2Input.value})`;
+        }
+
+        function applyPalette(c1, c2) {
+            color1Input.value = c1;
+            color2Input.value = c2;
+            updateGradientDisplay();
+        }
+
+        function savePalettes() {
+            localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify(currentPalettes));
+        }
+
+        function deletePalette(index) {
+            currentPalettes.splice(index, 1);
+            savePalettes();
+            renderPalette();
+        }
+
+        function renderPalette() {
+            paletteGrid.innerHTML = '';
+            currentPalettes.forEach((p, index) => {
+                const swatch = document.createElement('div');
+                swatch.className = 'h-10 rounded-md cursor-pointer relative group transition-transform duration-150 hover:scale-105';
+                swatch.style.background = `linear-gradient(to right, ${p.c1}, ${p.c2})`;
+                swatch.addEventListener('click', () => applyPalette(p.c1, p.c2));
+                
+                if (!p.d) {
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'absolute top-0 right-0 -mt-1 -mr-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs z-10';
+                    deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deletePalette(index);
+                    });
+                    swatch.appendChild(deleteBtn);
+                }
+                
+                paletteGrid.appendChild(swatch);
+            });
+        }
+
+        function loadAndRenderPalette() {
+            const storedPalettes = localStorage.getItem(PALETTE_STORAGE_KEY);
+            if (storedPalettes) {
+                currentPalettes = JSON.parse(storedPalettes);
+            } else {
+                currentPalettes = [...defaultPalettes];
+                savePalettes();
+            }
+            renderPalette();
+        }
 
         function setInitialView() {
             if (!sourceImage) return;
@@ -404,7 +494,7 @@
 
         editorCanvas.addEventListener('mousedown', e => {
             lastMousePos = getMousePos(e, editorCanvas);
-            if (e.button === 2 || (e.button === 0 && e.ctrlKey)) { // Right click or Ctrl+Left for panning
+            if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
                 isPanning = true;
                 editorCanvas.style.cursor = 'grabbing';
             } else if (e.button === 0) {
@@ -657,6 +747,23 @@
             uploadLabel.classList.remove('dragover');
             handleImage(e.dataTransfer.files[0]);
         });
+
+        savePaletteBtn.addEventListener('click', () => {
+            const newPalette = { c1: color1Input.value, c2: color2Input.value, d: 0 };
+            const isDuplicate = currentPalettes.some(p => p.c1 === newPalette.c1 && p.c2 === newPalette.c2);
+            if (!isDuplicate) {
+                currentPalettes.push(newPalette);
+                savePalettes();
+                renderPalette();
+                paletteGrid.scrollTop = paletteGrid.scrollHeight;
+            }
+        });
+
+        color1Input.addEventListener('input', updateGradientDisplay);
+        color2Input.addEventListener('input', updateGradientDisplay);
+
+        loadAndRenderPalette();
+        updateGradientDisplay();
         
     </script>
 </body>
