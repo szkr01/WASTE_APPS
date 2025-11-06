@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WebGPU Compute — 10M Particle Superellipse Reflection (fixed)</title>
+<style>
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#111; color:#eee; }
+  #topbar { display:flex; gap:12px; padding:10px; align-items:center; background:#0f0f11; box-shadow:0 2px 6px rgba(0,0,0,0.6); }
+  label { font-size:13px; color:#ddd; }
+  input, button, select { font-size:13px; padding:6px 8px; border-radius:6px; border:none; background:#202023; color:#fff; }
+  button { cursor:pointer; }
+  #canvas { display:block; width:100vw; height:calc(100vh - 56px); background:#000; }
+  #warn { color:#f7b; font-size:12px; margin-left:6px; }
+  small { color:#9aa; }
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <label>Particles:
+      <input id="count" type="number" value="10000000" step="100000" min="1000" />
+    </label>
+    <label>r (init radius):
+      <input id="r" type="number" value="0.8" step="0.1" min="0.01" />
+    </label>
+    <label>a:
+      <input id="a" type="number" value="1.0" step="0.1" />
+    </label>
+    <label>b:
+      <input id="b" type="number" value="1.0" step="0.1" />
+    </label>
+    <label>speed:
+      <input id="speed" type="number" value="0.5" step="0.1" />
+    </label>
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+    <span id="warn"><small>注意: 10M は重いです。まず少数で試してください。</small></span>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+<script type="module">
+(async () => {
+  if (!('gpu' in navigator)) {
+    alert('WebGPU がサポートされていません。Chrome Canary / Edge (実験有効) 等が必要です。');
+    return;
+  }
+
+  // UI 要素
+  const canvas = document.getElementById('canvas');
+  const countInput = document.getElementById('count');
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
+  const rInput = document.getElementById('r');
+  const aInput = document.getElementById('a');
+  const bInput = document.getElementById('b');
+  const speedInput = document.getElementById('speed');
+
+  // canvas フルスクリーンに合わせる
+  function fitCanvas() {
+    canvas.width = Math.floor(window.innerWidth * devicePixelRatio);
+    canvas.height = Math.floor((window.innerHeight - document.getElementById('topbar').offsetHeight) * devicePixelRatio);
+  }
+  window.addEventListener('resize', fitCanvas);
+  fitCanvas();
+
+  // WebGPU 初期化
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) { alert('GPU adapter が取得できませんでした'); return; }
+  const device = await adapter.requestDevice();
+  const context = canvas.getContext('webgpu');
+
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format, alphaMode: 'opaque' });
+
+  // ------------------------------------------------------------------
+  // WGSL: compute shader （修正済み: 'meta' を 'metaBuf' に変更、構文整理）
+  // ------------------------------------------------------------------
+  const computeShaderWGSL = `
+struct Part {
+  pos : vec2<f32>;
+  vel : vec2<f32>;
+};
+
+@group(0) @binding(0) var<storage, read_write> particles : array<Part>;
+@group(0) @binding(1) var<uniform> params : vec4<f32>; // dt, a, b, padding
+@group(0) @binding(2) var<uniform> metaBuf : vec4<u32>; // particleCount, unused, unused, unused
+
+fn F(val: vec2<f32>, a: f32, b: f32) -> f32 {
+  let xa = val.x / a;
+  let yb = val.y / b;
+  return xa*xa*xa*xa + yb*yb*yb*yb - 1.0;
+}
+
+fn gradF(val: vec2<f32>, a: f32, b: f32) -> vec2<f32> {
+  let gx = 4.0 * val.x * val.x * val.x / (a*a*a*a);
+  let gy = 4.0 * val.y * val.y * val.y / (b*b*b*b);
+  return vec2<f32>(gx, gy);
+}
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+  let idx = GlobalInvocationID.x;
+  if (idx >= metaBuf.x) { return; }
+
+  var p = particles[idx];
+  let dt = params.x;
+  let a = params.y;
+  let b = params.z;
+
+  // 1) 移動
+  var newPos = p.pos + p.vel * dt;
+
+  // 2) 範囲チェック（superellipse）
+  if (F(newPos, a, b) > 0.0) {
+    // 近似的に反射
+    var n = gradF(newPos, a, b);
+    if (length(n) < 1e-6) {
+      p.vel = -p.vel;
+      newPos = p.pos + p.vel * dt;
+    } else {
+      let nhat = normalize(n);
+      p.vel = p.vel - 2.0 * dot(p.vel, nhat) * nhat;
+      newPos = p.pos + p.vel * dt * 0.999; // 少し内側に入れる
+    }
+  }
+
+  particles[idx].pos = newPos;
+  particles[idx].vel = p.vel;
+}
+`;
+
+  // ------------------------------------------------------------------
+  // WGSL: render shaders
+  // ------------------------------------------------------------------
+  const vertexWGSL = `
+struct Part {
+  pos : vec2<f32>;
+  vel : vec2<f32>;
+};
+
+@group(0) @binding(0) var<storage, read> particles : array<Part>;
+@group(0) @binding(1) var<uniform> viewport : vec2<f32>; // width, height
+
+struct VSOut {
+  @builtin(position) position : vec4<f32>;
+  @location(0) color: vec3<f32>;
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) VertexIndex : u32) -> VSOut {
+  // VertexIndex は 0..N-1 を想定
+  let p = particles[VertexIndex].pos;
+  var out : VSOut;
+  // ここではシミュレーション座標系を直接クリップ空間として扱っている。
+  // 必要なら外部から a,b やスケールを渡してマッピングしてください。
+  out.position = vec4<f32>(p.x, p.y, 0.0, 1.0);
+  out.color = vec3<f32>(1.0, 1.0, 1.0);
+  return out;
+}
+`;
+
+  const fragmentWGSL = `
+@fragment
+fn fs_main(@location(0) color: vec3<f32>) -> @location(0) vec4<f32> {
+  return vec4<f32>(color, 1.0);
+}
+`;
+
+  // シェーダーモジュールとパイプライン
+  const computeModule = device.createShaderModule({ code: computeShaderWGSL });
+  const computePipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: { module: computeModule, entryPoint: 'main' }
+  });
+
+  const vertModule = device.createShaderModule({ code: vertexWGSL });
+  const fragModule = device.createShaderModule({ code: fragmentWGSL });
+
+  const renderPipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: {
+      module: vertModule,
+      entryPoint: 'vs_main',
+      buffers: []
+    },
+    primitive: {
+      topology: 'point-list',
+    },
+    fragment: {
+      module: fragModule,
+      entryPoint: 'fs_main',
+      targets: [{ format }]
+    }
+  });
+
+  // バッファ作成ユーティリティ
+  function createBuffer(device, arrBuffer, usage) {
+    const buf = device.createBuffer({
+      size: ((arrBuffer.byteLength + 3) & ~3),
+      usage,
+      mappedAtCreation: true
+    });
+    const mapping = buf.getMappedRange();
+    new Uint8Array(mapping).set(new Uint8Array(arrBuffer));
+    buf.unmap();
+    return buf;
+  }
+
+  // CPU でパーティクル初期化
+  function initParticlesCPU(count, r, speed) {
+    const out = new Float32Array(count * 4);
+    const angle = Math.PI * 0.25; // 45deg
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed;
+    for (let i = 0; i < count; ++i) {
+      const u = Math.random();
+      const rr = Math.sqrt(u) * r;
+      const theta = Math.random() * Math.PI * 2.0;
+      const x = rr * Math.cos(theta);
+      const y = rr * Math.sin(theta);
+      const base = i * 4;
+      out[base + 0] = x;
+      out[base + 1] = y;
+      out[base + 2] = vx;
+      out[base + 3] = vy;
+    }
+    return out;
+  }
+
+  // 管理変数
+  let particleCount = parseInt(countInput.value, 10);
+  let particleBuffer = null;
+  let computeBindGroup = null;
+  let renderBindGroup = null;
+  let uniformsBuffer = null;
+  let metaBuffer = null;
+  let animationHandle = null;
+  let lastTime = performance.now();
+
+  async function setupParticles(count) {
+    particleCount = count;
+    console.log('Setting up particles:', count);
+    if (count > 2000000) {
+      console.warn('Particle count large:', count, '— メモリと GPU 制限に注意してください。動作しない場合は小さくして再試行してください。');
+    }
+
+    const r = parseFloat(rInput.value);
+    const speed = parseFloat(speedInput.value);
+
+    console.time('initParticlesCPU');
+    const particlesArray = initParticlesCPU(count, r, speed);
+    console.timeEnd('initParticlesCPU');
+
+    const bufferSize = particlesArray.byteLength;
+    try { if (particleBuffer) particleBuffer.destroy?.(); } catch (e) {}
+
+    particleBuffer = device.createBuffer({
+      size: ((bufferSize + 3) & ~3),
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true
+    });
+    new Float32Array(particleBuffer.getMappedRange()).set(particlesArray);
+    particleBuffer.unmap();
+
+    const params = new Float32Array([0.016, parseFloat(aInput.value), parseFloat(bInput.value), 0.0]);
+    if (uniformsBuffer) uniformsBuffer.destroy?.();
+    uniformsBuffer = createBuffer(device, params.buffer, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+
+    const meta = new Uint32Array([count, 0, 0, 0]);
+    if (metaBuffer) metaBuffer.destroy?.();
+    metaBuffer = createBuffer(device, meta.buffer, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+
+    computeBindGroup = device.createBindGroup({
+      layout: computePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: particleBuffer } },
+        { binding: 1, resource: { buffer: uniformsBuffer } },
+        { binding: 2, resource: { buffer: metaBuffer } }
+      ]
+    });
+
+    // viewport バッファ（placeholder）
+    const viewportBuf = device.createBuffer({
+      size: 8,
+      usage: GPUBufferUsage.UNIFORM,
+      mappedAtCreation: true
+    });
+    new Float32Array(viewportBuf.getMappedRange()).set([canvas.width, canvas.height]);
+    viewportBuf.unmap();
+
+    renderBindGroup = device.createBindGroup({
+      layout: renderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: particleBuffer } },
+        { binding: 1, resource: { buffer: viewportBuf } }
+      ]
+    });
+
+    console.log('Buffers and bind groups created.');
+  }
+
+  function frameLoop(now) {
+    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+
+    const a = parseFloat(aInput.value);
+    const b = parseFloat(bInput.value);
+    const params = new Float32Array([dt, a, b, 0.0]);
+    device.queue.writeBuffer(uniformsBuffer, 0, params.buffer);
+
+    const commandEncoder = device.createCommandEncoder();
+
+    // compute
+    {
+      const pass = commandEncoder.beginComputePass();
+      pass.setPipeline(computePipeline);
+      pass.setBindGroup(0, computeBindGroup);
+      const workgroupSize = 256;
+      const numGroups = Math.ceil(particleCount / workgroupSize);
+      pass.dispatchWorkgroups(numGroups);
+      pass.end();
+    }
+
+    // render
+    const textureView = context.getCurrentTexture().createView();
+    const renderPass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: textureView,
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }]
+    });
+    renderPass.setPipeline(renderPipeline);
+    renderPass.setBindGroup(0, renderBindGroup);
+    // draw N points
+    renderPass.draw(particleCount, 1, 0, 0);
+    renderPass.end();
+
+    device.queue.submit([commandEncoder.finish()]);
+
+    animationHandle = requestAnimationFrame(frameLoop);
+  }
+
+  startBtn.addEventListener('click', async () => {
+    if (animationHandle) { console.warn('Already running'); return; }
+    const cnt = Math.max(1, parseInt(countInput.value, 10));
+    try {
+      await setupParticles(cnt);
+    } catch (e) {
+      console.error('setupParticles failed', e);
+      alert('パーティクルの初期化に失敗しました: ' + e.message);
+      return;
+    }
+    lastTime = performance.now();
+    animationHandle = requestAnimationFrame(frameLoop);
+  });
+
+  stopBtn.addEventListener('click', () => {
+    if (animationHandle) {
+      cancelAnimationFrame(animationHandle);
+      animationHandle = null;
+      console.log('Stopped.');
+    }
+  });
+
+  console.log('Ready. Set particle count and press Start. Default 10,000,000 (may be too large).');
+})();
+</script>
+</body>
+</html>

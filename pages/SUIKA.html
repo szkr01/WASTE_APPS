@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>スイカゲーム - Gradation Fruit Merge</title>
+    <meta name="description" content="HTML, CSS, JavaScriptだけで作られたインタラクティブなスイカゲーム。フルーツを合体させて、大きなスイカを目指そう！">
+    <meta name="page:icon" content="fas fa-gamepad">
+    <meta name="page:color" content="#8b5cf6">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap');
+
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .text-gradient {
+            background-image: linear-gradient(45deg, #fde047, #f97316);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            -moz-background-clip: text;
+            -moz-text-fill-color: transparent;
+        }
+        
+        #game-canvas {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-violet-600 h-screen w-screen flex items-center justify-center p-4 overflow-hidden">
+
+    <div id="game-container" class="w-full max-w-md mx-auto bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-4 sm:p-6 text-white border border-white/20 flex flex-col gap-4">
+
+        <header class="flex justify-between items-center pb-2 border-b border-white/20">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-gradient tracking-wider">スイカゲーム</h1>
+                <p class="text-xs text-white/70">フルーツを合体させてスイカを目指せ！</p>
+            </div>
+            <div class="text-right">
+                <span class="text-sm text-white/70 block">スコア</span>
+                <span id="score" class="text-2xl font-bold">0</span>
+            </div>
+        </header>
+
+        <main class="relative w-full aspect-[10/12]">
+            <div id="canvas-container" class="relative w-full h-full rounded-lg overflow-hidden bg-black/20">
+                <canvas id="game-canvas"></canvas>
+            </div>
+            <div id="game-over-screen" class="absolute inset-0 bg-black/70 flex-col items-center justify-center rounded-lg text-center p-8 hidden fade-in">
+                <h2 class="text-5xl font-extrabold text-red-500 mb-4">ゲームオーバー</h2>
+                <p class="text-lg mb-2">最終スコア</p>
+                <p id="final-score" class="text-4xl font-bold mb-8">0</p>
+                <button id="restart-button" class="bg-gradient-to-r from-pink-500 to-orange-500 hover:from-pink-600 hover:to-orange-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transform hover:scale-105 transition-all duration-300">
+                    もう一度遊ぶ
+                </button>
+            </div>
+        </main>
+        
+        <footer class="flex justify-between items-center pt-2 border-t border-white/20">
+             <div class="flex items-center gap-3">
+                <span class="text-sm text-white/70">つぎ</span>
+                <div id="next-fruit-container" class="w-12 h-12 flex items-center justify-center bg-black/20 rounded-full">
+                   <span id="next-fruit-emoji" class="text-3xl"></span>
+                </div>
+            </div>
+            <div id="highest-fruit-container" class="text-right">
+                 <span class="text-sm text-white/70 block">最高記録</span>
+                 <span id="high-score" class="text-xl font-bold">0</span>
+            </div>
+        </footer>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const Engine = Matter.Engine,
+                Render = Matter.Render,
+                Runner = Matter.Runner,
+                Bodies = Matter.Bodies,
+                World = Matter.World,
+                Events = Matter.Events,
+                Composite = Matter.Composite;
+
+            const canvasContainer = document.getElementById('canvas-container');
+            const canvas = document.getElementById('game-canvas');
+            const scoreEl = document.getElementById('score');
+            const highScoreEl = document.getElementById('high-score');
+            const gameOverScreen = document.getElementById('game-over-screen');
+            const finalScoreEl = document.getElementById('final-score');
+            const restartButton = document.getElementById('restart-button');
+            const nextFruitEmojiEl = document.getElementById('next-fruit-emoji');
+
+            let canvasWidth = canvasContainer.clientWidth;
+            let canvasHeight = canvasContainer.clientHeight;
+            
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+
+            const FRUITS = [
+                { index: 0, name: 'Cherry', radius: canvasWidth * 0.035, color: '#FF7676', score: 1, emoji: '🍒' },
+                { index: 1, name: 'Strawberry', radius: canvasWidth * 0.045, color: '#FF8E56', score: 3, emoji: '🍓' },
+                { index: 2, name: 'Grape', radius: canvasWidth * 0.06, color: '#BE7DFF', score: 6, emoji: '🍇' },
+                { index: 3, name: 'Dekopon', radius: canvasWidth * 0.07, color: '#FFB34C', score: 10, emoji: '🍊' },
+                { index: 4, name: 'Persimmon', radius: canvasWidth * 0.085, color: '#FF8C4C', score: 15, emoji: '🍑' },
+                { index: 5, name: 'Apple', radius: canvasWidth * 0.1, color: '#FF6262', score: 21, emoji: '🍎' },
+                { index: 6, name: 'Pear', radius: canvasWidth * 0.12, color: '#F2FF4C', score: 28, emoji: '🍐' },
+                { index: 7, name: 'Peach', radius: canvasWidth * 0.14, color: '#FFB8DE', score: 36, emoji: '🍍' },
+                { index: 8, name: 'Pineapple', radius: canvasWidth * 0.16, color: '#FFF34C', score: 45, emoji: '🍈' },
+                { index: 9, name: 'Melon', radius: canvasWidth * 0.19, color: '#8EFF4C', score: 55, emoji: '🍉' },
+                { index: 10, name: 'Watermelon', radius: canvasWidth * 0.22, color: '#4CFF72', score: 66, emoji: '👑' }
+            ];
+
+            const HIGH_SCORE_KEY = 'suikaGameHighScore';
+
+            let engine, render, runner, world;
+            let score = 0;
+            let highScore = localStorage.getItem(HIGH_SCORE_KEY) || 0;
+            let currentFruit = null;
+            let nextFruit = null;
+            let disableAction = false;
+            let gameEnded = false;
+
+            const WALL_THICKNESS = 30;
+            const GAME_OVER_LINE_Y = canvasHeight * 0.15;
+
+            function init() {
+                engine = Engine.create({
+                    gravity: { y: 0.7 }
+                });
+                world = engine.world;
+                
+                render = Render.create({
+                    canvas: canvas,
+                    engine: engine,
+                    options: {
+                        width: canvasWidth,
+                        height: canvasHeight,
+                        wireframes: false,
+                        background: 'transparent'
+                    }
+                });
+                
+                runner = Runner.create();
+                
+                setupBoundaries();
+                setupGame();
+                setupEvents();
+
+                Render.run(render);
+                Runner.run(runner, engine);
+            }
+            
+            function setupBoundaries() {
+                const ground = Bodies.rectangle(canvasWidth / 2, canvasHeight + WALL_THICKNESS / 2, canvasWidth, WALL_THICKNESS, { isStatic: true, render: { fillStyle: 'transparent' } });
+                const leftWall = Bodies.rectangle(-WALL_THICKNESS / 2, canvasHeight / 2, WALL_THICKNESS, canvasHeight, { isStatic: true, render: { fillStyle: 'transparent' } });
+                const rightWall = Bodies.rectangle(canvasWidth + WALL_THICKNESS / 2, canvasHeight / 2, WALL_THICKNESS, canvasHeight, { isStatic: true, render: { fillStyle: 'transparent' } });
+                
+                World.add(world, [ground, leftWall, rightWall]);
+            }
+            
+            function setupGame() {
+                score = 0;
+                gameEnded = false;
+                disableAction = false;
+                updateScore(0);
+                updateHighScore(highScore);
+                
+                gameOverScreen.style.display = 'none';
+
+                nextFruit = getRandomFruit();
+                prepareNextFruit();
+            }
+
+            function getRandomFruit() {
+                return FRUITS[Math.floor(Math.random() * 5)]; 
+            }
+
+            function createFruit(x, y, fruitData) {
+                const fruitBody = Bodies.circle(x, y, fruitData.radius, {
+                    label: 'fruit',
+                    fruitIndex: fruitData.index,
+                    restitution: 0.3,
+                    friction: 0.2,
+                    render: {
+                        fillStyle: fruitData.color
+                    }
+                });
+                return fruitBody;
+            }
+
+            function prepareNextFruit() {
+                if (gameEnded) return;
+
+                currentFruit = createFruit(canvasWidth / 2, 50, nextFruit);
+                currentFruit.isSleeping = true;
+
+                nextFruit = getRandomFruit();
+                nextFruitEmojiEl.textContent = nextFruit.emoji;
+            }
+            
+            function dropFruit() {
+                if (disableAction || !currentFruit || gameEnded) return;
+
+                disableAction = true;
+                currentFruit.isSleeping = false;
+                World.add(world, currentFruit);
+                currentFruit = null;
+
+                setTimeout(() => {
+                    prepareNextFruit();
+                    disableAction = false;
+                }, 600);
+            }
+
+            function updateScore(points) {
+                score += points;
+                scoreEl.textContent = score;
+                if (score > highScore) {
+                    highScore = score;
+                    updateHighScore(highScore);
+                    localStorage.setItem(HIGH_SCORE_KEY, highScore);
+                }
+            }
+            
+            function updateHighScore(score) {
+                highScoreEl.textContent = score;
+            }
+
+            function gameOver() {
+                if (gameEnded) return;
+                gameEnded = true;
+                disableAction = true;
+                
+                finalScoreEl.textContent = score;
+                gameOverScreen.style.display = 'flex';
+                Runner.stop(runner);
+            }
+
+            function restartGame() {
+                World.clear(world);
+                Composite.clear(world, false);
+                Engine.clear(engine);
+
+                const bodies = Composite.allBodies(world);
+                World.remove(world, bodies);
+
+                setupBoundaries();
+                setupGame();
+                Runner.start(runner, engine);
+            }
+            
+            function handleMouseMove(e) {
+                if (disableAction || !currentFruit || gameEnded) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                let x;
+                if (e.touches) {
+                    x = e.touches[0].clientX - rect.left;
+                } else {
+                    x = e.clientX - rect.left;
+                }
+                
+                const clampedX = Math.max(
+                    currentFruit.circleRadius, 
+                    Math.min(x, canvasWidth - currentFruit.circleRadius)
+                );
+                
+                Matter.Body.setPosition(currentFruit, { x: clampedX, y: currentFruit.position.y });
+            }
+
+            function setupEvents() {
+                canvasContainer.addEventListener('mousemove', handleMouseMove);
+                canvasContainer.addEventListener('touchmove', handleMouseMove);
+                canvasContainer.addEventListener('click', dropFruit);
+                canvasContainer.addEventListener('touchend', dropFruit);
+                restartButton.addEventListener('click', restartGame);
+                
+                Events.on(engine, 'collisionStart', (event) => {
+                    event.pairs.forEach((pair) => {
+                        const { bodyA, bodyB } = pair;
+                        
+                        if (bodyA.label === 'fruit' && bodyB.label === 'fruit' && bodyA.fruitIndex === bodyB.fruitIndex) {
+                            const currentIndex = bodyA.fruitIndex;
+                            if (currentIndex >= FRUITS.length - 1) return;
+                            
+                            World.remove(world, [bodyA, bodyB]);
+
+                            const newFruitData = FRUITS[currentIndex + 1];
+                            const newFruit = createFruit(
+                                (bodyA.position.x + bodyB.position.x) / 2,
+                                (bodyA.position.y + bodyB.position.y) / 2,
+                                newFruitData
+                            );
+                            
+                            World.add(world, newFruit);
+                            updateScore(newFruitData.score);
+                        }
+                    });
+                });
+                
+                Events.on(engine, 'afterUpdate', () => {
+                    Composite.allBodies(world).forEach(body => {
+                        if (body.label === 'fruit' && body.position.y < GAME_OVER_LINE_Y && !body.isSleeping && body.velocity.y < 0.01) {
+                            setTimeout(gameOver, 1000);
+                        }
+                    });
+                });
+
+                Events.on(render, 'beforeRender', (event) => {
+                    const context = render.context;
+                    context.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                    context.setLineDash([5, 10]);
+                    context.beginPath();
+                    context.moveTo(0, GAME_OVER_LINE_Y);
+                    context.lineTo(canvasWidth, GAME_OVER_LINE_Y);
+                    context.stroke();
+                    context.setLineDash([]);
+                });
+
+                Events.on(render, 'afterRender', () => {
+                    const context = render.context;
+                    const bodies = Composite.allBodies(world);
+                    context.textAlign = 'center';
+                    context.textBaseline = 'middle';
+
+                    bodies.forEach(body => {
+                        if (body.label === 'fruit') {
+                            const fruitData = FRUITS[body.fruitIndex];
+                            context.font = `${fruitData.radius * 1.5}px "M PLUS Rounded 1c"`;
+                            context.fillText(fruitData.emoji, body.position.x, body.position.y + fruitData.radius * 0.1);
+                        }
+                    });
+
+                    if (currentFruit && !disableAction) {
+                        const fruitData = FRUITS[currentFruit.fruitIndex];
+                        context.font = `${fruitData.radius * 1.5}px "M PLUS Rounded 1c"`;
+                        context.fillText(fruitData.emoji, currentFruit.position.x, currentFruit.position.y + fruitData.radius * 0.1);
+                    }
+                });
+            }
+
+            // Resize handler
+            window.addEventListener('resize', () => {
+                canvasWidth = canvasContainer.clientWidth;
+                canvasHeight = canvasContainer.clientHeight;
+                canvas.width = canvasWidth;
+                canvas.height = canvasHeight;
+
+                Render.setPixelRatio(render, window.devicePixelRatio);
+                render.options.width = canvasWidth;
+                render.options.height = canvasHeight;
+                
+                // This is a simplified resize. A full implementation would need to rescale and reposition all bodies.
+                // For simplicity, a restart on resize might be better for a real project.
+            });
+
+            init();
+        });
+    </script>
+
+</body>
+</html>

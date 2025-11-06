@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ビットコイン市場シミュレータ</title>
+    <meta name="description" content="ブロックチェーン、マイニング、取引をインタラクティブに学習できるビットコイン市場シミュレータ。">
+    <meta name="page:icon" content="fas fa-cubes">
+    <meta name="page:color" content="#f97316">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --gradient-start: #1e3a8a;
+            --gradient-mid: #312e81;
+            --gradient-end: #4c1d95;
+            --panel-bg: rgba(255, 255, 255, 0.05);
+            --border-color: rgba(255, 255, 255, 0.2);
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --accent-color: #f97316;
+            --accent-glow: rgba(249, 115, 22, 0.5);
+            --success-color: #22c55e;
+            --success-glow: rgba(34, 197, 94, 0.5);
+            --error-color: #ef4444;
+            --error-glow: rgba(239, 68, 68, 0.5);
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background: linear-gradient(-45deg, var(--gradient-start), var(--gradient-mid), var(--gradient-end));
+            background-size: 400% 400%;
+            animation: gradientBG 20s ease infinite;
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        
+        .panel-header {
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            font-weight: 500;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent-color);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #ea580c;
+        }
+
+        .hash-text {
+            font-family: 'monospace';
+            color: #a5b4fc;
+        }
+
+        .btn-gradient {
+            background-image: linear-gradient(to right, #fb923c, #f97316);
+            transition: all 0.3s ease;
+        }
+        .btn-gradient:hover {
+            box-shadow: 0 0 15px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+
+        .block {
+            transition: all 0.5s ease;
+            border-left: 4px solid var(--success-color);
+            position: relative;
+        }
+        .block.invalid {
+            border-left-color: var(--error-color);
+            box-shadow: 0 0 20px var(--error-glow);
+        }
+        .block.invalid::after {
+            content: '\f071';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            color: var(--error-color);
+            font-size: 1.25rem;
+        }
+        
+        @keyframes pulse-success {
+            0% { box-shadow: 0 0 0 0 var(--success-glow); }
+            70% { box-shadow: 0 0 10px 15px rgba(34, 197, 94, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        .block.new {
+            animation: pulse-success 1.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        .tooltip {
+            position: relative;
+            cursor: help;
+        }
+        .tooltip::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #111827;
+            color: white;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+            z-index: 10;
+        }
+        .tooltip:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+    </style>
+</head>
+<body class="w-screen h-screen p-4 flex flex-col antialiased">
+
+    <header class="flex justify-between items-center mb-4 px-2">
+        <h1 class="text-2xl font-bold tracking-wider flex items-center gap-3">
+            <i class="fas fa-cubes text-orange-500"></i>
+            ビットコイン市場シミュレータ
+        </h1>
+        <div class="flex items-center gap-4 text-sm">
+            <span class="text-slate-400">ステータス:</span>
+            <span id="simulation-status" class="font-semibold text-green-400">実行中</span>
+        </div>
+    </header>
+
+    <main class="grid grid-cols-12 gap-4 flex-grow min-h-0">
+
+        <!-- Left Panel: Controls & Agents -->
+        <section class="col-span-3 panel flex flex-col">
+            <div class="panel-header flex items-center gap-2"><i class="fas fa-cogs"></i> コントロールパネル</div>
+            <div class="p-4 space-y-6 flex-grow overflow-y-auto">
+                <div>
+                    <h3 class="font-bold mb-2">シミュレーション</h3>
+                    <div class="flex items-center gap-4">
+                        <button id="toggle-simulation" class="w-12 h-12 text-xl rounded-full bg-slate-700 hover:bg-slate-600 transition"><i class="fas fa-pause"></i></button>
+                        <div class="flex-grow">
+                            <label for="simulation-speed" class="text-sm text-slate-400">速度: <span id="speed-value">1</span>x</label>
+                            <input id="simulation-speed" type="range" min="1" max="10" value="1" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="font-bold mb-2 tooltip" data-tooltip="ハッシュの先頭に必要なゼロの数。多いほど採掘が困難になります。">
+                        難易度 (Difficulty) <i class="fas fa-info-circle text-xs text-slate-400"></i>
+                    </h3>
+                    <div class="flex items-center gap-4">
+                        <span id="difficulty-value" class="font-mono text-lg text-orange-400">2</span>
+                        <input id="difficulty-slider" type="range" min="1" max="5" value="2" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="font-bold mb-2">エージェント</h3>
+                    <div id="agents-list" class="space-y-3">
+                        <!-- Agent cards will be injected here by JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Middle Panel: Mempool & Mining -->
+        <section class="col-span-4 panel flex flex-col">
+            <div class="panel-header flex items-center gap-2"><i class="fas fa-hourglass-half"></i> マイニング & メモリプール</div>
+            <div class="p-4 flex flex-col flex-grow min-h-0">
+                <h3 class="font-bold mb-2 tooltip" data-tooltip="まだブロックに記録されていない検証待ちの取引。">
+                    メモリプール <span id="mempool-count" class="text-xs font-mono bg-orange-500 text-white rounded-full px-2 py-0.5">0</span>
+                </h3>
+                <div id="mempool" class="space-y-2 overflow-y-auto h-48 mb-4 bg-black/20 p-2 rounded-lg">
+                    <!-- Pending transactions will be injected here -->
+                    <div id="mempool-placeholder" class="text-slate-500 text-center py-4">取引待機中...</div>
+                </div>
+
+                <h3 class="font-bold mb-2">マイニング中のブロック</h3>
+                <div id="mining-area" class="bg-black/20 p-4 rounded-lg space-y-3 flex-grow flex flex-col justify-center">
+                    <div class="text-center text-slate-500" id="mining-placeholder">マイニング待機中...</div>
+                    <div id="mining-details" class="hidden">
+                        <div class="flex justify-between items-baseline">
+                            <span class="text-slate-400">ブロック #</span>
+                            <span id="mining-block-index" class="text-xl font-mono text-white"></span>
+                        </div>
+                        <div class="flex justify-between items-baseline">
+                            <span class="text-slate-400 tooltip" data-tooltip="ブロックのハッシュ値がこのパターンで始まるまで試行します。">ターゲット</span>
+                            <span id="mining-target" class="hash-text text-lg"></span>
+                        </div>
+                         <div class="flex justify-between items-baseline">
+                            <span class="text-slate-400 tooltip" data-tooltip="条件を満たすハッシュを見つけるために試行錯誤される数値。">ノンス</span>
+                            <span id="mining-nonce" class="text-lg font-mono text-white">0</span>
+                        </div>
+                        <div class="flex justify-between items-baseline">
+                            <span class="text-slate-400">現在のハッシュ</span>
+                            <span id="mining-hash" class="hash-text text-lg"></span>
+                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-2.5 mt-4">
+                            <div id="mining-progress" class="bg-gradient-to-r from-orange-500 to-yellow-500 h-2.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Blockchain -->
+        <section class="col-span-5 panel flex flex-col">
+            <div class="panel-header flex items-center justify-between">
+                <div class="flex items-center gap-2"><i class="fas fa-link"></i> ブロックチェーン台帳</div>
+                <button id="validate-chain" class="text-xs bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded-full transition">
+                    <i class="fas fa-check-double"></i> チェーン検証
+                </button>
+            </div>
+            <div id="blockchain-ledger" class="p-4 space-y-4 overflow-y-auto flex-grow">
+                <!-- Blocks will be injected here by JS -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Transaction Modal -->
+    <div id="tx-modal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div class="panel w-full max-w-md">
+            <h2 class="panel-header">新規取引の作成</h2>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="text-sm text-slate-400">送金元</label>
+                    <p id="tx-from" class="font-bold"></p>
+                </div>
+                <div>
+                    <label for="tx-to" class="text-sm text-slate-400">送金先</label>
+                    <select id="tx-to" class="w-full bg-slate-700 border border-slate-600 rounded-md p-2 mt-1"></select>
+                </div>
+                <div>
+                    <label for="tx-amount" class="text-sm text-slate-400">金額</label>
+                    <input type="number" id="tx-amount" min="1" class="w-full bg-slate-700 border border-slate-600 rounded-md p-2 mt-1" placeholder="例: 10">
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button id="cancel-tx" class="px-4 py-2 rounded-md bg-slate-600 hover:bg-slate-500 transition">キャンセル</button>
+                    <button id="confirm-tx" class="px-4 py-2 rounded-md btn-gradient">送信</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- HASHING FUNCTION ---
+            function hash16(data) {
+                const str = String(data);
+                let hash = 0;
+                if (str.length === 0) return '0000';
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash;
+                }
+                return ('0000' + Math.abs(hash).toString(16)).slice(-4).toUpperCase();
+            }
+
+            // --- BLOCKCHAIN CLASSES ---
+            class Transaction {
+                constructor(fromAddress, toAddress, amount) {
+                    this.fromAddress = fromAddress;
+                    this.toAddress = toAddress;
+                    this.amount = amount;
+                    this.timestamp = Date.now();
+                }
+            }
+
+            class Block {
+                constructor(timestamp, transactions, previousHash = '') {
+                    this.timestamp = timestamp;
+                    this.transactions = transactions;
+                    this.previousHash = previousHash;
+                    this.nonce = 0;
+                    this.hash = this.calculateHash();
+                }
+
+                calculateHash() {
+                    return hash16(
+                        this.previousHash +
+                        this.timestamp +
+                        JSON.stringify(this.transactions) +
+                        this.nonce
+                    );
+                }
+            }
+
+            class Blockchain {
+                constructor() {
+                    this.chain = [this.createGenesisBlock()];
+                    this.difficulty = 2;
+                    this.pendingTransactions = [];
+                    this.miningReward = 50;
+                }
+
+                createGenesisBlock() {
+                    return new Block(Date.now(), "Genesis Block", "0");
+                }
+
+                getLatestBlock() {
+                    return this.chain[this.chain.length - 1];
+                }
+
+                addTransaction(transaction) {
+                    if (!transaction.fromAddress || !transaction.toAddress) {
+                        throw new Error('Transaction must include from and to address');
+                    }
+                    if (transaction.amount <= 0) {
+                        throw new Error('Transaction amount should be higher than 0');
+                    }
+                    const walletBalance = this.getBalanceOfAddress(transaction.fromAddress);
+                    if (walletBalance < transaction.amount && transaction.fromAddress !== 'System') {
+                        throw new Error('Not enough balance');
+                    }
+                    this.pendingTransactions.push(transaction);
+                }
+
+                getBalanceOfAddress(address) {
+                    let balance = 100; // Initial balance for all agents
+                    for (const block of this.chain) {
+                        if (typeof block.transactions === 'string') continue;
+                        for (const trans of block.transactions) {
+                            if (trans.fromAddress === address) {
+                                balance -= trans.amount;
+                            }
+                            if (trans.toAddress === address) {
+                                balance += trans.amount;
+                            }
+                        }
+                    }
+                    return balance;
+                }
+
+                isChainValid() {
+                    for (let i = 1; i < this.chain.length; i++) {
+                        const currentBlock = this.chain[i];
+                        const previousBlock = this.chain[i - 1];
+
+                        if (currentBlock.hash !== currentBlock.calculateHash()) {
+                            return false;
+                        }
+                        if (currentBlock.previousHash !== previousBlock.hash) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            }
+
+            // --- SIMULATOR ---
+            const SIMULATOR = {
+                blockchain: new Blockchain(),
+                agents: [],
+                isRunning: true,
+                speed: 1,
+                miner: null,
+                isMining: false,
+                lastUpdate: 0,
+                agentActionInterval: 5000,
+            };
+
+            const AGENT_NAMES = ['Alice', 'Bob', 'Charlie', 'Dave', 'Eve'];
+
+            // --- UI CONTROLLER ---
+            const UI = {
+                // DOM Elements
+                status: document.getElementById('simulation-status'),
+                toggleBtn: document.getElementById('toggle-simulation'),
+                speedSlider: document.getElementById('simulation-speed'),
+                speedValue: document.getElementById('speed-value'),
+                difficultySlider: document.getElementById('difficulty-slider'),
+                difficultyValue: document.getElementById('difficulty-value'),
+                agentsList: document.getElementById('agents-list'),
+                mempool: document.getElementById('mempool'),
+                mempoolCount: document.getElementById('mempool-count'),
+                mempoolPlaceholder: document.getElementById('mempool-placeholder'),
+                miningArea: document.getElementById('mining-area'),
+                miningPlaceholder: document.getElementById('mining-placeholder'),
+                miningDetails: document.getElementById('mining-details'),
+                miningBlockIndex: document.getElementById('mining-block-index'),
+                miningTarget: document.getElementById('mining-target'),
+                miningNonce: document.getElementById('mining-nonce'),
+                miningHash: document.getElementById('mining-hash'),
+                miningProgress: document.getElementById('mining-progress'),
+                blockchainLedger: document.getElementById('blockchain-ledger'),
+                validateBtn: document.getElementById('validate-chain'),
+                txModal: document.getElementById('tx-modal'),
+                txFrom: document.getElementById('tx-from'),
+                txTo: document.getElementById('tx-to'),
+                txAmount: document.getElementById('tx-amount'),
+                cancelTxBtn: document.getElementById('cancel-tx'),
+                confirmTxBtn: document.getElementById('confirm-tx'),
+
+                init() {
+                    this.toggleBtn.addEventListener('click', () => SIMULATOR_CTRL.toggle());
+                    this.speedSlider.addEventListener('input', (e) => SIMULATOR_CTRL.setSpeed(e.target.value));
+                    this.difficultySlider.addEventListener('input', (e) => SIMULATOR_CTRL.setDifficulty(e.target.value));
+                    this.validateBtn.addEventListener('click', () => this.validateChain());
+                    this.cancelTxBtn.addEventListener('click', () => this.closeTxModal());
+                },
+                
+                updateStatus() {
+                    this.status.textContent = SIMULATOR.isRunning ? '実行中' : '停止中';
+                    this.status.className = `font-semibold ${SIMULATOR.isRunning ? 'text-green-400' : 'text-yellow-400'}`;
+                    this.toggleBtn.innerHTML = `<i class="fas ${SIMULATOR.isRunning ? 'fa-pause' : 'fa-play'}"></i>`;
+                },
+
+                renderAgents() {
+                    this.agentsList.innerHTML = SIMULATOR.agents.map(agent => {
+                        const balance = SIMULATOR.blockchain.getBalanceOfAddress(agent.id);
+                        return `
+                            <div class="p-3 bg-black/20 rounded-lg">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-bold">${agent.name}</span>
+                                    <span class="text-sm font-mono">${balance.toFixed(0)} BTC</span>
+                                </div>
+                                <div class="w-full bg-slate-700 rounded-full h-1.5 mt-2">
+                                    <div class="bg-gradient-to-r from-green-500 to-emerald-500 h-1.5 rounded-full" style="width: ${Math.min(100, balance/2)}%"></div>
+                                </div>
+                                <button class="create-tx-btn w-full mt-3 text-xs py-1 rounded-md bg-orange-600/50 hover:bg-orange-600 transition" data-agent-id="${agent.id}">取引作成</button>
+                            </div>
+                        `;
+                    }).join('');
+                    document.querySelectorAll('.create-tx-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            const agentId = e.target.getAttribute('data-agent-id');
+                            this.openTxModal(agentId);
+                        });
+                    });
+                },
+
+                renderMempool() {
+                    const txs = SIMULATOR.blockchain.pendingTransactions;
+                    this.mempoolCount.textContent = txs.length;
+                    if (txs.length === 0) {
+                        this.mempool.innerHTML = '';
+                        this.mempoolPlaceholder.style.display = 'block';
+                        return;
+                    }
+                    this.mempoolPlaceholder.style.display = 'none';
+                    this.mempool.innerHTML = txs.map(tx => `
+                        <div class="text-xs p-2 bg-slate-800/50 rounded-md fade-in">
+                           <div class="flex justify-between">
+                                <span><i class="fas fa-arrow-up text-red-400"></i> ${tx.fromAddress}</span>
+                                <span class="font-bold font-mono text-orange-400">${tx.amount} BTC</span>
+                           </div>
+                           <div class="flex justify-between">
+                                <span><i class="fas fa-arrow-down text-green-400"></i> ${tx.toAddress}</span>
+                           </div>
+                        </div>
+                    `).join('');
+                },
+
+                startMiningVisuals(block) {
+                    this.miningPlaceholder.style.display = 'none';
+                    this.miningDetails.style.display = 'block';
+                    this.miningBlockIndex.textContent = SIMULATOR.blockchain.chain.length;
+                    this.miningTarget.textContent = '0'.repeat(SIMULATOR.blockchain.difficulty);
+                    this.miningProgress.style.width = '0%';
+                },
+
+                updateMiningVisuals(nonce, hash) {
+                    this.miningNonce.textContent = nonce;
+                    this.miningHash.textContent = hash;
+                    this.miningProgress.style.width = `${(nonce % 1000) / 10}%`;
+                },
+
+                stopMiningVisuals() {
+                    this.miningPlaceholder.style.display = 'block';
+                    this.miningDetails.style.display = 'none';
+                    this.miningNonce.textContent = '0';
+                    this.miningHash.textContent = '';
+                },
+
+                renderBlockchain() {
+                    this.blockchainLedger.innerHTML = SIMULATOR.blockchain.chain.map((block, i) => {
+                        const isValid = this.isBlockStructurallyValid(block, i);
+                        return `
+                            <div class="block bg-black/20 p-4 rounded-lg space-y-2 ${!isValid ? 'invalid' : ''}" data-block-index="${i}">
+                                <div class="flex justify-between items-center">
+                                    <h4 class="font-bold text-lg">ブロック #${i}</h4>
+                                    <button class="tamper-btn text-xs bg-red-600/50 hover:bg-red-600 px-2 py-1 rounded-md transition ${i === 0 ? 'hidden': ''}" data-block-index="${i}"><i class="fas fa-user-secret"></i> 改ざん</button>
+                                </div>
+                                <div class="text-xs space-y-1 text-slate-400">
+                                    <p><span class="font-semibold text-slate-300 w-24 inline-block">ハッシュ:</span> <span class="hash-text">${block.hash}</span></p>
+                                    <p><span class="font-semibold text-slate-300 w-24 inline-block">前のハッシュ:</span> <span class="hash-text">${block.previousHash}</span></p>
+                                    <p><span class="font-semibold text-slate-300 w-24 inline-block">ノンス:</span> <span class="font-mono text-white">${block.nonce}</span></p>
+                                    <p><span class="font-semibold text-slate-300 w-24 inline-block">タイムスタンプ:</span> ${new Date(block.timestamp).toLocaleString()}</p>
+                                    <div>
+                                        <span class="font-semibold text-slate-300 w-24 inline-block">取引:</span>
+                                        <div class="pl-4 mt-1 border-l border-slate-700">
+                                            ${this.formatTransactions(block.transactions)}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).reverse().join('');
+                    this.blockchainLedger.scrollTop = 0;
+                    document.querySelectorAll('.tamper-btn').forEach(btn => {
+                        btn.addEventListener('click', e => {
+                            const index = e.currentTarget.dataset.blockIndex;
+                            SIMULATOR_CTRL.tamperBlock(index);
+                        });
+                    });
+                },
+                
+                addNewBlock(blockElement) {
+                    this.blockchainLedger.prepend(blockElement);
+                    setTimeout(() => {
+                        blockElement.classList.remove('new');
+                    }, 2000);
+                },
+
+                formatTransactions(txs) {
+                    if (typeof txs === 'string') return `<div class="p-1">${txs}</div>`;
+                    if (txs.length === 0) return `<div class="p-1 text-slate-500">取引なし</div>`;
+                    return txs.map(tx => {
+                        if (tx.fromAddress === 'System') {
+                             return `<div class="p-1 rounded-md"><i class="fas fa-award text-yellow-400"></i> ${tx.toAddress} が ${tx.amount} BTC の報酬を獲得</div>`
+                        }
+                        return `<div class="p-1 rounded-md"><i class="fas fa-exchange-alt text-slate-500"></i> ${tx.fromAddress} -> ${tx.toAddress} (${tx.amount} BTC)</div>`;
+                    }).join('');
+                },
+                
+                isBlockStructurallyValid(block, index) {
+                    if(index === 0) return true;
+                    const prevBlock = SIMULATOR.blockchain.chain[index - 1];
+                    return block.previousHash === prevBlock.hash && block.hash === block.calculateHash();
+                },
+                
+                validateChain() {
+                    const isValid = SIMULATOR.blockchain.isChainValid();
+                    this.renderBlockchain(); 
+                    
+                    const blocks = this.blockchainLedger.querySelectorAll('.block');
+                    let delay = 0;
+                    for (let i = blocks.length - 1; i >= 0; i--) {
+                        setTimeout(() => {
+                           const blockIndex = blocks[i].dataset.blockIndex;
+                           const currentBlock = SIMULATOR.blockchain.chain[blockIndex];
+                           const previousBlock = SIMULATOR.blockchain.chain[blockIndex - 1];
+                           
+                           const isHashCorrect = currentBlock.hash === currentBlock.calculateHash();
+                           const isLinkCorrect = blockIndex > 0 ? currentBlock.previousHash === previousBlock.hash : true;
+
+                           if (isHashCorrect && isLinkCorrect) {
+                               blocks[i].style.boxShadow = '0 0 20px var(--success-glow)';
+                           } else {
+                               blocks[i].style.boxShadow = '0 0 20px var(--error-glow)';
+                           }
+                           
+                           setTimeout(() => {
+                               blocks[i].style.boxShadow = '';
+                           }, 500);
+
+                        }, delay);
+                        delay += 100;
+                    }
+                },
+
+                openTxModal(agentId) {
+                    const agent = SIMULATOR.agents.find(a => a.id === agentId);
+                    this.txFrom.textContent = agent.name;
+                    this.txFrom.dataset.agentId = agentId;
+
+                    this.txTo.innerHTML = SIMULATOR.agents
+                        .filter(a => a.id !== agentId)
+                        .map(a => `<option value="${a.id}">${a.name}</option>`)
+                        .join('');
+
+                    this.txAmount.value = '';
+                    this.txModal.classList.remove('hidden');
+
+                    this.confirmTxBtn.onclick = () => {
+                        const from = this.txFrom.dataset.agentId;
+                        const to = this.txTo.value;
+                        const amount = parseFloat(this.txAmount.value);
+
+                        if (amount > 0) {
+                            try {
+                                SIMULATOR_CTRL.createTransaction(from, to, amount);
+                                this.closeTxModal();
+                            } catch (error) {
+                                alert(`エラー: ${error.message}`);
+                            }
+                        } else {
+                            alert('有効な金額を入力してください。');
+                        }
+                    };
+                },
+
+                closeTxModal() {
+                    this.txModal.classList.add('hidden');
+                }
+            };
+            
+            // --- SIMULATOR CONTROLLER ---
+            const SIMULATOR_CTRL = {
+                init() {
+                    AGENT_NAMES.forEach(name => SIMULATOR.agents.push({ name, id: name }));
+                    SIMULATOR.blockchain.difficulty = parseInt(UI.difficultySlider.value);
+                    UI.init();
+                    this.updateAllUI();
+                    this.mainLoop();
+                },
+
+                toggle() {
+                    SIMULATOR.isRunning = !SIMULATOR.isRunning;
+                    UI.updateStatus();
+                },
+
+                setSpeed(val) {
+                    SIMULATOR.speed = parseInt(val);
+                    UI.speedValue.textContent = val;
+                },
+
+                setDifficulty(val) {
+                    SIMULATOR.blockchain.difficulty = parseInt(val);
+                    UI.difficultyValue.textContent = val;
+                },
+
+                createTransaction(from, to, amount, isFraudulent = false) {
+                    const balance = SIMULATOR.blockchain.getBalanceOfAddress(from);
+                    let txAmount = amount;
+                    if(isFraudulent) {
+                        txAmount = balance + Math.floor(Math.random() * 100) + 1;
+                    }
+
+                    const tx = new Transaction(from, to, txAmount);
+                    
+                    try {
+                        SIMULATOR.blockchain.addTransaction(tx);
+                        UI.renderMempool();
+                    } catch(e) {
+                        console.warn(`不正な取引がブロックされました: ${from} -> ${to} for ${txAmount} BTC. Reason: ${e.message}`);
+                    }
+                },
+                
+                tamperBlock(index) {
+                    if (index == 0) return;
+                    const block = SIMULATOR.blockchain.chain[index];
+                    if (typeof block.transactions !== 'string' && block.transactions.length > 0) {
+                        const originalAmount = block.transactions[0].amount;
+                        block.transactions[0].amount += 100;
+                        alert(`ブロック #${index} の最初の取引額を ${originalAmount} から ${block.transactions[0].amount} に変更しました。「チェーン検証」ボタンで結果を確認してください。`);
+                        UI.renderBlockchain();
+                    } else {
+                        alert('このブロックには改ざんできる取引がありません。');
+                    }
+                },
+
+                mineBlock() {
+                    if (SIMULATOR.isMining || SIMULATOR.blockchain.pendingTransactions.length === 0) {
+                        return;
+                    }
+                    SIMULATOR.isMining = true;
+                    
+                    const miner = SIMULATOR.agents[Math.floor(Math.random() * SIMULATOR.agents.length)];
+                    const rewardTx = new Transaction('System', miner.id, SIMULATOR.blockchain.miningReward);
+                    SIMULATOR.blockchain.pendingTransactions.unshift(rewardTx);
+                    
+                    const block = new Block(Date.now(), SIMULATOR.blockchain.pendingTransactions, SIMULATOR.blockchain.getLatestBlock().hash);
+                    UI.startMiningVisuals(block);
+
+                    let nonce = 0;
+                    const difficulty = SIMULATOR.blockchain.difficulty;
+                    const target = '0'.repeat(difficulty);
+                    
+                    function mineStep() {
+                        if (!SIMULATOR.isRunning) {
+                            requestAnimationFrame(mineStep);
+                            return;
+                        }
+                        
+                        let attempts = 100 * SIMULATOR.speed;
+                        let found = false;
+                        let finalHash = '';
+
+                        for(let i = 0; i < attempts; i++){
+                            nonce++;
+                            const hash = hash16(block.previousHash + block.timestamp + JSON.stringify(block.transactions) + nonce);
+                            if (hash.substring(0, difficulty) === target) {
+                                found = true;
+                                finalHash = hash;
+                                break;
+                            }
+                            if(i === attempts - 1){
+                                UI.updateMiningVisuals(nonce, hash);
+                            }
+                        }
+
+                        if(found) {
+                            block.nonce = nonce;
+                            block.hash = finalHash;
+                            SIMULATOR.blockchain.chain.push(block);
+                            SIMULATOR.blockchain.pendingTransactions = [];
+
+                            SIMULATOR.isMining = false;
+                            UI.stopMiningVisuals();
+                            this.updateAllUI();
+                            
+                            const newBlockEl = document.querySelector(`[data-block-index="${SIMULATOR.blockchain.chain.length - 1}"]`);
+                            if(newBlockEl) newBlockEl.classList.add('new');
+
+                        } else {
+                            requestAnimationFrame(mineStep.bind(this));
+                        }
+                    }
+                    requestAnimationFrame(mineStep.bind(this));
+                },
+
+                runAgentActions() {
+                     if (Math.random() < 0.5 * SIMULATOR.speed / 5) {
+                        const agent = SIMULATOR.agents[Math.floor(Math.random() * SIMULATOR.agents.length)];
+                        const recipient = SIMULATOR.agents.filter(a => a.id !== agent.id)[Math.floor(Math.random() * (SIMULATOR.agents.length - 1))];
+                        
+                        const balance = SIMULATOR.blockchain.getBalanceOfAddress(agent.id);
+                        if (balance > 1) {
+                            const amount = Math.floor(Math.random() * Math.min(balance, 50)) + 1;
+                            const isFraudulent = Math.random() < 0.1; // 10% chance of fraud attempt
+                            this.createTransaction(agent.id, recipient.id, amount, isFraudulent);
+                        }
+                    }
+                },
+                
+                updateAllUI() {
+                    UI.renderAgents();
+                    UI.renderMempool();
+                    UI.renderBlockchain();
+                },
+
+                mainLoop(timestamp) {
+                    if (SIMULATOR.isRunning) {
+                        if (!SIMULATOR.lastUpdate || timestamp - SIMULATOR.lastUpdate > SIMULATOR.agentActionInterval / SIMULATOR.speed) {
+                            SIMULATOR.lastUpdate = timestamp;
+                            this.runAgentActions();
+                        }
+                        this.mineBlock();
+                    }
+                    requestAnimationFrame(this.mainLoop.bind(this));
+                }
+            };
+
+            SIMULATOR_CTRL.init();
+        });
+    </script>
+</body>
+</html>

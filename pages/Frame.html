@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gradient Frame Studio</title>
+    <meta name="description" content="Upload an image, select a square area, and apply a beautiful custom gradient frame. Download your creation in high quality.">
+    <meta name="page:icon" content="fas fa-crop-alt">
+    <meta name="page:color" content="#8b5cf6">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap');
+
+        :root {
+            --brand-color: #8b5cf6;
+            --brand-color-hover: #7c3aed;
+        }
+        
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #f3f4f6;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .panel {
+            background-color: white;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .content-wrapper {
+            display: flex;
+            flex-grow: 1;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .workspace-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+            flex-direction: column;
+        }
+
+        @media (min-width: 1024px) {
+            .main-container {
+                flex-direction: row;
+            }
+            .content-wrapper {
+                 flex-direction: row;
+            }
+            .workspace-container {
+                flex-direction: row;
+            }
+        }
+
+        #resizer {
+            flex-basis: 10px;
+            flex-shrink: 0;
+            cursor: col-resize;
+            background-color: #f3f4f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease;
+        }
+        #resizer:hover, #resizer.resizing {
+             background-color: #d1d5db;
+        }
+        #resizer::after {
+            content: '•••';
+            transform: rotate(90deg);
+            color: #9ca3af;
+            font-size: 10px;
+            letter-spacing: -2px;
+        }
+
+        input[type="color"] {
+            -webkit-appearance: none;
+            width: 48px;
+            height: 48px;
+            border: none;
+            padding: 0;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s ease-in-out;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+            border-radius: 50%;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: 2px solid #e5e7eb;
+            border-radius: 50%;
+        }
+        input[type="color"]:hover {
+            transform: scale(1.1);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: var(--brand-color);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px #d1d5db;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: var(--brand-color);
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        .custom-file-upload {
+            border: 2px dashed #d1d5db;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .custom-file-upload:hover, .custom-file-upload.dragover {
+            background-color: #f0f0ff;
+            border-color: var(--brand-color);
+        }
+        
+        #editorCanvas {
+            touch-action: none;
+        }
+
+        .control-group-title {
+            font-weight: 700;
+            font-size: 0.875rem;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="text-gray-800 antialiased">
+
+    <div class="main-container">
+        <!-- CONTROLS PANEL -->
+        <div id="controls-panel" class="panel lg:rounded-r-2xl p-6 flex flex-col space-y-6 lg:w-[320px] lg:flex-shrink-0 overflow-y-auto no-scrollbar">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 bg-violet-500 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-crop-alt text-2xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900">Gradient Frame</h1>
+                    <p class="text-sm text-gray-500">画像にフレームを追加</p>
+                </div>
+            </div>
+
+            <div class="flex-grow flex flex-col space-y-6">
+                <!-- 1. IMAGE UPLOAD -->
+                <div>
+                    <h2 class="control-group-title"><i class="fas fa-image w-4 text-center"></i><span>画像</span></h2>
+                    <label for="imageLoader" class="custom-file-upload mt-2 p-6 rounded-lg text-center">
+                        <div class="flex flex-col items-center space-y-2 text-gray-500">
+                             <i class="fas fa-upload text-3xl"></i>
+                            <span class="font-semibold">画像を選択</span>
+                            <span class="text-xs">またはここにドラッグ</span>
+                        </div>
+                    </label>
+                    <input type="file" id="imageLoader" name="imageLoader" accept="image/*" class="hidden"/>
+                </div>
+
+                <!-- 2. GRADIENT COLORS -->
+                <div>
+                    <h2 class="control-group-title"><i class="fas fa-palette w-4 text-center"></i><span>グラデーション</span></h2>
+                    <div class="mt-3 flex items-center justify-around bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <input type="color" id="color1" value="#8b5cf6">
+                        <i class="fas fa-arrow-right text-gray-400"></i>
+                        <input type="color" id="color2" value="#ec4899">
+                    </div>
+                </div>
+
+                <!-- 3. GRADIENT STYLE -->
+                 <div>
+                    <h2 class="control-group-title"><i class="fas fa-drafting-compass w-4 text-center"></i><span>スタイル</span></h2>
+                    <select id="gradientDirection" class="mt-3 w-full bg-gray-50 border border-gray-300 rounded-lg p-2 focus:ring-violet-500 focus:border-violet-500 text-sm text-gray-800">
+                        <option value="top-to-bottom">上から下へ</option>
+                        <option value="left-to-right">左から右へ</option>
+                        <option value="tl-to-br">左上から右下へ</option>
+                        <option value="tr-to-bl">右上から左下へ</option>
+                        <option value="radial">放射状</option>
+                    </select>
+                </div>
+
+                <!-- 4. FRAME WIDTH -->
+                <div>
+                    <h2 class="control-group-title"><i class="fas fa-ruler-horizontal w-4 text-center"></i><span>フレーム幅 (割合)</span></h2>
+                    <div class="mt-3 flex items-center space-x-4">
+                        <input type="range" id="frameWidth" min="1" max="20" value="2" step="1" class="flex-grow">
+                        <span id="frameWidthValue" class="font-mono bg-gray-100 border border-gray-200 px-2 py-1 rounded-md text-sm w-14 text-center text-gray-700">2%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ACTION BUTTON -->
+            <button id="downloadBtn" class="w-full bg-violet-600 hover:bg-violet-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2">
+                <i class="fas fa-download"></i>
+                <span>ダウンロード</span>
+            </button>
+        </div>
+
+        <div class="content-wrapper p-4 lg:p-6 gap-4 lg:gap-6">
+             <div class="workspace-container">
+                <!-- EDITOR PANEL -->
+                <div id="editor-panel" class="panel rounded-2xl flex-1 min-w-0 flex items-center justify-center p-2 relative overflow-hidden">
+                    <div id="editor-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-center text-gray-400 p-4 pointer-events-none">
+                        <i class="fas fa-image text-6xl"></i>
+                        <p class="mt-4 font-semibold">ここに画像が表示されます</p>
+                        <p class="text-sm">左のパネルから画像をアップロードしてください</p>
+                    </div>
+                    <canvas id="editorCanvas" style="display: none;"></canvas>
+                </div>
+                
+                <div id="resizer" class="hidden lg:flex"></div>
+    
+                <!-- PREVIEW PANEL -->
+                <div id="preview-panel" class="panel rounded-2xl flex-1 min-w-0 flex flex-col items-center justify-center p-6 space-y-4">
+                    <h2 class="text-lg font-bold text-gray-900 tracking-wider">リアルタイムプレビュー</h2>
+                    <div id="preview-wrapper" class="w-full h-full min-h-0 flex-1 flex items-center justify-center overflow-hidden">
+                        <canvas id="previewCanvas" class="max-w-full max-h-full"></canvas>
+                    </div>
+                    <p class="text-xs text-gray-500 text-center">
+                        右ドラッグで移動、ホイールでズームできます。<br>
+                        高解像度でダウンロードされます。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageLoader = document.getElementById('imageLoader');
+        const uploadLabel = document.querySelector('label[for="imageLoader"]');
+        const editorCanvas = document.getElementById('editorCanvas');
+        const editorCtx = editorCanvas.getContext('2d');
+        const editorPanel = document.getElementById('editor-panel');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const previewCtx = previewCanvas.getContext('2d');
+        const editorPlaceholder = document.getElementById('editor-placeholder');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const previewWrapper = document.getElementById('preview-wrapper');
+
+        const color1Input = document.getElementById('color1');
+        const color2Input = document.getElementById('color2');
+        const gradientDirectionInput = document.getElementById('gradientDirection');
+        const frameWidthInput = document.getElementById('frameWidth');
+        const frameWidthValue = document.getElementById('frameWidthValue');
+
+        const resizer = document.getElementById('resizer');
+
+        let sourceImage = null;
+        let cropRect = { x: 0, y: 0, size: 0 };
+        let view = { x: 0, y: 0, scale: 1 };
+        
+        let lastMousePos = { x: 0, y: 0 };
+        let isPanning = false;
+        let isDraggingCrop = false;
+        let activeHandle = null;
+        
+        downloadBtn.disabled = true;
+        
+        const HANDLE_SIZE = 10;
+        const MIN_CROP_SIZE = 30;
+
+        function setInitialView() {
+            if (!sourceImage) return;
+            const canvas = editorCanvas;
+            const scaleX = canvas.width / sourceImage.width;
+            const scaleY = canvas.height / sourceImage.height;
+            view.scale = Math.min(scaleX, scaleY) * 0.9;
+            view.x = (canvas.width - sourceImage.width * view.scale) / 2;
+            view.y = (canvas.height - sourceImage.height * view.scale) / 2;
+            
+            cropRect.size = Math.min(sourceImage.width, sourceImage.height) * 0.5;
+            cropRect.x = (sourceImage.width - cropRect.size) / 2;
+            cropRect.y = (sourceImage.height - cropRect.size) / 2;
+        }
+
+        function handleImage(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                sourceImage = new Image();
+                sourceImage.onload = () => {
+                    editorPlaceholder.style.display = 'none';
+                    editorCanvas.style.display = 'block';
+                    downloadBtn.disabled = false;
+                    setInitialView();
+                    requestAnimationFrame(draw);
+                }
+                sourceImage.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+        
+        function draw() {
+            if (!sourceImage) return;
+
+            const canvas = editorCanvas;
+            editorCtx.save();
+            editorCtx.clearRect(0, 0, canvas.width, canvas.height);
+            editorCtx.translate(view.x, view.y);
+            editorCtx.scale(view.scale, view.scale);
+
+            editorCtx.drawImage(sourceImage, 0, 0);
+
+            editorCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            editorCtx.beginPath();
+            editorCtx.rect(0, 0, sourceImage.width, sourceImage.height);
+            editorCtx.rect(cropRect.x + cropRect.size, cropRect.y, -cropRect.size, cropRect.size);
+            editorCtx.fill();
+
+            editorCtx.strokeStyle = 'rgba(0,0,0, 0.7)';
+            editorCtx.lineWidth = 1.5 / view.scale;
+            editorCtx.strokeRect(cropRect.x, cropRect.y, cropRect.size, cropRect.size);
+
+            drawHandles();
+
+            editorCtx.restore();
+            
+            updatePreview();
+            requestAnimationFrame(draw);
+        }
+
+        function getHandles() {
+            const { x, y, size } = cropRect;
+            const half = size / 2;
+            return {
+                'top-left': { x, y }, 'top-right': { x: x + size, y },
+                'bottom-left': { x, y: y + size }, 'bottom-right': { x: x + size, y: y + size },
+                'top': { x: x + half, y }, 'bottom': { x: x + half, y: y + size },
+                'left': { x, y: y + half }, 'right': { x: x + size, y: y + half },
+            };
+        }
+
+        function drawHandles() {
+            editorCtx.fillStyle = '#8b5cf6';
+            editorCtx.strokeStyle = 'white';
+            editorCtx.lineWidth = 1 / view.scale;
+            const handleDrawSize = HANDLE_SIZE / view.scale;
+            const handles = getHandles();
+            for (const key in handles) {
+                const pos = handles[key];
+                editorCtx.fillRect(pos.x - handleDrawSize / 2, pos.y - handleDrawSize / 2, handleDrawSize, handleDrawSize);
+                editorCtx.strokeRect(pos.x - handleDrawSize / 2, pos.y - handleDrawSize / 2, handleDrawSize, handleDrawSize);
+            }
+        }
+        
+        function getMousePos(e, canvas) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        function screenToWorld(pos) {
+            return { x: (pos.x - view.x) / view.scale, y: (pos.y - view.y) / view.scale };
+        }
+
+        function checkHandles(worldPos) {
+            const handles = getHandles();
+            const handleHitboxSize = HANDLE_SIZE * 2 / view.scale;
+            for (const key in handles) {
+                const pos = handles[key];
+                if (Math.abs(worldPos.x - pos.x) < handleHitboxSize / 2 && Math.abs(worldPos.y - pos.y) < handleHitboxSize / 2) {
+                    return key;
+                }
+            }
+            return null;
+        }
+
+        editorCanvas.addEventListener('mousedown', e => {
+            lastMousePos = getMousePos(e, editorCanvas);
+            if (e.button === 2 || (e.button === 0 && e.ctrlKey)) { // Right click or Ctrl+Left for panning
+                isPanning = true;
+                editorCanvas.style.cursor = 'grabbing';
+            } else if (e.button === 0) {
+                const worldPos = screenToWorld(lastMousePos);
+                activeHandle = checkHandles(worldPos);
+
+                if (!activeHandle && worldPos.x > cropRect.x && worldPos.x < cropRect.x + cropRect.size &&
+                           worldPos.y > cropRect.y && worldPos.y < cropRect.y + cropRect.size) {
+                    isDraggingCrop = true;
+                    editorCanvas.style.cursor = 'move';
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isPanning = false;
+            isDraggingCrop = false;
+            activeHandle = null;
+            updateCursor(lastMousePos);
+        });
+
+        window.addEventListener('mousemove', e => {
+            const mousePos = getMousePos(e, editorCanvas);
+            const delta = { x: mousePos.x - lastMousePos.x, y: mousePos.y - lastMousePos.y };
+            
+            if (isPanning) {
+                view.x += delta.x;
+                view.y += delta.y;
+            } else if (isDraggingCrop) {
+                cropRect.x += delta.x / view.scale;
+                cropRect.y += delta.y / view.scale;
+                constrainCropRect();
+            } else if (activeHandle) {
+                resizeCrop(activeHandle, delta.x / view.scale, delta.y / view.scale);
+            } else {
+                updateCursor(mousePos);
+            }
+
+            lastMousePos = mousePos;
+        });
+
+        function resizeCrop(handle, world_dx, world_dy) {
+            let { x, y, size } = cropRect;
+            const old_right = x + size;
+            const old_bottom = y + size;
+
+            if (handle === 'top-left') {
+                const new_size_x = size - world_dx;
+                const new_size_y = size - world_dy;
+                size = Math.max(new_size_x, new_size_y, MIN_CROP_SIZE);
+                x = old_right - size;
+                y = old_bottom - size;
+            } else if (handle === 'top-right') {
+                const new_size_x = size + world_dx;
+                const new_size_y = size - world_dy;
+                size = Math.max(new_size_x, new_size_y, MIN_CROP_SIZE);
+                y = old_bottom - size;
+            } else if (handle === 'bottom-left') {
+                const new_size_x = size - world_dx;
+                const new_size_y = size + world_dy;
+                size = Math.max(new_size_x, new_size_y, MIN_CROP_SIZE);
+                x = old_right - size;
+            } else if (handle === 'bottom-right') {
+                const new_size_x = size + world_dx;
+                const new_size_y = size + world_dy;
+                size = Math.max(new_size_x, new_size_y, MIN_CROP_SIZE);
+            } else if (handle === 'top') {
+                const new_size = size - world_dy;
+                if (new_size >= MIN_CROP_SIZE) { y += world_dy; size = new_size; }
+            } else if (handle === 'bottom') {
+                const new_size = size + world_dy;
+                if (new_size >= MIN_CROP_SIZE) { size = new_size; }
+            } else if (handle === 'left') {
+                const new_size = size - world_dx;
+                if (new_size >= MIN_CROP_SIZE) { x += world_dx; size = new_size; }
+            } else if (handle === 'right') {
+                const new_size = size + world_dx;
+                if (new_size >= MIN_CROP_SIZE) { size = new_size; }
+            }
+
+            cropRect = { x, y, size };
+            constrainCropRect();
+        }
+
+        function constrainCropRect() {
+            if (!sourceImage) return;
+            if (cropRect.size > sourceImage.width) cropRect.size = sourceImage.width;
+            if (cropRect.size > sourceImage.height) cropRect.size = sourceImage.height;
+            cropRect.x = Math.max(0, Math.min(cropRect.x, sourceImage.width - cropRect.size));
+            cropRect.y = Math.max(0, Math.min(cropRect.y, sourceImage.height - cropRect.size));
+        }
+
+        function updateCursor(mousePos) {
+            if (isPanning || isDraggingCrop || activeHandle) return;
+            const worldPos = screenToWorld(mousePos);
+            const handle = checkHandles(worldPos);
+            let cursor = 'default';
+            if (handle) {
+                if (handle.includes('top') || handle.includes('bottom')) cursor = 'ns-resize';
+                if (handle.includes('left') || handle.includes('right')) cursor = 'ew-resize';
+                if (handle === 'top-left' || handle === 'bottom-right') cursor = 'nwse-resize';
+                if (handle === 'top-right' || handle === 'bottom-left') cursor = 'nesw-resize';
+            } else if (worldPos.x > cropRect.x && worldPos.x < cropRect.x + cropRect.size &&
+                       worldPos.y > cropRect.y && worldPos.y < cropRect.y + cropRect.size) {
+                cursor = 'move';
+            }
+            editorCanvas.style.cursor = cursor;
+        }
+
+        editorCanvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const mousePos = getMousePos(e, editorCanvas);
+            const zoomFactor = 1.1;
+            const worldPosBeforeZoom = screenToWorld(mousePos);
+            
+            if (e.deltaY < 0) { view.scale *= zoomFactor; } 
+            else { view.scale /= zoomFactor; }
+            
+            const worldPosAfterZoom = screenToWorld(mousePos);
+            view.x += (worldPosAfterZoom.x - worldPosBeforeZoom.x) * view.scale;
+            view.y += (worldPosAfterZoom.y - worldPosBeforeZoom.y) * view.scale;
+        });
+        
+        editorCanvas.addEventListener('contextmenu', e => e.preventDefault());
+
+        function drawGradient(ctx, totalSize) {
+            const color1 = color1Input.value;
+            const color2 = color2Input.value;
+            const direction = gradientDirectionInput.value;
+            let gradient;
+            if (direction === 'radial') {
+                gradient = ctx.createRadialGradient(totalSize / 2, totalSize / 2, 0, totalSize / 2, totalSize / 2, totalSize / 2);
+            } else {
+                let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+                if (direction === 'top-to-bottom') y2 = totalSize;
+                else if (direction === 'left-to-right') x2 = totalSize;
+                else if (direction === 'tl-to-br') { x2 = totalSize; y2 = totalSize; }
+                else if (direction === 'tr-to-bl') { x1 = totalSize; y2 = totalSize; }
+                gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+            }
+            gradient.addColorStop(0, color1);
+            gradient.addColorStop(1, color2);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, totalSize, totalSize);
+        }
+
+        function updatePreview() {
+            if(!sourceImage) return;
+            const totalSize = previewCanvas.width;
+            const frameWidthPercentage = parseInt(frameWidthInput.value) / 100;
+            const frameWidthInPixels = totalSize * frameWidthPercentage;
+
+            previewCtx.clearRect(0, 0, totalSize, totalSize);
+            drawGradient(previewCtx, totalSize);
+            
+            const destSize = totalSize - (frameWidthInPixels * 2);
+
+            if (destSize > 0) {
+                previewCtx.drawImage(sourceImage, cropRect.x, cropRect.y, cropRect.size, cropRect.size, frameWidthInPixels, frameWidthInPixels, destSize, destSize);
+            }
+        }
+        
+        frameWidthInput.addEventListener('input', (e) => {
+            frameWidthValue.textContent = `${e.target.value}%`;
+        });
+        
+        downloadBtn.addEventListener('click', () => {
+            if (!sourceImage) return;
+            const { x: sourceX, y: sourceY, size: sourceCropSize } = cropRect;
+            const frameWidthPercentage = parseInt(frameWidthInput.value) / 100;
+            
+            if (frameWidthPercentage >= 0.5) {
+                alert("フレームの割合が大きすぎます。50%未満に設定してください。");
+                return;
+            }
+
+            const imagePartRatio = 1 - 2 * frameWidthPercentage;
+            const finalSize = sourceCropSize / imagePartRatio;
+            const finalFrameWidth = finalSize * frameWidthPercentage;
+
+            const offscreenCanvas = document.createElement('canvas');
+            offscreenCanvas.width = Math.round(finalSize);
+            offscreenCanvas.height = Math.round(finalSize);
+            const offscreenCtx = offscreenCanvas.getContext('2d');
+            
+            drawGradient(offscreenCtx, finalSize);
+            offscreenCtx.drawImage(sourceImage, sourceX, sourceY, sourceCropSize, sourceCropSize, finalFrameWidth, finalFrameWidth, sourceCropSize, sourceCropSize);
+            
+            const link = document.createElement('a');
+            link.download = 'gradient-frame-image.png';
+            link.href = offscreenCanvas.toDataURL('image/png');
+            link.click();
+        });
+        
+        resizer.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            resizer.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            const mouseMoveHandler = (e) => {
+                const containerRect = resizer.parentElement.getBoundingClientRect();
+                const newEditorWidth = e.clientX - containerRect.left;
+                const newPreviewWidth = containerRect.right - e.clientX - resizer.offsetWidth;
+                if (newEditorWidth > 200 && newPreviewWidth > 200) {
+                     editorPanel.style.flexBasis = newEditorWidth + 'px';
+                     previewPanel.style.flexBasis = newPreviewWidth + 'px';
+                }
+            };
+            const mouseUpHandler = () => {
+                resizer.classList.remove('resizing');
+                document.body.style.cursor = 'default';
+                window.removeEventListener('mousemove', mouseMoveHandler);
+                window.removeEventListener('mouseup', mouseUpHandler);
+            };
+            window.addEventListener('mousemove', mouseMoveHandler);
+            window.addEventListener('mouseup', mouseUpHandler);
+        });
+
+        const setupCanvases = () => {
+            const oldW = editorCanvas.width;
+            const oldH = editorCanvas.height;
+            const worldCenter = sourceImage ? screenToWorld({ x: oldW / 2, y: oldH / 2 }) : { x: 0, y: 0 };
+            
+            const editorRect = editorPanel.getBoundingClientRect();
+            editorCanvas.width = editorRect.width - 4;
+            editorCanvas.height = editorRect.height - 4;
+            
+            if (sourceImage && oldW > 0) {
+                view.x = editorCanvas.width / 2 - worldCenter.x * view.scale;
+                view.y = editorCanvas.height / 2 - worldCenter.y * view.scale;
+            }
+            
+            const previewRect = previewWrapper.getBoundingClientRect();
+            const size = Math.floor(Math.min(previewRect.width, previewRect.height));
+            if (previewCanvas.width !== size) {
+                previewCanvas.width = size;
+                previewCanvas.height = size;
+            }
+        };
+
+        const mainObserver = new ResizeObserver(setupCanvases);
+        mainObserver.observe(editorPanel);
+        mainObserver.observe(previewWrapper);
+        
+        imageLoader.addEventListener('change', (e) => handleImage(e.target.files[0]));
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => uploadLabel.addEventListener(eventName, e => {e.preventDefault(); e.stopPropagation();}, false));
+        uploadLabel.addEventListener('dragenter', () => uploadLabel.classList.add('dragover'));
+        uploadLabel.addEventListener('dragover', () => uploadLabel.classList.add('dragover'));
+        uploadLabel.addEventListener('dragleave', () => uploadLabel.classList.remove('dragover'));
+        uploadLabel.addEventListener('drop', (e) => {
+            uploadLabel.classList.remove('dragover');
+            handleImage(e.dataTransfer.files[0]);
+        });
+        
+    </script>
+</body>
+</html>
