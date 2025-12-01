@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Art Parallax Animator</title>
+    <meta name="description" content="Bring your pixel art animations to life with an interactive 3D parallax effect. Upload an animated WEBP, and watch it transform.">
+    <meta name="page:icon" content="fas fa-cubes">
+    <meta name="page:color" content="#6366f1">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        :root {
+            --c-sky-400: #38bdf8;
+            --c-indigo-500: #6366f1;
+            --c-slate-800: #1e293b;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: linear-gradient(135deg, #1e293b 0%, #111827 50%, #0c0a09 100%);
+            overflow: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .btn-gradient {
+            background-image: linear-gradient(to right, var(--c-sky-400) 0%, var(--c-indigo-500) 51%, var(--c-sky-400) 100%);
+            background-size: 200% auto;
+            transition: background-position 0.5s;
+        }
+        .btn-gradient:hover:not(:disabled) {
+            background-position: right center;
+        }
+        .btn-gradient:disabled {
+            filter: grayscale(60%);
+            cursor: not-allowed;
+        }
+
+        .custom-file-label {
+            transition: all 0.2s ease-in-out;
+        }
+        .custom-file-label:hover {
+            border-color: var(--c-sky-400);
+            background-color: rgba(56, 189, 248, 0.1);
+        }
+        input[type="file"] {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+
+        .loader-spinner {
+            border: 4px solid rgba(255,255,255,0.2);
+            border-top: 4px solid var(--c-sky-400);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track {
+            background: rgba(255,255,255,0.1);
+            height: 0.25rem;
+            border-radius: 0.5rem;
+        }
+        input[type=range]::-moz-range-track {
+            background: rgba(255,255,255,0.1);
+            height: 0.25rem;
+            border-radius: 0.5rem;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            margin-top: -6px;
+            background-color: var(--c-sky-400);
+            height: 1rem; width: 1rem;
+            border-radius: 50%; border: 2px solid var(--c-slate-800);
+            transition: all 0.2s ease-in-out;
+        }
+        input[type=range]::-moz-range-thumb {
+            border: none; border-radius: 50%;
+            background-color: var(--c-sky-400);
+            height: 1rem; width: 1rem;
+            border: 2px solid var(--c-slate-800);
+        }
+        input[type=range]:hover::-webkit-slider-thumb {
+            background-color: var(--c-indigo-500);
+            transform: scale(1.1);
+        }
+         input[type=range]:hover::-moz-range-thumb {
+            background-color: var(--c-indigo-500);
+            transform: scale(1.1);
+        }
+
+        #view-container { cursor: grab; }
+        #view-container:active { cursor: grabbing; }
+
+        .form-input {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .form-input:focus {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-color: var(--c-sky-400);
+            box-shadow: 0 0 0 1px var(--c-sky-400);
+        }
+
+        /* Hide number input spinners */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="text-gray-200">
+
+    <div id="loader" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex flex-col justify-center items-center z-50 transition-opacity duration-300 pointer-events-none opacity-0">
+        <div class="loader-spinner"></div>
+        <p id="loader-text" class="mt-4 text-lg font-medium">Loading AI Model...</p>
+        <div class="w-72 bg-gray-700 rounded-full h-2.5 mt-4 overflow-hidden">
+            <div id="loader-progress" class="bg-gradient-to-r from-sky-400 to-indigo-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <p id="loader-subtext" class="mt-2 text-sm text-gray-400"></p>
+    </div>
+
+    <div id="app" class="h-screen flex flex-col p-4 sm:p-6 lg:p-8">
+        <header class="pb-4 border-b border-white/10">
+            <div class="flex items-center gap-4">
+                <i class="fas fa-cubes text-3xl text-sky-400"></i>
+                <div>
+                    <h1 class="text-2xl font-bold text-white">Pixel Art Parallax Animator</h1>
+                    <p class="text-gray-400 text-sm">Convert animated pixel art into an interactive 3D scene.</p>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow mt-6 grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-0">
+            
+            <aside class="lg:col-span-4 xl:col-span-3 glass-panel p-6 rounded-2xl flex flex-col min-h-0">
+                <div class="flex-grow overflow-y-auto pr-2">
+                    <h2 class="text-xl font-semibold text-white mb-5">Controls</h2>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <label for="pixel-size-input" class="block text-sm font-medium text-gray-300 mb-2">Pixel Block Size</label>
+                            <input type="number" id="pixel-size-input" value="8" min="1" class="form-input block w-full rounded-md shadow-sm sm:text-sm transition-colors duration-200 text-white focus:ring-0">
+                        </div>
+                        
+                        <div>
+                            <label for="file-upload" class="custom-file-label border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer block">
+                                <i class="fas fa-upload text-3xl text-gray-500 mb-2"></i>
+                                <p class="font-semibold text-sky-400">Click to upload animation</p>
+                                <p id="file-name" class="text-xs text-gray-400 mt-1">Accepts animated WEBP files</p>
+                            </label>
+                            <input type="file" id="file-upload" accept="image/webp">
+                        </div>
+
+                        <button id="generate-btn" class="w-full inline-flex items-center justify-center rounded-md border border-transparent btn-gradient px-4 py-3 text-sm font-medium text-white shadow-lg">
+                            <i class="fas fa-magic-wand-sparkles mr-2"></i>
+                            <span>Generate Parallax Effect</span>
+                        </button>
+                    </div>
+
+                    <div id="status-box" class="mt-6 p-4 bg-black/20 rounded-lg border border-white/10 transition-colors duration-200">
+                        <h3 class="font-semibold text-white mb-2 flex items-center gap-2"><i class="fas fa-info-circle text-gray-400"></i>Status</h3>
+                        <p id="status-message" class="text-sm text-gray-400">Ready. Please upload an animated WEBP file and set the pixel size.</p>
+                    </div>
+
+                    <div id="effect-controls" class="mt-6 pt-6 border-t border-white/20">
+                        <h3 class="text-lg font-semibold text-white mb-4">Effect Properties</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="layers-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                    <span>Layers</span>
+                                    <span id="layers-value">8</span>
+                                </label>
+                                <input id="layers-slider" type="range" min="2" max="64" step="1" value="8" class="w-full">
+                            </div>
+                            <div>
+                                <label for="intensity-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                    <span>Intensity</span>
+                                    <span id="intensity-value">30</span>
+                                </label>
+                                <input id="intensity-slider" type="range" min="0" max="100" step="1" value="30" class="w-full">
+                            </div>
+                            <div class="flex items-center justify-between pt-1">
+                                <label for="invert-depth-toggle" class="text-sm font-medium text-gray-300 cursor-pointer select-none">Invert Depth</label>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                  <input type="checkbox" id="invert-depth-toggle" class="sr-only peer">
+                                  <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-500 peer-checked:bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-200"></div>
+                                  <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-full transition-all duration-200"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <div id="view-container" class="lg:col-span-8 xl:col-span-9 glass-panel rounded-2xl overflow-hidden flex flex-col">
+                <div id="canvas-container" class="flex-grow relative w-full h-full min-h-[400px] lg:min-h-0 bg-black/20 overflow-hidden">
+                    <canvas id="main-canvas" class="absolute inset-0 w-full h-full opacity-0" style="image-rendering: pixelated; image-rendering: crisp-edges;"></canvas>
+                    <div id="canvas-placeholder" class="absolute inset-0 flex flex-col justify-center items-center text-center p-4">
+                         <i class="fas fa-image text-6xl text-gray-700 mb-4"></i>
+                         <h3 class="text-xl font-medium text-gray-500">Parallax Viewport</h3>
+                         <p class="text-gray-600 mt-1">Your generated animation will appear here.</p>
+                    </div>
+                </div>
+                <div class="p-3 bg-black/30 border-t border-white/10 text-xs text-gray-400 text-center">
+                    <i class="fas fa-mouse-pointer"></i> <b>Interact:</b> Move mouse for <b>Parallax</b> | Scroll to <b>Zoom</b> | Drag to <b>Pan</b>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js"
+      }
+    }
+    </script>
+    <script type="module">
+        import { pipeline, env } from '@xenova/transformers';
+
+        const LOADER = document.getElementById('loader');
+        const LOADER_TEXT = document.getElementById('loader-text');
+        const LOADER_PROGRESS = document.getElementById('loader-progress');
+        const LOADER_SUBTEXT = document.getElementById('loader-subtext');
+        
+        const GENERATE_BTN = document.getElementById('generate-btn');
+        const PIXEL_SIZE_INPUT = document.getElementById('pixel-size-input');
+        const FILE_INPUT = document.getElementById('file-upload');
+        const FILE_NAME_LABEL = document.getElementById('file-name');
+        const STATUS_MESSAGE = document.getElementById('status-message');
+        const VIEW_CONTAINER = document.getElementById('view-container');
+        const CANVAS_CONTAINER = document.getElementById('canvas-container');
+        const CANVAS_PLACEHOLDER = document.getElementById('canvas-placeholder');
+        const MAIN_CANVAS = document.getElementById('main-canvas');
+        
+        const EFFECT_CONTROLS = document.getElementById('effect-controls');
+        const LAYERS_SLIDER = document.getElementById('layers-slider');
+        const INTENSITY_SLIDER = document.getElementById('intensity-slider');
+        const INVERT_DEPTH_TOGGLE = document.getElementById('invert-depth-toggle');
+        const LAYERS_VALUE = document.getElementById('layers-value');
+        const INTENSITY_VALUE = document.getElementById('intensity-value');
+
+        let depth_estimator = null;
+        let isProcessing = false;
+        let animationFrameId = null;
+        
+        let originalFrames = [];
+        let animationLayers = [];
+        let frameDelays = [];
+        let currentFrameIndex = 0;
+        let lastFrameTime = 0;
+        let imageDimensions = { width: 0, height: 0 };
+        
+        let parallaxMouse = { x: 0, y: 0 };
+        let targetParallaxMouse = { x: 0, y: 0 };
+        const LERP_FACTOR = 0.08;
+        
+        let viewTransform = { scale: 1, offsetX: 0, offsetY: 0 };
+        let panOffset = { x: 0, y: 0 };
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let startPanOffset = { x: 0, y: 0 };
+
+        function showLoader(text = '', showProgress = false, subtext = '') {
+            if(text) LOADER_TEXT.textContent = text;
+            LOADER_PROGRESS.parentElement.style.display = showProgress ? 'block' : 'none';
+            LOADER_SUBTEXT.textContent = subtext;
+            LOADER_PROGRESS.style.width = '0%';
+            LOADER.classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        function hideLoader() {
+            LOADER.classList.add('opacity-0', 'pointer-events-none');
+        }
+        
+        function updateLoaderProgress(percentage, subtext = '') {
+            LOADER_PROGRESS.style.width = `${percentage}%`;
+            if (subtext) LOADER_SUBTEXT.textContent = subtext;
+        }
+
+        function updateStatus(message, isError = false) {
+            STATUS_MESSAGE.textContent = message;
+            const box = STATUS_MESSAGE.parentElement;
+            box.style.borderColor = isError ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.1)';
+            box.style.backgroundColor = isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(0, 0, 0, 0.2)';
+        }
+        
+        function animateParallax(timestamp) {
+            animationFrameId = requestAnimationFrame(animateParallax);
+            if (!animationLayers.length) return;
+            
+            if (timestamp - lastFrameTime > frameDelays[currentFrameIndex]) {
+                 currentFrameIndex = (currentFrameIndex + 1) % animationLayers.length;
+                 lastFrameTime = timestamp;
+            }
+
+            parallaxMouse.x += (targetParallaxMouse.x - parallaxMouse.x) * LERP_FACTOR;
+            parallaxMouse.y += (targetParallaxMouse.y - parallaxMouse.y) * LERP_FACTOR;
+            
+            const ctx = MAIN_CANVAS.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.clearRect(0, 0, MAIN_CANVAS.width, MAIN_CANVAS.height);
+            
+            const intensity = parseInt(INTENSITY_SLIDER.value);
+            const currentFrameLayers = animationLayers[currentFrameIndex];
+            if (!currentFrameLayers) return;
+            
+            const numLayers = currentFrameLayers.length;
+            
+            ctx.save();
+            ctx.translate(viewTransform.offsetX + panOffset.x, viewTransform.offsetY + panOffset.y);
+            ctx.scale(viewTransform.scale, viewTransform.scale);
+            
+            currentFrameLayers.forEach((layer, i) => {
+                const depthFactor = (i / (numLayers - 1)) || 0;
+                const parallaxOffsetX = parallaxMouse.x * intensity * depthFactor;
+                const parallaxOffsetY = parallaxMouse.y * intensity * depthFactor;
+                
+                ctx.drawImage(layer, parallaxOffsetX, parallaxOffsetY, imageDimensions.width, imageDimensions.height);
+            });
+            ctx.restore();
+        }
+        
+        async function loadModel() {
+            try {
+                showLoader('Loading AI Model...', true);
+                updateStatus('Downloading AI model. This happens once and may take a moment.');
+                env.allowLocalModels = false;
+                
+                depth_estimator = await pipeline('depth-estimation', 'Xenova/depth-anything-small-hf', {
+                    progress_callback: (progress) => {
+                        const percentage = (progress.progress || 0).toFixed(2);
+                        updateLoaderProgress(percentage, `${progress.file || ''} (${(progress.loaded/1024/1024).toFixed(2)}MB / ${(progress.total/1024/1024).toFixed(2)}MB)`);
+                    }
+                });
+                
+                updateStatus('Model loaded. Ready to generate.');
+                return true;
+            } catch (error) {
+                console.error('Model loading failed:', error);
+                updateStatus('Failed to load AI model. Please refresh the page.', true);
+                hideLoader();
+                return false;
+            } finally {
+                hideLoader();
+            }
+        }
+        
+        async function extractFramesFromFile(file) {
+            updateStatus(`Extracting frames from ${file.name}...`);
+            showLoader('Extracting Animation Frames...');
+            if (!('ImageDecoder' in window)) {
+                throw new Error("Your browser does not support the ImageDecoder API. Please use a modern browser like Chrome or Edge.");
+            }
+            const fileBuffer = await file.arrayBuffer();
+            const decoder = new ImageDecoder({ data: fileBuffer, type: file.type });
+            await decoder.tracks.ready;
+
+            const frames = [];
+            const delays = [];
+            const frameCount = decoder.tracks[0].frameCount;
+
+            for (let i = 0; i < frameCount; i++) {
+                const result = await decoder.decode({ frameIndex: i });
+                const canvas = document.createElement('canvas');
+                canvas.width = result.image.codedWidth;
+                canvas.height = result.image.codedHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(result.image, 0, 0);
+                frames.push(canvas);
+                delays.push(result.image.duration / 1000); // ms
+                result.image.close();
+                updateLoaderProgress( (i + 1) / frameCount * 100 );
+            }
+            if (frames.length > 0) {
+                imageDimensions.width = frames[0].width;
+                imageDimensions.height = frames[0].height;
+            }
+            return { frames, delays };
+        }
+
+        async function createPixelLayersForFrame(originalFrameCanvas, depthMapCanvas, pixelSize, numLayers, invertDepth) {
+            const { width, height } = originalFrameCanvas;
+
+            const layerIndexMap = new Int8Array(Math.ceil(width / pixelSize) * Math.ceil(height / pixelSize));
+            
+            const depthCtx = depthMapCanvas.getContext('2d');
+            const depthData = depthCtx.getImageData(0, 0, width, height).data;
+
+            for (let by = 0; by < Math.ceil(height / pixelSize); by++) {
+                for (let bx = 0; bx < Math.ceil(width / pixelSize); bx++) {
+                    const sampleX = Math.min(bx * pixelSize + Math.floor(pixelSize / 2), width - 1);
+                    const sampleY = Math.min(by * pixelSize + Math.floor(pixelSize / 2), height - 1);
+                    const depthIndex = (sampleY * width + sampleX) * 4;
+                    
+                    let depthValue = depthData[depthIndex];
+                    if (invertDepth) depthValue = 255 - depthValue;
+
+                    let layerIndex = Math.floor((depthValue / 256) * numLayers);
+                    if (layerIndex >= numLayers) layerIndex = numLayers - 1;
+                    
+                    layerIndexMap[by * Math.ceil(width / pixelSize) + bx] = layerIndex;
+                }
+            }
+
+            const frameLayers = Array.from({ length: numLayers }, () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                return canvas;
+            });
+
+            const originalCtx = originalFrameCanvas.getContext('2d');
+            const originalData = originalCtx.getImageData(0, 0, width, height).data;
+            const layerImageData = frameLayers.map(canvas => canvas.getContext('2d').createImageData(width, height));
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const bx = Math.floor(x / pixelSize);
+                    const by = Math.floor(y / pixelSize);
+                    const blockLayerIndex = layerIndexMap[by * Math.ceil(width / pixelSize) + bx];
+
+                    const pixelIndex = (y * width + x) * 4;
+                    const r = originalData[pixelIndex];
+                    const g = originalData[pixelIndex + 1];
+                    const b = originalData[pixelIndex + 2];
+                    const a = originalData[pixelIndex + 3];
+
+                    for (let l = 0; l <= blockLayerIndex; l++) {
+                        const data = layerImageData[l].data;
+                        data[pixelIndex] = r;
+                        data[pixelIndex + 1] = g;
+                        data[pixelIndex + 2] = b;
+                        data[pixelIndex + 3] = a;
+                    }
+                }
+            }
+
+            frameLayers.forEach((canvas, i) => {
+                canvas.getContext('2d').putImageData(layerImageData[i], 0, 0);
+            });
+            
+            return frameLayers;
+        }
+
+        async function handleGenerate() {
+            if (isProcessing || !depth_estimator) {
+                 if(!depth_estimator) updateStatus('Model is not ready yet.', true);
+                 return;
+            }
+            
+            const file = FILE_INPUT.files[0];
+            if (!file) {
+                updateStatus('Please select an animated WEBP file first.', true);
+                return;
+            }
+            const pixelSize = parseInt(PIXEL_SIZE_INPUT.value);
+            if (isNaN(pixelSize) || pixelSize < 1) {
+                updateStatus('Please enter a valid pixel size (1 or greater).', true);
+                return;
+            }
+
+            isProcessing = true;
+            toggleControls(false);
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            MAIN_CANVAS.style.opacity = '0';
+            
+            try {
+                const frameData = await extractFramesFromFile(file);
+                originalFrames = frameData.frames;
+                frameDelays = frameData.delays;
+                
+                animationLayers = [];
+                const numLayers = parseInt(LAYERS_SLIDER.value);
+                const invertDepth = INVERT_DEPTH_TOGGLE.checked;
+                
+                for(let i = 0; i < originalFrames.length; i++) {
+                    const frameCanvas = originalFrames[i];
+                    updateStatus(`Processing frame ${i+1}/${originalFrames.length}...`);
+                    showLoader(`Frame ${i+1}/${originalFrames.length}: Estimating Depth...`);
+                    
+                    const depthOutput = await depth_estimator(frameCanvas.toDataURL());
+                    const depthMapCanvas = await depthOutput.depth.toCanvas();
+                    
+                    showLoader(`Frame ${i+1}/${originalFrames.length}: Creating Layers...`);
+                    const layers = await createPixelLayersForFrame(frameCanvas, depthMapCanvas, pixelSize, numLayers, invertDepth);
+                    animationLayers.push(layers);
+                    updateLoaderProgress((i+1) / originalFrames.length * 100);
+                }
+
+                resetView();
+                currentFrameIndex = 0;
+                lastFrameTime = 0;
+                MAIN_CANVAS.style.opacity = '1';
+                CANVAS_PLACEHOLDER.style.display = 'none';
+                animateParallax(0);
+                updateStatus(`Successfully generated parallax animation with ${originalFrames.length} frames.`);
+
+            } catch (error) {
+                console.error('Processing failed:', error);
+                updateStatus(`Error: ${error.message}`, true);
+                CANVAS_PLACEHOLDER.style.display = 'flex';
+                animationLayers = [];
+            } finally {
+                isProcessing = false;
+                toggleControls(true);
+                hideLoader();
+            }
+        }
+        
+        function toggleControls(enabled) {
+            const elements = [GENERATE_BTN, FILE_INPUT, EFFECT_CONTROLS, PIXEL_SIZE_INPUT];
+            elements.forEach(el => {
+                el.disabled = !enabled;
+                if(enabled) {
+                    el.closest('div, label, button').classList.remove('opacity-50');
+                } else {
+                    el.closest('div, label, button').classList.add('opacity-50');
+                }
+            });
+             GENERATE_BTN.querySelector('span').textContent = enabled ? 'Generate Parallax Effect' : 'Processing...';
+        }
+
+        function resetView() {
+            if (!imageDimensions.width) return;
+
+            const canvas = MAIN_CANVAS;
+            const containerRect = CANVAS_CONTAINER.getBoundingClientRect();
+            canvas.width = containerRect.width;
+            canvas.height = containerRect.height;
+
+            const canvasAspect = canvas.width / canvas.height;
+            const imageAspect = imageDimensions.width / imageDimensions.height;
+            
+            const margin = 0.9;
+            if (imageAspect > canvasAspect) {
+                viewTransform.scale = (canvas.width / imageDimensions.width) * margin;
+            } else {
+                viewTransform.scale = (canvas.height / imageDimensions.height) * margin;
+            }
+            viewTransform.offsetX = (canvas.width - imageDimensions.width * viewTransform.scale) / 2;
+            viewTransform.offsetY = (canvas.height - imageDimensions.height * viewTransform.scale) / 2;
+            
+            panOffset = { x: 0, y: 0 };
+        }
+
+        function addEventListeners() {
+            LAYERS_SLIDER.addEventListener('input', () => LAYERS_VALUE.textContent = LAYERS_SLIDER.value);
+            INTENSITY_SLIDER.addEventListener('input', () => INTENSITY_VALUE.textContent = INTENSITY_SLIDER.value);
+            
+            GENERATE_BTN.addEventListener('click', handleGenerate);
+
+            FILE_INPUT.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    FILE_NAME_LABEL.textContent = file.name;
+                } else {
+                    FILE_NAME_LABEL.textContent = 'Accepts animated WEBP files';
+                }
+            });
+            
+            const sliders = [LAYERS_SLIDER, INTENSITY_SLIDER, INVERT_DEPTH_TOGGLE];
+            sliders.forEach(slider => slider.addEventListener('change', () => {
+                if(originalFrames.length > 0 && !isProcessing) {
+                    updateStatus("Parameter changed. Click 'Generate' to apply.", false);
+                }
+            }));
+
+
+            VIEW_CONTAINER.addEventListener('mousedown', e => {
+                isDragging = true;
+                dragStart.x = e.clientX;
+                dragStart.y = e.clientY;
+                startPanOffset.x = panOffset.x;
+                startPanOffset.y = panOffset.y;
+            });
+
+            document.addEventListener('mouseup', () => isDragging = false);
+            
+            VIEW_CONTAINER.addEventListener('mouseleave', () => {
+                isDragging = false;
+                targetParallaxMouse.x = 0;
+                targetParallaxMouse.y = 0;
+            });
+
+            document.addEventListener('mousemove', e => {
+                if (isDragging) {
+                    panOffset.x = startPanOffset.x + (e.clientX - dragStart.x);
+                    panOffset.y = startPanOffset.y + (e.clientY - dragStart.y);
+                } else {
+                    if (document.elementFromPoint(e.clientX, e.clientY)?.closest('#view-container')) {
+                         const rect = VIEW_CONTAINER.getBoundingClientRect();
+                         targetParallaxMouse.x = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+                         targetParallaxMouse.y = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+                    }
+                }
+            });
+
+            VIEW_CONTAINER.addEventListener('wheel', e => {
+                e.preventDefault();
+                if (!animationLayers.length) return;
+
+                const zoomFactor = 1.15;
+                const oldScale = viewTransform.scale;
+                
+                let newScale = e.deltaY < 0 ? oldScale * zoomFactor : oldScale / zoomFactor;
+                viewTransform.scale = Math.max(0.1, Math.min(newScale, 50));
+
+                const rect = MAIN_CANVAS.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                const worldMouseX = (mouseX - (viewTransform.offsetX + panOffset.x)) / oldScale;
+                const worldMouseY = (mouseY - (viewTransform.offsetY + panOffset.y)) / oldScale;
+
+                viewTransform.offsetX = mouseX - worldMouseX * viewTransform.scale - panOffset.x;
+                viewTransform.offsetY = mouseY - worldMouseY * viewTransform.scale - panOffset.y;
+            });
+
+            window.addEventListener('resize', () => {
+                if (animationLayers.length && !isProcessing) {
+                   resetView();
+                }
+            });
+        }
+
+        async function initializeApp() {
+            addEventListeners();
+            await loadModel();
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>

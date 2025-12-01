@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Art Parallax Animator</title>
+    <meta name="description" content="Accelerate your creative workflow. Bring pixel art animations to life with an interactive 3D parallax effect, featuring optimized high-speed inference options.">
+    <meta name="page:icon" content="fas fa-rocket">
+    <meta name="page:color" content="#8b5cf6">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        :root {
+            --c-sky-400: #38bdf8;
+            --c-indigo-500: #6366f1;
+            --c-violet-500: #8b5cf6;
+            --c-slate-800: #1e293b;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: linear-gradient(135deg, #1e293b 0%, #111827 50%, #0c0a09 100%);
+            overflow: hidden;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .btn-gradient {
+            background-image: linear-gradient(to right, var(--c-sky-400) 0%, var(--c-violet-500) 51%, var(--c-sky-400) 100%);
+            background-size: 200% auto;
+            transition: background-position 0.5s;
+        }
+        .btn-gradient:hover:not(:disabled) { background-position: right center; }
+        .btn-gradient:disabled { filter: grayscale(60%); cursor: not-allowed; }
+
+        .custom-file-label:hover { border-color: var(--c-sky-400); background-color: rgba(56, 189, 248, 0.1); }
+        input[type="file"] { opacity: 0; width: 0; height: 0; position: absolute; }
+        
+        .loader-spinner {
+            border: 4px solid rgba(255,255,255,0.2);
+            border-top: 4px solid var(--c-sky-400);
+            border-radius: 50%; width: 60px; height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track { background: rgba(255,255,255,0.1); height: 0.25rem; border-radius: 0.5rem; }
+        input[type=range]::-moz-range-track { background: rgba(255,255,255,0.1); height: 0.25rem; border-radius: 0.5rem; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; margin-top: -6px;
+            background-color: var(--c-sky-400); height: 1rem; width: 1rem;
+            border-radius: 50%; border: 2px solid var(--c-slate-800);
+            transition: all 0.2s ease-in-out;
+        }
+        input[type=range]:hover::-webkit-slider-thumb { background-color: var(--c-violet-500); transform: scale(1.1); }
+        input[type=range]::-moz-range-thumb {
+            border: none; border-radius: 50%; background-color: var(--c-sky-400);
+            height: 1rem; width: 1rem; border: 2px solid var(--c-slate-800);
+        }
+        input[type=range]:hover::-moz-range-thumb { background-color: var(--c-violet-500); transform: scale(1.1); }
+
+        #view-container { cursor: grab; }
+
+        .form-input, .form-select {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .form-input:focus, .form-select:focus {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-color: var(--c-sky-400); box-shadow: 0 0 0 1px var(--c-sky-400); ring: 0; outline: 0;
+        }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        .info-icon { cursor: help; }
+        .fade-in-fast { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body class="text-gray-200">
+
+    <div id="loader" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex flex-col justify-center items-center z-50 transition-opacity duration-300 pointer-events-none opacity-0">
+        <div class="loader-spinner"></div>
+        <p id="loader-text" class="mt-4 text-lg font-medium">Loading AI Model...</p>
+        <div class="w-72 bg-gray-700 rounded-full h-2.5 mt-4 overflow-hidden">
+            <div id="loader-progress" class="bg-gradient-to-r from-sky-400 to-violet-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <p id="loader-subtext" class="mt-2 text-sm text-gray-400"></p>
+    </div>
+
+    <div id="app" class="h-screen flex flex-col p-4 sm:p-6 lg:p-8">
+        <header class="pb-4 border-b border-white/10">
+            <div class="flex items-center gap-4">
+                <i class="fas fa-rocket text-3xl text-violet-500"></i>
+                <div>
+                    <h1 class="text-2xl font-bold text-white">Pixel Art Parallax Animator</h1>
+                    <p class="text-gray-400 text-sm">High-speed, interactive 3D conversion for your pixel animations.</p>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow mt-6 grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-0">
+            
+            <aside class="lg:col-span-4 xl:col-span-3 glass-panel p-6 rounded-2xl flex flex-col min-h-0">
+                <div class="flex-grow overflow-y-auto pr-2 space-y-6">
+                    <h2 class="text-xl font-semibold text-white">Controls</h2>
+                    
+                    <div>
+                        <label for="file-upload" class="custom-file-label border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer block transition-all">
+                            <i class="fas fa-upload text-3xl text-gray-500 mb-2"></i>
+                            <p class="font-semibold text-sky-400">Click to upload animation</p>
+                            <p id="file-name" class="text-xs text-gray-400 mt-1">Accepts animated WEBP files</p>
+                        </label>
+                        <input type="file" id="file-upload" accept="image/webp">
+                    </div>
+
+                    <div id="inference-settings" class="p-4 bg-black/20 rounded-lg border border-white/10 space-y-4">
+                        <h3 class="text-lg font-semibold text-white mb-2">Inference Options</h3>
+                        
+                        <div>
+                           <label class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-1.5">Processing Mode <i class="fas fa-info-circle text-gray-500 info-icon" title="Static: Blazing fast, uses first frame's depth for all. Dynamic: More accurate for moving scenes, processes every frame."></i></label>
+                           <div class="flex gap-2 text-sm">
+                               <label class="flex-1 p-2 bg-white/5 border border-white/10 rounded has-[:checked]:bg-violet-500/20 has-[:checked]:border-violet-400 cursor-pointer transition-all"><input type="radio" name="processing-mode" value="static" class="sr-only" checked> Static Depth</label>
+                               <label class="flex-1 p-2 bg-white/5 border border-white/10 rounded has-[:checked]:bg-violet-500/20 has-[:checked]:border-violet-400 cursor-pointer transition-all"><input type="radio" name="processing-mode" value="dynamic" class="sr-only"> Dynamic Depth</label>
+                           </div>
+                        </div>
+
+                        <div>
+                            <label for="model-select" class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-1.5">AI Model <i class="fas fa-info-circle text-gray-500 info-icon" title="Smaller models are faster. Larger models are more accurate."></i></label>
+                            <select id="model-select" class="form-select block w-full rounded-md text-white">
+                                <option value="Xenova/depth-anything-small-hf">Small (Fast)</option>
+                                <option value="Xenova/depth-anything-base-hf">Base (Accurate)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="inference-quality-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                <span class="flex items-center gap-1.5">Inference Quality <i class="fas fa-info-circle text-gray-500 info-icon" title="Lower quality drastically speeds up processing by analyzing a smaller image."></i></span>
+                                <span id="inference-quality-value">75%</span>
+                            </label>
+                            <input id="inference-quality-slider" type="range" min="25" max="100" step="5" value="75" class="w-full">
+                        </div>
+
+                        <div class="flex items-center justify-between pt-1">
+                            <label for="quantize-toggle" class="text-sm font-medium text-gray-300 cursor-pointer select-none flex items-center gap-1.5">Quantize Model <i class="fas fa-info-circle text-gray-500 info-icon" title="Uses a smaller, potentially faster version of the model if available."></i></label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="quantize-toggle" class="sr-only peer" checked>
+                                <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-500 peer-checked:bg-gradient-to-r from-sky-400 to-violet-500 transition-all duration-200"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-full transition-all duration-200"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button id="generate-btn" class="w-full inline-flex items-center justify-center rounded-md border border-transparent btn-gradient px-4 py-3 text-sm font-medium text-white shadow-lg">
+                        <i class="fas fa-magic-wand-sparkles mr-2"></i>
+                        <span>Generate Parallax Effect</span>
+                    </button>
+                    
+                    <div id="status-box" class="p-4 bg-black/20 rounded-lg border border-white/10 transition-colors duration-200">
+                        <h3 class="font-semibold text-white mb-2 flex items-center gap-2"><i class="fas fa-info-circle text-gray-400"></i>Status</h3>
+                        <p id="status-message" class="text-sm text-gray-400">Ready. Please upload an animated WEBP file.</p>
+                    </div>
+
+                    <div id="effect-controls" class="pt-6 border-t border-white/20 space-y-4 opacity-50 pointer-events-none">
+                        <h3 class="text-lg font-semibold text-white">Effect Properties</h3>
+                        <div>
+                            <label for="pixelsize-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                <span>Pixel Size</span><span id="pixelsize-value">8</span>
+                            </label>
+                            <input id="pixelsize-slider" type="range" min="1" max="32" step="1" value="8" class="w-full">
+                        </div>
+                        <div>
+                            <label for="layers-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                <span>Layers</span><span id="layers-value">8</span>
+                            </label>
+                            <input id="layers-slider" type="range" min="2" max="64" step="1" value="8" class="w-full">
+                        </div>
+                        <div>
+                            <label for="intensity-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                <span>Intensity</span><span id="intensity-value">30</span>
+                            </label>
+                            <input id="intensity-slider" type="range" min="0" max="100" step="1" value="30" class="w-full">
+                        </div>
+                        <div class="flex items-center justify-between pt-1">
+                            <label for="invert-depth-toggle" class="text-sm font-medium text-gray-300 cursor-pointer select-none">Invert Depth</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" id="invert-depth-toggle" class="sr-only peer">
+                              <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-500 peer-checked:bg-gradient-to-r from-sky-400 to-violet-500 transition-all duration-200"></div>
+                              <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-full transition-all duration-200"></span>
+                            </label>
+                        </div>
+                        <!-- Animation Speed Controls -->
+                        <div class="pt-4 border-t border-white/20 space-y-4">
+                            <h3 class="text-lg font-semibold text-white">Animation Speed</h3>
+                            <div>
+                                <label for="base-speed-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                    <span>Base Speed</span><span id="base-speed-value">1.00x</span>
+                                </label>
+                                <input id="base-speed-slider" type="range" min="0.1" max="5" step="0.05" value="1.0" class="w-full">
+                            </div>
+                            <div>
+                                <label for="drag-sensitivity-slider" class="flex justify-between text-sm font-medium text-gray-300 mb-1">
+                                    <span class="flex items-center gap-1.5">Drag Sensitivity <i class="fas fa-info-circle text-gray-500 info-icon" title="How much right-click drag speed affects animation playback."></i></span>
+                                    <span id="drag-sensitivity-value">0.50</span>
+                                </label>
+                                <input id="drag-sensitivity-slider" type="range" min="0" max="2" step="0.05" value="0.5" class="w-full">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <div id="view-container" class="lg:col-span-8 xl:col-span-9 glass-panel rounded-2xl overflow-hidden flex flex-col">
+                <div id="canvas-container" class="flex-grow relative w-full h-full min-h-[400px] lg:min-h-0 bg-black/20 overflow-hidden">
+                    <canvas id="main-canvas" class="absolute inset-0 w-full h-full opacity-0" style="image-rendering: pixelated; image-rendering: crisp-edges;"></canvas>
+                    <div id="canvas-placeholder" class="absolute inset-0 flex flex-col justify-center items-center text-center p-4">
+                         <i class="fas fa-image text-6xl text-gray-700 mb-4"></i>
+                         <h3 class="text-xl font-medium text-gray-500">Parallax Viewport</h3>
+                         <p class="text-gray-600 mt-1">Your generated animation will appear here.</p>
+                    </div>
+                    <div id="speed-indicator" class="absolute top-4 left-1/2 -translate-x-1/2 bg-black/50 text-white px-4 py-2 rounded-lg text-lg font-bold hidden backdrop-blur-sm">1.00x</div>
+                </div>
+                <div id="animation-controls" class="p-3 bg-black/30 border-t border-white/10 flex items-center gap-4 opacity-50 pointer-events-none">
+                    <button id="play-pause-btn" class="text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">
+                        <i class="fas fa-pause"></i>
+                    </button>
+                    <input id="seek-bar" type="range" min="0" max="100" value="0" class="w-full">
+                    <span id="frame-counter" class="text-sm text-gray-400 font-mono w-24 text-center">0 / 0</span>
+                </div>
+                <div class="p-3 bg-black/30 border-t border-white/10 text-xs text-gray-400 text-center">
+                    <i class="fas fa-mouse-pointer"></i> <b>Interact:</b> Move mouse for <b>Parallax</b> | Scroll to <b>Zoom</b> | Middle Drag to <b>Pan</b> | L-Drag V to <b>change Speed</b> | R-Drag to <b>accelerate</b>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script id="worker-script" type="text/worker">
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js';
+
+        let depth_estimator = null;
+        let lastModel = null;
+        let lastQuantized = null;
+
+        async function getModel(model, quantized) {
+            if (model === lastModel && quantized === lastQuantized && depth_estimator) {
+                return depth_estimator;
+            }
+            
+            self.postMessage({ type: 'status', message: `Loading AI model: ${model}...` });
+            env.allowLocalModels = false;
+            depth_estimator = await pipeline('depth-estimation', model, {
+                quantized: quantized,
+                progress_callback: (progress) => {
+                    if (progress.status === 'progress') {
+                        const percentage = (progress.progress || 0).toFixed(2);
+                        self.postMessage({ 
+                            type: 'progress', 
+                            text: 'Loading AI Model...', 
+                            percentage: percentage, 
+                            subtext: `${progress.file} (${(progress.loaded/1024/1024).toFixed(2)}MB)`
+                        });
+                    }
+                }
+            });
+            lastModel = model;
+            lastQuantized = quantized;
+            return depth_estimator;
+        }
+
+        self.onmessage = async (e) => {
+            try {
+                const { frames, settings } = e.data;
+                const { model, quantized, processingMode, inferenceQuality, width, height } = settings;
+                
+                const estimator = await getModel(model, quantized);
+                self.postMessage({ type: 'status', message: 'Model loaded. Starting depth estimation...' });
+                
+                const depthMaps = [];
+                const transferable = [];
+
+                const scaledWidth = Math.round(width * (inferenceQuality / 100));
+                const scaledHeight = Math.round(height * (inferenceQuality / 100));
+                const scaledCanvas = new OffscreenCanvas(scaledWidth, scaledHeight);
+                const scaledCtx = scaledCanvas.getContext('2d');
+
+                const numFramesToProcess = processingMode === 'static' ? 1 : frames.length;
+                
+                for(let i = 0; i < numFramesToProcess; i++) {
+                    self.postMessage({ 
+                        type: 'progress', 
+                        text: `Estimating Depth: Frame ${i+1}/${numFramesToProcess}`, 
+                        percentage: (i / numFramesToProcess) * 100 
+                    });
+
+                    const frameBitmap = await createImageBitmap(frames[i]);
+                    scaledCtx.drawImage(frameBitmap, 0, 0, scaledWidth, scaledHeight);
+                    frameBitmap.close();
+                    
+                    const depthOutput = await estimator(scaledCanvas);
+                    const depthMapCanvas = await depthOutput.depth.toCanvas();
+                    const depthCtx = depthMapCanvas.getContext('2d');
+                    const depthMapData = depthCtx.getImageData(0, 0, depthMapCanvas.width, depthMapCanvas.height);
+                    
+                    depthMaps.push(depthMapData);
+                    transferable.push(depthMapData.data.buffer);
+                }
+                
+                self.postMessage({ 
+                    type: 'complete', 
+                    cachedFrames: frames, 
+                    depthMaps: depthMaps,
+                    processingMode: processingMode
+                }, transferable);
+
+            } catch (error) {
+                console.error('Worker error:', error);
+                self.postMessage({ type: 'error', message: error.message });
+            }
+        };
+    </script>
+    <script type="module">
+        const LOADER = document.getElementById('loader');
+        const LOADER_TEXT = document.getElementById('loader-text');
+        const LOADER_PROGRESS = document.getElementById('loader-progress');
+        const LOADER_SUBTEXT = document.getElementById('loader-subtext');
+        
+        const GENERATE_BTN = document.getElementById('generate-btn');
+        const FILE_INPUT = document.getElementById('file-upload');
+        const FILE_NAME_LABEL = document.getElementById('file-name');
+        const STATUS_MESSAGE = document.getElementById('status-message');
+        const VIEW_CONTAINER = document.getElementById('view-container');
+        const CANVAS_CONTAINER = document.getElementById('canvas-container');
+        const CANVAS_PLACEHOLDER = document.getElementById('canvas-placeholder');
+        const MAIN_CANVAS = document.getElementById('main-canvas');
+        
+        const EFFECT_CONTROLS = document.getElementById('effect-controls');
+        const PIXELSIZE_SLIDER = document.getElementById('pixelsize-slider');
+        const LAYERS_SLIDER = document.getElementById('layers-slider');
+        const INTENSITY_SLIDER = document.getElementById('intensity-slider');
+        const INVERT_DEPTH_TOGGLE = document.getElementById('invert-depth-toggle');
+        const PIXELSIZE_VALUE = document.getElementById('pixelsize-value');
+        const LAYERS_VALUE = document.getElementById('layers-value');
+        const INTENSITY_VALUE = document.getElementById('intensity-value');
+        
+        const INFERENCE_QUALITY_SLIDER = document.getElementById('inference-quality-slider');
+        const INFERENCE_QUALITY_VALUE = document.getElementById('inference-quality-value');
+        const MODEL_SELECT = document.getElementById('model-select');
+        const QUANTIZE_TOGGLE = document.getElementById('quantize-toggle');
+        
+        const ANIMATION_CONTROLS = document.getElementById('animation-controls');
+        const PLAY_PAUSE_BTN = document.getElementById('play-pause-btn');
+        const PLAY_PAUSE_ICON = PLAY_PAUSE_BTN.querySelector('i');
+        const SEEK_BAR = document.getElementById('seek-bar');
+        const FRAME_COUNTER = document.getElementById('frame-counter');
+        const SPEED_INDICATOR = document.getElementById('speed-indicator');
+
+        const BASE_SPEED_SLIDER = document.getElementById('base-speed-slider');
+        const BASE_SPEED_VALUE = document.getElementById('base-speed-value');
+        const DRAG_SENSITIVITY_SLIDER = document.getElementById('drag-sensitivity-slider');
+        const DRAG_SENSITIVITY_VALUE = document.getElementById('drag-sensitivity-value');
+        
+        let animationFrameId = null;
+        let animationLayers = [];
+        let frameDelays = [];
+        let currentFrameIndex = 0;
+        let lastFrameTime = 0;
+        let imageDimensions = { width: 0, height: 0 };
+        
+        let cachedFrames = [];
+        let cachedDepthMaps = [];
+        let processingMode = 'static';
+        let updateLayersTimeout;
+        
+        let parallaxMouse = { x: 0, y: 0 };
+        let targetParallaxMouse = { x: 0, y: 0 };
+        const LERP_FACTOR = 0.08;
+        
+        let viewTransform = { scale: 1, offsetX: 0, offsetY: 0 };
+        let panOffset = { x: 0, y: 0 };
+        
+        let isSpeedDragging = false; // Left-click drag for speed
+        let dragStartY = 0;
+        let startSpeed = 1.0;
+        
+        let isPanning = false; // Middle-click drag for pan
+        let panStart = { x: 0, y: 0 };
+        let startPanOffset = { x: 0, y: 0 };
+
+        let isRightDragging = false; // Right-click drag for speed
+        let lastMousePos = { x: 0, y: 0 };
+        let lastMouseMoveTime = 0;
+
+        let isPlaying = true;
+        let baseSpeed = 1.0;
+        let dragSensitivity = 0.5;
+        let animationSpeedMultiplier = 1.0;
+        
+        let worker;
+
+        async function createPixelLayersForFrame(originalFrameData, depthMapData, settings) {
+            const { width, height, pixelSize, numLayers, invertDepth } = settings;
+            const layerIndexMap = new Int8Array(Math.ceil(width / pixelSize) * Math.ceil(height / pixelSize));
+            const depthDataArr = depthMapData.data;
+
+            for (let by = 0; by < Math.ceil(height / pixelSize); by++) {
+                for (let bx = 0; bx < Math.ceil(width / pixelSize); bx++) {
+                    const sampleX = Math.min(bx * pixelSize + Math.floor(pixelSize / 2), width - 1);
+                    const sampleY = Math.min(by * pixelSize + Math.floor(pixelSize / 2), height - 1);
+                    
+                    const scaledSampleX = Math.floor(sampleX * (depthMapData.width / width));
+                    const scaledSampleY = Math.floor(sampleY * (depthMapData.height / height));
+
+                    const depthIndex = (scaledSampleY * depthMapData.width + scaledSampleX) * 4;
+                    let depthValue = depthDataArr[depthIndex];
+                    if (invertDepth) depthValue = 255 - depthValue;
+
+                    let layerIndex = Math.floor((depthValue / 256) * numLayers);
+                    if (layerIndex >= numLayers) layerIndex = numLayers - 1;
+                    
+                    layerIndexMap[by * Math.ceil(width / pixelSize) + bx] = layerIndex;
+                }
+            }
+
+            const layerImageData = Array.from({ length: numLayers }, () => new ImageData(width, height));
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const bx = Math.floor(x / pixelSize);
+                    const by = Math.floor(y / pixelSize);
+                    const blockLayerIndex = layerIndexMap[by * Math.ceil(width / pixelSize) + bx];
+                    const pixelIndex = (y * width + x) * 4;
+                    
+                    for (let l = 0; l <= blockLayerIndex; l++) {
+                        layerImageData[l].data[pixelIndex]     = originalFrameData.data[pixelIndex];
+                        layerImageData[l].data[pixelIndex + 1] = originalFrameData.data[pixelIndex + 1];
+                        layerImageData[l].data[pixelIndex + 2] = originalFrameData.data[pixelIndex + 2];
+                        layerImageData[l].data[pixelIndex + 3] = originalFrameData.data[pixelIndex + 3];
+                    }
+                }
+            }
+            const bitmaps = await Promise.all(layerImageData.map(data => createImageBitmap(data)));
+            return bitmaps;
+        }
+        
+        function setupWorker() {
+            const workerScript = document.getElementById('worker-script').textContent;
+            const workerBlob = new Blob([workerScript], { type: 'application/javascript' });
+            worker = new Worker(URL.createObjectURL(workerBlob), { type: 'module' });
+
+            worker.onmessage = (e) => {
+                const { type, message, text, percentage, subtext, cachedFrames: frames, depthMaps: maps, processingMode: mode } = e.data;
+                switch (type) {
+                    case 'status':
+                        updateStatus(message);
+                        break;
+                    case 'progress':
+                        showLoader(text, true, subtext);
+                        updateLoaderProgress(percentage, subtext);
+                        break;
+                    case 'complete':
+                        cachedFrames = frames;
+                        cachedDepthMaps = maps;
+                        processingMode = mode;
+                        updateStatus('Depth maps generated. Creating visual layers...');
+                        updateLayers(true);
+                        break;
+                    case 'error':
+                        updateStatus(`Error: ${message}`, true);
+                        toggleControls(true);
+                        hideLoader();
+                        break;
+                }
+            };
+        }
+
+        async function updateLayers(isInitial = false) {
+            if (!cachedFrames.length) return;
+            
+            showLoader('Generating Layers...', true);
+
+            const settings = {
+                pixelSize: parseInt(PIXELSIZE_SLIDER.value),
+                numLayers: parseInt(LAYERS_SLIDER.value),
+                invertDepth: INVERT_DEPTH_TOGGLE.checked,
+                width: imageDimensions.width,
+                height: imageDimensions.height,
+            };
+
+            if (animationLayers.length > 0) {
+                animationLayers.flat().forEach(bitmap => bitmap.close());
+            }
+
+            const newAnimationLayers = [];
+            for (let i = 0; i < cachedFrames.length; i++) {
+                updateLoaderProgress((i / cachedFrames.length) * 100, `Processing frame ${i+1}/${cachedFrames.length}`);
+                const depthMap = (processingMode === 'static') ? cachedDepthMaps[0] : cachedDepthMaps[i];
+                const frameLayers = await createPixelLayersForFrame(cachedFrames[i], depthMap, settings);
+                newAnimationLayers.push(frameLayers);
+            }
+            animationLayers = newAnimationLayers;
+            
+            if (isInitial) {
+                EFFECT_CONTROLS.classList.remove('opacity-50', 'pointer-events-none');
+                EFFECT_CONTROLS.classList.add('fade-in-fast');
+                ANIMATION_CONTROLS.classList.remove('opacity-50', 'pointer-events-none');
+                resetView();
+                lastFrameTime = performance.now();
+                MAIN_CANVAS.style.opacity = '1';
+                CANVAS_PLACEHOLDER.style.display = 'none';
+                if(animationFrameId) cancelAnimationFrame(animationFrameId);
+                animateParallax(performance.now());
+                updateStatus(`Successfully generated parallax animation with ${cachedFrames.length} frames.`);
+                toggleControls(true);
+            }
+            
+            SEEK_BAR.max = animationLayers.length > 0 ? animationLayers.length - 1 : 100;
+            SEEK_BAR.value = 0;
+            currentFrameIndex = 0;
+            isPlaying = true;
+            PLAY_PAUSE_ICON.classList.remove('fa-play');
+            PLAY_PAUSE_ICON.classList.add('fa-pause');
+            
+            hideLoader();
+        }
+
+        const debouncedUpdateLayers = () => {
+            clearTimeout(updateLayersTimeout);
+            updateLayersTimeout = setTimeout(() => updateLayers(false), 200);
+        };
+        
+        function showLoader(text = '', showProgress = false, subtext = '') {
+            if(text) LOADER_TEXT.textContent = text;
+            LOADER_PROGRESS.parentElement.style.display = showProgress ? 'block' : 'none';
+            LOADER_SUBTEXT.textContent = subtext;
+            LOADER.classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        function hideLoader() {
+            LOADER.classList.add('opacity-0', 'pointer-events-none');
+        }
+        
+        function updateLoaderProgress(percentage, subtext = '') {
+            LOADER_PROGRESS.style.width = `${percentage}%`;
+            if (subtext) LOADER_SUBTEXT.textContent = subtext;
+        }
+
+        function updateStatus(message, isError = false) {
+            STATUS_MESSAGE.textContent = message;
+            const box = STATUS_MESSAGE.parentElement;
+            box.style.borderColor = isError ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.1)';
+            box.style.backgroundColor = isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(0, 0, 0, 0.2)';
+        }
+        
+        function animateParallax(timestamp) {
+            animationFrameId = requestAnimationFrame(animateParallax);
+            if (!animationLayers.length || !frameDelays.length) return;
+            
+            if (isPlaying && timestamp - lastFrameTime > frameDelays[currentFrameIndex] / animationSpeedMultiplier) {
+                 currentFrameIndex = (currentFrameIndex + 1) % animationLayers.length;
+                 lastFrameTime = timestamp;
+            }
+
+            if (!SEEK_BAR.matches(':active')) {
+                SEEK_BAR.value = currentFrameIndex;
+            }
+            FRAME_COUNTER.textContent = `${currentFrameIndex} / ${animationLayers.length - 1}`;
+            
+            parallaxMouse.x += (targetParallaxMouse.x - parallaxMouse.x) * LERP_FACTOR;
+            parallaxMouse.y += (targetParallaxMouse.y - parallaxMouse.y) * LERP_FACTOR;
+            
+            const ctx = MAIN_CANVAS.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.clearRect(0, 0, MAIN_CANVAS.width, MAIN_CANVAS.height);
+            
+            const intensity = parseInt(INTENSITY_SLIDER.value);
+            const currentFrameLayers = animationLayers[currentFrameIndex];
+            if (!currentFrameLayers) return;
+            
+            const numLayers = currentFrameLayers.length;
+            
+            ctx.save();
+            ctx.translate(viewTransform.offsetX + panOffset.x, viewTransform.offsetY + panOffset.y);
+            ctx.scale(viewTransform.scale, viewTransform.scale);
+            
+            currentFrameLayers.forEach((layer, i) => {
+                const depthFactor = (numLayers > 1) ? (i / (numLayers - 1)) : 0;
+                const parallaxOffsetX = parallaxMouse.x * intensity * depthFactor;
+                const parallaxOffsetY = parallaxMouse.y * intensity * depthFactor;
+                
+                ctx.drawImage(layer, parallaxOffsetX, parallaxOffsetY, imageDimensions.width, imageDimensions.height);
+            });
+            ctx.restore();
+        }
+        
+        async function extractFramesFromFile(file) {
+            showLoader('Extracting Animation Frames...');
+            updateStatus(`Extracting frames from ${file.name}...`);
+            if (!('ImageDecoder' in window)) {
+                throw new Error("Your browser does not support the ImageDecoder API. Please use a modern browser like Chrome or Edge.");
+            }
+            const fileBuffer = await file.arrayBuffer();
+            const decoder = new ImageDecoder({ data: fileBuffer, type: file.type });
+            await decoder.tracks.ready;
+
+            const frameCount = decoder.tracks[0].frameCount;
+            if (frameCount === 0) throw new Error("No frames found in the image.");
+            
+            const frameImageData = [];
+            frameDelays = [];
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            for (let i = 0; i < frameCount; i++) {
+                const result = await decoder.decode({ frameIndex: i });
+                if (i === 0) {
+                    imageDimensions.width = result.image.codedWidth;
+                    imageDimensions.height = result.image.codedHeight;
+                    tempCanvas.width = imageDimensions.width;
+                    tempCanvas.height = imageDimensions.height;
+                }
+                frameDelays.push(result.image.duration / 1000); // duration in microseconds to milliseconds
+                tempCtx.drawImage(result.image, 0, 0);
+                frameImageData.push(tempCtx.getImageData(0, 0, imageDimensions.width, imageDimensions.height));
+                result.image.close();
+                updateLoaderProgress( (i + 1) / frameCount * 100 );
+            }
+            return frameImageData;
+        }
+
+        async function handleGenerate() {
+            const file = FILE_INPUT.files[0];
+            if (!file) {
+                updateStatus('Please select an animated WEBP file first.', true);
+                return;
+            }
+            
+            toggleControls(false);
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            MAIN_CANVAS.style.opacity = '0';
+            
+            try {
+                const frames = await extractFramesFromFile(file);
+                const settings = {
+                    processingMode: document.querySelector('input[name="processing-mode"]:checked').value,
+                    model: MODEL_SELECT.value,
+                    quantized: QUANTIZE_TOGGLE.checked,
+                    inferenceQuality: parseInt(INFERENCE_QUALITY_SLIDER.value),
+                    width: imageDimensions.width,
+                    height: imageDimensions.height,
+                };
+                
+                const transferable = frames.map(frame => frame.data.buffer);
+                worker.postMessage({ frames, settings }, transferable);
+
+            } catch (error) {
+                console.error('Processing failed:', error);
+                updateStatus(`Error: ${error.message}`, true);
+                toggleControls(true);
+                hideLoader();
+            }
+        }
+        
+        function toggleControls(enabled) {
+            const elements = document.querySelectorAll('#app button, #app input, #app select, #app label[for="file-upload"]');
+            elements.forEach(el => {
+                if ((EFFECT_CONTROLS.contains(el) || ANIMATION_CONTROLS.contains(el)) && !cachedFrames.length) {
+                    return;
+                }
+                el.disabled = !enabled;
+                if(enabled) {
+                    el.classList.remove('opacity-50', 'pointer-events-none');
+                } else {
+                    el.classList.add('opacity-50', 'pointer-events-none');
+                }
+            });
+             GENERATE_BTN.querySelector('span').textContent = enabled ? 'Generate Parallax Effect' : 'Processing...';
+        }
+
+        function resetView() {
+            if (!imageDimensions.width) return;
+            const canvas = MAIN_CANVAS;
+            const containerRect = CANVAS_CONTAINER.getBoundingClientRect();
+            canvas.width = containerRect.width;
+            canvas.height = containerRect.height;
+            const canvasAspect = canvas.width / canvas.height;
+            const imageAspect = imageDimensions.width / imageDimensions.height;
+            
+            const margin = 0.9;
+            viewTransform.scale = (imageAspect > canvasAspect) 
+                ? (canvas.width / imageDimensions.width) * margin
+                : (canvas.height / imageDimensions.height) * margin;
+            
+            viewTransform.offsetX = (canvas.width - imageDimensions.width * viewTransform.scale) / 2;
+            viewTransform.offsetY = (canvas.height - imageDimensions.height * viewTransform.scale) / 2;
+            panOffset = { x: 0, y: 0 };
+        }
+
+        function addEventListeners() {
+            PIXELSIZE_SLIDER.addEventListener('input', () => { PIXELSIZE_VALUE.textContent = PIXELSIZE_SLIDER.value; debouncedUpdateLayers(); });
+            LAYERS_SLIDER.addEventListener('input', () => { LAYERS_VALUE.textContent = LAYERS_SLIDER.value; debouncedUpdateLayers(); });
+            INVERT_DEPTH_TOGGLE.addEventListener('change', () => updateLayers(false));
+            INTENSITY_SLIDER.addEventListener('input', () => INTENSITY_VALUE.textContent = INTENSITY_SLIDER.value);
+
+            INFERENCE_QUALITY_SLIDER.addEventListener('input', () => INFERENCE_QUALITY_VALUE.textContent = `${INFERENCE_QUALITY_SLIDER.value}%`);
+            
+            GENERATE_BTN.addEventListener('click', handleGenerate);
+
+            FILE_INPUT.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                FILE_NAME_LABEL.textContent = file ? file.name : 'Accepts animated WEBP files';
+            });
+
+            // --- Interaction Listeners (Modified) ---
+            
+            VIEW_CONTAINER.addEventListener('contextmenu', e => e.preventDefault());
+
+            VIEW_CONTAINER.addEventListener('mousedown', e => {
+                e.preventDefault(); 
+                
+                if (e.button === 0 && animationLayers.length > 0) { // Left click for vertical speed change
+                    isSpeedDragging = true;
+                    dragStartY = e.clientY;
+                    startSpeed = animationSpeedMultiplier;
+                    SPEED_INDICATOR.textContent = `${animationSpeedMultiplier.toFixed(2)}x`;
+                    SPEED_INDICATOR.classList.remove('hidden');
+                } else if (e.button === 1 && animationLayers.length > 0) { // Middle click for panning
+                    isPanning = true;
+                    panStart = { x: e.clientX, y: e.clientY };
+                    startPanOffset = { ...panOffset };
+                    VIEW_CONTAINER.style.cursor = 'grabbing';
+                } else if (e.button === 2 && animationLayers.length > 0) { // Right click for drag-speed
+                    isRightDragging = true;
+                    lastMousePos = { x: e.clientX, y: e.clientY };
+                    lastMouseMoveTime = performance.now();
+                    SPEED_INDICATOR.classList.remove('hidden');
+                }
+            });
+
+            document.addEventListener('mouseup', e => {
+                if (isSpeedDragging) {
+                    isSpeedDragging = false;
+                    SPEED_INDICATOR.classList.add('hidden');
+                }
+                if (isPanning) {
+                    isPanning = false;
+                    VIEW_CONTAINER.style.cursor = 'grab';
+                }
+                if (isRightDragging) {
+                    isRightDragging = false;
+                    animationSpeedMultiplier = baseSpeed;
+                    SPEED_INDICATOR.classList.add('hidden');
+                }
+            });
+
+            VIEW_CONTAINER.addEventListener('mouseleave', () => {
+                targetParallaxMouse = { x: 0, y: 0 };
+                if (isSpeedDragging) { isSpeedDragging = false; SPEED_INDICATOR.classList.add('hidden'); }
+                if (isPanning) { isPanning = false; VIEW_CONTAINER.style.cursor = 'grab'; }
+                if (isRightDragging) { isRightDragging = false; animationSpeedMultiplier = baseSpeed; SPEED_INDICATOR.classList.add('hidden'); }
+            });
+
+            document.addEventListener('mousemove', e => {
+                if (isPanning) {
+                    panOffset.x = startPanOffset.x + (e.clientX - panStart.x);
+                    panOffset.y = startPanOffset.y + (e.clientY - panStart.y);
+                } else if (isSpeedDragging) {
+                    const deltaY = dragStartY - e.clientY;
+                    const speedChangeFactor = Math.pow(2, deltaY / 200);
+                    animationSpeedMultiplier = startSpeed * speedChangeFactor;
+                    animationSpeedMultiplier = Math.max(0.1, Math.min(animationSpeedMultiplier, 8.0));
+                    SPEED_INDICATOR.textContent = `${animationSpeedMultiplier.toFixed(2)}x`;
+                } else if (isRightDragging) {
+                    const now = performance.now();
+                    const deltaTime = now - lastMouseMoveTime;
+                    if (deltaTime > 0) {
+                        const distance = Math.sqrt((e.clientX - lastMousePos.x)**2 + (e.clientY - lastMousePos.y)**2);
+                        const mouseSpeed = distance / deltaTime;
+                        animationSpeedMultiplier = baseSpeed + (mouseSpeed * dragSensitivity);
+                        animationSpeedMultiplier = Math.max(0.1, Math.min(animationSpeedMultiplier, 16.0));
+                        SPEED_INDICATOR.textContent = `${animationSpeedMultiplier.toFixed(2)}x`;
+                    }
+                    lastMousePos = { x: e.clientX, y: e.clientY };
+                    lastMouseMoveTime = now;
+                } else if (document.elementFromPoint(e.clientX, e.clientY)?.closest('#view-container')) {
+                    const rect = VIEW_CONTAINER.getBoundingClientRect();
+                    targetParallaxMouse.x = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+                    targetParallaxMouse.y = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+                }
+            });
+
+            VIEW_CONTAINER.addEventListener('wheel', e => {
+                e.preventDefault();
+                if (!animationLayers.length) return;
+                const zoomFactor = 1.15;
+                const oldScale = viewTransform.scale;
+                viewTransform.scale = e.deltaY < 0 ? oldScale * zoomFactor : oldScale / zoomFactor;
+                viewTransform.scale = Math.max(0.1, Math.min(viewTransform.scale, 50));
+
+                const rect = MAIN_CANVAS.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                const worldMouseX = (mouseX - (viewTransform.offsetX + panOffset.x)) / oldScale;
+                const worldMouseY = (mouseY - (viewTransform.offsetY + panOffset.y)) / oldScale;
+
+                viewTransform.offsetX = mouseX - worldMouseX * viewTransform.scale - panOffset.x;
+                viewTransform.offsetY = mouseY - worldMouseY * viewTransform.scale - panOffset.y;
+            });
+            window.addEventListener('resize', () => { if (animationLayers.length) resetView(); });
+
+            PLAY_PAUSE_BTN.addEventListener('click', () => {
+                isPlaying = !isPlaying;
+                PLAY_PAUSE_ICON.classList.toggle('fa-play', !isPlaying);
+                PLAY_PAUSE_ICON.classList.toggle('fa-pause', isPlaying);
+                if (isPlaying) lastFrameTime = performance.now();
+            });
+
+            SEEK_BAR.addEventListener('input', () => {
+                currentFrameIndex = parseInt(SEEK_BAR.value);
+                if (isPlaying) { isPlaying = false; PLAY_PAUSE_ICON.classList.add('fa-play'); PLAY_PAUSE_ICON.classList.remove('fa-pause'); }
+                lastFrameTime = performance.now();
+            });
+
+            BASE_SPEED_SLIDER.addEventListener('input', () => {
+                baseSpeed = parseFloat(BASE_SPEED_SLIDER.value);
+                BASE_SPEED_VALUE.textContent = `${baseSpeed.toFixed(2)}x`;
+                if (!isRightDragging && !isSpeedDragging) { animationSpeedMultiplier = baseSpeed; }
+            });
+            DRAG_SENSITIVITY_SLIDER.addEventListener('input', () => {
+                dragSensitivity = parseFloat(DRAG_SENSITIVITY_SLIDER.value);
+                DRAG_SENSITIVITY_VALUE.textContent = dragSensitivity.toFixed(2);
+            });
+        }
+
+        function initializeApp() {
+            addEventListeners();
+            setupWorker();
+            baseSpeed = parseFloat(BASE_SPEED_SLIDER.value);
+            dragSensitivity = parseFloat(DRAG_SENSITIVITY_SLIDER.value);
+            animationSpeedMultiplier = baseSpeed;
+            BASE_SPEED_VALUE.textContent = `${baseSpeed.toFixed(2)}x`;
+            DRAG_SENSITIVITY_VALUE.textContent = dragSensitivity.toFixed(2);
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>

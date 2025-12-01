@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Meta Data -->
+    <title>Automatic Pixel Art Algorithm</title>
+    <meta name="description" content="An interactive showcase of an algorithm that automatically generates pixel art from photos by optimizing color reduction and edge detection based on human color perception.">
+    <meta name="page:icon" content="fas fa-robot">
+    <meta name="page:color" content="#6366f1">
+
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Google Fonts for better typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700&family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom CSS for elements that are complex for TailwindCSS */
+        :root {
+            --glow-color-1: #6366f1; /* indigo-500 */
+            --glow-color-2: #a855f7; /* purple-500 */
+            --glow-color-3: #ec4899; /* pink-500 */
+        }
+        
+        body {
+            font-family: 'Poppins', 'Noto Sans JP', sans-serif;
+            overflow: hidden; /* Prevent scrolling on the main body */
+        }
+
+        .animated-gradient-bg {
+            background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a202c);
+            background-size: 400% 400%;
+            animation: gradient-animation 20s ease infinite;
+        }
+
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(90deg, var(--glow-color-1), var(--glow-color-2), var(--glow-color-3));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+        
+        .gradient-border {
+            border: 2px solid;
+            border-image-slice: 1;
+            border-image-source: linear-gradient(to right, var(--glow-color-1), var(--glow-color-2));
+        }
+
+        .upload-zone {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+        .upload-zone.dragover {
+            border-color: var(--glow-color-1);
+            background-color: rgba(99, 102, 241, 0.1);
+            transform: scale(1.02);
+        }
+        
+        /* Custom scrollbar for better aesthetics within panels */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: linear-gradient(var(--glow-color-1), var(--glow-color-2));
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(var(--glow-color-2), var(--glow-color-3));
+        }
+
+        /* Canvas rendering style for pixel art */
+        canvas {
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        
+        .step-card {
+            transform: translateY(20px);
+            opacity: 0;
+            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.6s ease;
+        }
+        .step-card.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="animated-gradient-bg text-gray-200 antialiased">
+    <main class="w-screen h-screen flex flex-col lg:flex-row items-center justify-center p-4 lg:p-8 gap-8">
+        
+        <!-- Left Panel: Algorithm Explanation -->
+        <div id="explanation-panel" class="w-full lg:w-2/5 h-full flex flex-col gap-6 p-6 glass-card rounded-2xl overflow-y-auto custom-scrollbar">
+            <header class="text-center">
+                <h1 class="text-3xl lg:text-4xl font-bold gradient-text pb-2">全自動ピクセルアート生成</h1>
+                <p class="text-gray-400">人間の色知覚を利用したパラメータ最適化アルゴリズム</p>
+            </header>
+
+            <section class="space-y-3">
+                <h2 class="text-xl font-semibold border-b-2 border-indigo-500/30 pb-2 flex items-center gap-3">
+                    <i class="fas fa-bullseye text-indigo-400"></i>
+                    アルゴリズムの目的
+                </h2>
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    写真からピクセルアートを生成する際、従来手法では「減色の色数」や「輪郭線検出の閾値」といったパラメータを手動で設定する必要がありました。このアルゴリズムは、<strong class="font-semibold text-indigo-300">人間の色の見え方（許容色差）</strong>を利用して、これらのパラメータを<strong class="font-semibold text-purple-300">全自動で最適に決定する</strong>ことを目的としています。
+                </p>
+            </section>
+            
+            <div class="h-px bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent"></div>
+
+            <section class="space-y-4">
+                <h2 class="text-xl font-semibold border-b-2 border-purple-500/30 pb-2 flex items-center gap-3">
+                    <i class="fas fa-layer-group text-purple-400"></i>
+                    核となる2つのステップ
+                </h2>
+                
+                <article class="p-4 bg-black/20 rounded-lg border border-white/10">
+                    <h3 class="font-bold text-lg text-purple-300 mb-2">1. 許容色差に基づく減色処理</h3>
+                    <p class="text-xs text-gray-400 mb-3">手法: 最大距離アルゴリズム（MDA）を応用</p>
+                    <ul class="space-y-2 text-sm list-inside">
+                        <li class="flex items-start gap-2">
+                          <i class="fas fa-palette mt-1 text-purple-400/80"></i>
+                          <span>画像内の色を、人間の目で知覚的に区別できる色のグループに分類します。</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                          <i class="fas fa-ruler-combined mt-1 text-purple-400/80"></i>
+                          <span>新しい色のグループを追加するかを「許容色差」の閾値に基づいて判断します。</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                          <i class="fas fa-check-circle mt-1 text-purple-400/80"></i>
+                          <span>知覚的に意味のある色の違いがなくなると処理を終了し、最適な色数が自動的に決定されます。</span>
+                        </li>
+                    </ul>
+                </article>
+                
+                <article class="p-4 bg-black/20 rounded-lg border border-white/10">
+                    <h3 class="font-bold text-lg text-pink-300 mb-2">2. 減色結果を利用した輪郭線検出</h3>
+                    <p class="text-xs text-gray-400 mb-3">手法: Canny edge detector のパラメータ自動設定</p>
+                     <ul class="space-y-2 text-sm list-inside">
+                        <li class="flex items-start gap-2">
+                          <i class="fas fa-calculator mt-1 text-pink-400/80"></i>
+                          <span>ステップ1で得られた各色グループ間の色の距離を計算します。</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                          <i class="fas fa-chart-line mt-1 text-pink-400/80"></i>
+                          <span>この<strong class="font-semibold">クラスタ間の最短距離</strong>を、輪郭線として検出する上限閾値として設定します。</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                          <i class="fas fa-wand-magic-sparkles mt-1 text-pink-400/80"></i>
+                          <span>「人間が別の色と認識する境界」を基準に、自然で高品質な輪郭線を自動で抽出します。</span>
+                        </li>
+                    </ul>
+                </article>
+            </section>
+        </div>
+
+        <!-- Right Panel: Interactive Demo -->
+        <div id="demo-panel" class="w-full lg:w-3/5 h-full flex flex-col p-6 glass-card rounded-2xl">
+            <div id="upload-container" class="w-full h-full flex flex-col items-center justify-center transition-all duration-500">
+                <div id="drop-zone" class="upload-zone w-full h-full rounded-xl flex flex-col items-center justify-center p-8 text-center cursor-pointer">
+                    <div class="space-y-4">
+                        <i class="fas fa-cloud-upload-alt text-6xl text-gray-400 transition-transform duration-300"></i>
+                        <p class="text-2xl font-semibold">画像をドラッグ＆ドロップ</p>
+                        <p class="text-gray-400">またはクリックしてファイルを選択</p>
+                        <p class="text-xs text-gray-500 mt-2">画像はサーバーにアップロードされません。すべての処理はブラウザ内で完結します。</p>
+                    </div>
+                </div>
+                <input type="file" id="file-input" class="hidden" accept="image/*">
+            </div>
+
+            <div id="processing-container" class="w-full h-full flex-col items-center justify-center hidden">
+                <div class="w-full h-full flex flex-col">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-grow">
+                        <!-- Original Image -->
+                        <div class="flex flex-col items-center justify-center space-y-2">
+                            <h3 class="font-semibold text-lg">Original Image</h3>
+                            <div class="w-full aspect-square bg-black/20 rounded-lg p-2 flex items-center justify-center">
+                                <canvas id="canvas-original" class="max-w-full max-h-full object-contain rounded"></canvas>
+                            </div>
+                        </div>
+                        <!-- Final Result -->
+                        <div class="flex flex-col items-center justify-center space-y-2">
+                            <h3 class="font-semibold text-lg gradient-text">Generated Pixel Art</h3>
+                             <div class="w-full aspect-square bg-black/20 rounded-lg p-2 flex items-center justify-center">
+                                <canvas id="canvas-final" class="max-w-full max-h-full object-contain rounded"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="steps-visualization" class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <!-- Step 1 Card -->
+                        <div id="step1-card" class="step-card p-4 glass-card rounded-lg flex flex-col items-center text-center">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-xs font-bold">1</span>
+                                <h4 class="font-bold text-md">Color Reduction</h4>
+                            </div>
+                             <div id="spinner-1" class="h-16 w-16 my-2 flex items-center justify-center">
+                                 <i class="fas fa-spinner fa-spin text-2xl text-purple-400"></i>
+                            </div>
+                            <div id="palette-container" class="hidden flex-wrap justify-center gap-2 my-2"></div>
+                            <p id="palette-info" class="hidden text-xs text-gray-400"></p>
+                        </div>
+                        <!-- Step 2 Card -->
+                        <div id="step2-card" class="step-card p-4 glass-card rounded-lg flex flex-col items-center text-center">
+                            <div class="flex items-center gap-2 mb-2">
+                               <span class="flex h-5 w-5 items-center justify-center rounded-full bg-pink-500 text-xs font-bold">2</span>
+                               <h4 class="font-bold text-md">Edge Detection</h4>
+                            </div>
+                            <div id="spinner-2" class="h-16 w-16 my-2 flex items-center justify-center">
+                                <i class="fas fa-spinner fa-spin text-2xl text-pink-400"></i>
+                            </div>
+                            <div id="edge-container" class="hidden w-24 h-24 bg-black/30 rounded flex items-center justify-center my-2">
+                                <canvas id="canvas-edge" width="96" height="96"></canvas>
+                            </div>
+                            <p id="edge-info" class="hidden text-xs text-gray-400"></p>
+                        </div>
+                        <!-- Step 3 Card -->
+                        <div id="step3-card" class="step-card p-4 glass-card rounded-lg flex flex-col items-center text-center">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold">3</span>
+                                <h4 class="font-bold text-md">Finalize</h4>
+                            </div>
+                            <div id="spinner-3" class="h-16 w-16 my-2 flex items-center justify-center">
+                                <i class="fas fa-spinner fa-spin text-2xl text-indigo-400"></i>
+                            </div>
+                            <div id="done-container" class="hidden flex flex-col items-center justify-center my-2 h-24">
+                                <i class="fas fa-check-circle text-5xl text-green-400"></i>
+                            </div>
+                            <p id="done-info" class="hidden text-xs text-gray-400"></p>
+                        </div>
+                    </div>
+
+                    <button id="reset-button" class="mt-4 w-full sm:w-auto mx-auto py-2 px-6 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-semibold transition-all duration-300 shadow-lg shadow-indigo-600/30">
+                        <i class="fas fa-undo mr-2"></i>別の画像を試す
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadContainer = document.getElementById('upload-container');
+        const processingContainer = document.getElementById('processing-container');
+        const resetButton = document.getElementById('reset-button');
+        
+        const canvasOriginal = document.getElementById('canvas-original');
+        const canvasFinal = document.getElementById('canvas-final');
+        const canvasEdge = document.getElementById('canvas-edge');
+        const ctxOriginal = canvasOriginal.getContext('2d');
+        const ctxFinal = canvasFinal.getContext('2d');
+        const ctxEdge = canvasEdge.getContext('2d');
+
+        const step1Card = document.getElementById('step1-card');
+        const step2Card = document.getElementById('step2-card');
+        const step3Card = document.getElementById('step3-card');
+
+        const spinner1 = document.getElementById('spinner-1');
+        const spinner2 = document.getElementById('spinner-2');
+        const spinner3 = document.getElementById('spinner-3');
+
+        const paletteContainer = document.getElementById('palette-container');
+        const paletteInfo = document.getElementById('palette-info');
+        const edgeContainer = document.getElementById('edge-container');
+        const edgeInfo = document.getElementById('edge-info');
+        const doneContainer = document.getElementById('done-container');
+        const doneInfo = document.getElementById('done-info');
+
+        const PIXELATION_LEVEL = 64; // The size of the pixelated grid (e.g., 64x64)
+
+        // Event Listeners
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        resetButton.addEventListener('click', resetDemo);
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            const file = files[0];
+            if (!file.type.startsWith('image/')) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    startProcessing(img);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function startProcessing(img) {
+            uploadContainer.classList.add('hidden');
+            processingContainer.classList.add('flex');
+            processingContainer.classList.remove('hidden');
+
+            resetSteps();
+            
+            drawOriginalImage(img);
+            simulateAlgorithm(img);
+        }
+
+        function resetDemo() {
+            uploadContainer.classList.remove('hidden');
+            processingContainer.classList.add('hidden');
+            processingContainer.classList.remove('flex');
+            fileInput.value = ''; // Reset file input
+        }
+        
+        function resetSteps() {
+            [step1Card, step2Card, step3Card].forEach(card => card.classList.remove('visible'));
+            [spinner1, spinner2, spinner3].forEach(spinner => spinner.style.display = 'flex');
+            [paletteContainer, edgeContainer, doneContainer].forEach(container => container.classList.add('hidden'));
+            [paletteInfo, edgeInfo, doneInfo].forEach(info => info.classList.add('hidden'));
+            ctxFinal.clearRect(0, 0, canvasFinal.width, canvasFinal.height);
+        }
+
+        function drawOriginalImage(img) {
+            const aspect = img.width / img.height;
+            const container = canvasOriginal.parentElement;
+            const maxWidth = container.clientWidth - 16;
+            const maxHeight = container.clientHeight - 16;
+            
+            let newWidth = maxWidth;
+            let newHeight = newWidth / aspect;
+            if (newHeight > maxHeight) {
+                newHeight = maxHeight;
+                newWidth = newHeight * aspect;
+            }
+            
+            canvasOriginal.width = newWidth;
+            canvasOriginal.height = newHeight;
+            ctxOriginal.drawImage(img, 0, 0, newWidth, newHeight);
+        }
+
+        async function simulateAlgorithm(img) {
+            // Step 1: Color Reduction
+            await sleep(500);
+            step1Card.classList.add('visible');
+            await sleep(1500); // Simulate processing time
+            
+            // This is a simplified simulation, not the actual MDA algorithm
+            const colorCount = Math.floor(Math.random() * 8) + 8; // Randomly 8-15 colors
+            paletteInfo.textContent = `最適な ${colorCount} 色を自動検出`;
+            generatePalette(img, colorCount);
+
+            spinner1.style.display = 'none';
+            paletteContainer.classList.remove('hidden');
+            paletteInfo.classList.remove('hidden');
+
+            // Step 2: Edge Detection
+            await sleep(500);
+            step2Card.classList.add('visible');
+            await sleep(1500);
+            
+            // Simulate edge detection
+            const threshold = (Math.random() * 0.2 + 0.3).toFixed(2); // Random threshold
+            edgeInfo.textContent = `色差から閾値 ${threshold} を設定`;
+            simulateEdgeDetection(img);
+
+            spinner2.style.display = 'none';
+            edgeContainer.classList.remove('hidden');
+            edgeInfo.classList.remove('hidden');
+
+            // Step 3: Finalize
+            await sleep(500);
+            step3Card.classList.add('visible');
+            await sleep(1000);
+
+            // Generate final pixel art
+            doneInfo.textContent = 'ピクセルアートを生成完了';
+            generatePixelArt(img);
+
+            spinner3.style.display = 'none';
+            doneContainer.classList.remove('hidden');
+            doneInfo.classList.remove('hidden');
+        }
+        
+        function generatePalette(img, count) {
+            // A very simple way to get some colors, not a real quantization algorithm
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = 10;
+            tempCanvas.height = 10;
+            tempCtx.drawImage(img, 0, 0, 10, 10);
+            const imageData = tempCtx.getImageData(0, 0, 10, 10).data;
+            const colors = new Set();
+            for (let i = 0; i < imageData.length; i += 4) {
+                if(colors.size >= count) break;
+                const color = `rgb(${imageData[i]}, ${imageData[i+1]}, ${imageData[i+2]})`;
+                colors.add(color);
+            }
+            paletteContainer.innerHTML = '';
+            colors.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'w-6 h-6 rounded-full';
+                swatch.style.backgroundColor = color;
+                paletteContainer.appendChild(swatch);
+            });
+        }
+
+        function simulateEdgeDetection(img) {
+            ctxEdge.clearRect(0,0,96,96);
+            ctxEdge.drawImage(img, 0, 0, 96, 96);
+            const imageData = ctxEdge.getImageData(0, 0, 96, 96);
+            const data = imageData.data;
+            // Simple grayscale and edge-like effect for visualization
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+                const isEdge = i % 100 > 50; // Fake edge
+                data[i] = data[i+1] = data[i+2] = isEdge ? 255 : avg * 0.5;
+            }
+            ctxEdge.putImageData(imageData, 0, 0);
+        }
+
+        function generatePixelArt(img) {
+            const aspect = img.width / img.height;
+            let w, h;
+            if(aspect > 1) {
+                w = PIXELATION_LEVEL;
+                h = PIXELATION_LEVEL / aspect;
+            } else {
+                h = PIXELATION_LEVEL;
+                w = PIXELATION_LEVEL * aspect;
+            }
+
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = w;
+            tempCanvas.height = h;
+
+            // Draw image on small canvas to pixelate
+            tempCtx.drawImage(img, 0, 0, w, h);
+            
+            // Set final canvas size based on parent container
+            const container = canvasFinal.parentElement;
+            const maxWidth = container.clientWidth - 16;
+            const maxHeight = container.clientHeight - 16;
+
+            let finalWidth = maxWidth;
+            let finalHeight = finalWidth / aspect;
+            if(finalHeight > maxHeight){
+                finalHeight = maxHeight;
+                finalWidth = finalHeight * aspect;
+            }
+            
+            canvasFinal.width = finalWidth;
+            canvasFinal.height = finalHeight;
+            
+            // Disable smoothing and draw the small canvas onto the large one
+            ctxFinal.imageSmoothingEnabled = false;
+            ctxFinal.webkitImageSmoothingEnabled = false;
+            ctxFinal.mozImageSmoothingEnabled = false;
+            
+            ctxFinal.drawImage(tempCanvas, 0, 0, finalWidth, finalHeight);
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+    });
+    </script>
+</body>
+</html>

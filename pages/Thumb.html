@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creative Canvas - 高機能サムネイルエディタ</title>
+    <meta name="description" content="HTML5 Canvas APIで構築されたインタラクティブなサムネイルエディタ。テキスト、画像、レイヤー機能で自由にデザイン。">
+    <meta name="page:icon" content="fas fa-palette">
+    <meta name="page:color" content="#38bdf8">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-dark-primary: #282828;
+            --bg-dark-secondary: #333333;
+            --bg-dark-tertiary: #404040;
+            --text-light: #d1d1d1;
+            --text-dark: #888888;
+            --accent-blue: #38bdf8;
+            --border-color: #4a4a4a;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .checkerboard {
+            background-color: #555;
+            background-image:
+                linear-gradient(45deg, #444 25%, transparent 25%),
+                linear-gradient(-45deg, #444 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #444 75%),
+                linear-gradient(-45deg, transparent 75%, #444 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .tooltip {
+            position: relative;
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 120px;
+            background-color: var(--bg-dark-tertiary);
+            color: var(--text-light);
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 50;
+            left: 110%;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        
+        .tooltip .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            right: 100%;
+            margin-top: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: transparent var(--bg-dark-tertiary) transparent transparent;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .property-input {
+            background-color: var(--bg-dark-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-light);
+            border-radius: 4px;
+            padding: 4px 8px;
+            width: 100%;
+            outline: none;
+        }
+        .property-input:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 1px var(--accent-blue);
+        }
+
+        .layer-item {
+            transition: background-color 0.2s;
+        }
+        .layer-item.selected {
+            background-color: var(--accent-blue) !important;
+            color: black;
+        }
+        
+        .layer-item.ghost {
+            opacity: 0.5;
+            background: #4a5568;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--accent-blue);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid var(--bg-dark-secondary);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: var(--accent-blue);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid var(--bg-dark-secondary);
+        }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-dark-primary);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--bg-dark-tertiary);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+    </style>
+</head>
+<body class="bg-[--bg-dark-primary] text-[--text-light] flex h-screen overflow-hidden">
+
+    <aside class="w-16 bg-[--bg-dark-secondary] flex flex-col items-center py-4 space-y-4 shadow-lg z-20">
+        <button id="add-text-btn" class="tooltip text-2xl p-2 rounded-md hover:bg-[--bg-dark-tertiary] transition-colors duration-200" data-tool="add-text">
+            <i class="fas fa-font text-gray-300"></i>
+            <span class="tooltip-text">テキスト追加</span>
+        </button>
+        <button id="add-image-btn" class="tooltip text-2xl p-2 rounded-md hover:bg-[--bg-dark-tertiary] transition-colors duration-200" data-tool="add-image">
+            <i class="fas fa-image text-gray-300"></i>
+            <span class="tooltip-text">画像追加</span>
+        </button>
+        <input type="file" id="image-upload" class="hidden" accept="image/*">
+    </aside>
+
+    <main class="flex-1 flex flex-col">
+        <header class="h-12 bg-[--bg-dark-secondary] flex justify-between items-center px-4 border-b border-[--border-color] shadow-md z-10">
+            <h1 class="text-lg font-semibold">Creative Canvas</h1>
+            <div class="flex items-center space-x-2">
+                <button id="export-png-btn" class="bg-[--accent-blue] text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-sky-500 transition-colors">
+                    <i class="fas fa-file-image mr-1"></i>PNGで書き出し
+                </button>
+                 <button id="export-jpeg-btn" class="bg-emerald-500 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-emerald-600 transition-colors">
+                    <i class="fas fa-file-image mr-1"></i>JPEGで書き出し
+                </button>
+            </div>
+        </header>
+
+        <div id="canvas-container" class="flex-1 flex items-center justify-center p-8 bg-[--bg-dark-primary] overflow-auto">
+            <div class="checkerboard shadow-2xl">
+                <canvas id="editor-canvas" width="1280" height="720"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <aside class="w-72 bg-[--bg-dark-secondary] flex flex-col border-l border-[--border-color] shadow-lg">
+        <div id="properties-panel" class="p-4 border-b border-[--border-color] flex-shrink-0">
+            <h2 class="text-sm font-bold mb-4 border-b border-[--border-color] pb-2">プロパティ</h2>
+            <div id="properties-content" class="space-y-4">
+                 <div class="text-center text-[--text-dark] text-sm py-8">
+                    <i class="fas fa-mouse-pointer text-2xl mb-2"></i>
+                    <p>オブジェクトを選択して<br>プロパティを編集します</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="layers-panel" class="flex-1 flex flex-col overflow-hidden">
+            <h2 class="text-sm font-bold p-4 border-b border-[--border-color] flex-shrink-0">レイヤー</h2>
+            <ul id="layer-list" class="overflow-y-auto p-2 space-y-1">
+            </ul>
+        </div>
+    </aside>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const canvas = document.getElementById('editor-canvas');
+    const ctx = canvas.getContext('2d');
+    const addTextBtn = document.getElementById('add-text-btn');
+    const addImageBtn = document.getElementById('add-image-btn');
+    const imageUpload = document.getElementById('image-upload');
+    const exportPngBtn = document.getElementById('export-png-btn');
+    const exportJpegBtn = document.getElementById('export-jpeg-btn');
+    const propertiesContent = document.getElementById('properties-content');
+    const layerList = document.getElementById('layer-list');
+
+    let layers = [];
+    let selectedLayer = null;
+    let nextLayerId = 0;
+    
+    let isDragging = false;
+    let isResizing = false;
+    let resizeHandle = null;
+    let dragOffsetX, dragOffsetY;
+
+    const resizeHandles = ['tl', 'tr', 'bl', 'br', 'tm', 'bm', 'ml', 'mr'];
+    const handleSize = 10;
+
+    function drawCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        layers.slice().reverse().forEach(layer => {
+            ctx.globalAlpha = layer.opacity;
+            if (layer.type === 'text') {
+                drawTextLayer(layer);
+            } else if (layer.type === 'image' && layer.image) {
+                drawImageLayer(layer);
+            }
+            ctx.globalAlpha = 1.0;
+        });
+
+        if (selectedLayer) {
+            drawSelectionBox(selectedLayer);
+        }
+    }
+
+    function drawTextLayer(layer) {
+        ctx.font = `${layer.fontWeight} ${layer.fontSize}px ${layer.fontFamily}`;
+        ctx.fillStyle = layer.color;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(layer.text, layer.x, layer.y);
+    }
+    
+    function drawImageLayer(layer) {
+        ctx.drawImage(layer.image, layer.x, layer.y, layer.width, layer.height);
+    }
+
+    function drawSelectionBox(layer) {
+        ctx.strokeStyle = 'var(--accent-blue)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(layer.x, layer.y, layer.width, layer.height);
+
+        ctx.fillStyle = 'white';
+        const handles = getResizeHandles(layer);
+        for (const handle in handles) {
+            const pos = handles[handle];
+            ctx.strokeRect(pos.x - handleSize / 2, pos.y - handleSize / 2, handleSize, handleSize);
+            ctx.fillRect(pos.x - handleSize / 2, pos.y - handleSize / 2, handleSize, handleSize);
+        }
+    }
+    
+    function getLayerBounds(layer) {
+        if (layer.type === 'text') {
+            ctx.font = `${layer.fontWeight} ${layer.fontSize}px ${layer.fontFamily}`;
+            const metrics = ctx.measureText(layer.text);
+            layer.width = metrics.width;
+            const fontHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+            layer.height = fontHeight > 0 ? fontHeight : layer.fontSize;
+        }
+        return { x: layer.x, y: layer.y, width: layer.width, height: layer.height };
+    }
+
+    function getResizeHandles(layer) {
+        const bounds = getLayerBounds(layer);
+        return {
+            tl: { x: bounds.x, y: bounds.y },
+            tr: { x: bounds.x + bounds.width, y: bounds.y },
+            bl: { x: bounds.x, y: bounds.y + bounds.height },
+            br: { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+            tm: { x: bounds.x + bounds.width / 2, y: bounds.y },
+            bm: { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height },
+            ml: { x: bounds.x, y: bounds.y + bounds.height / 2 },
+            mr: { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 },
+        };
+    }
+
+    function addLayer(layerConfig) {
+        const newLayer = {
+            id: nextLayerId++,
+            visible: true,
+            opacity: 1.0,
+            ...layerConfig
+        };
+        layers.unshift(newLayer);
+        selectLayer(newLayer);
+        updateUI();
+    }
+
+    addTextBtn.addEventListener('click', () => {
+        addLayer({
+            type: 'text',
+            text: 'テキストを入力',
+            x: 50,
+            y: 50,
+            fontSize: 48,
+            fontFamily: 'Arial',
+            fontWeight: 'normal',
+            color: '#FFFFFF'
+        });
+    });
+
+    addImageBtn.addEventListener('click', () => imageUpload.click());
+
+    imageUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const scale = Math.min(300 / img.width, 300 / img.height);
+                    addLayer({
+                        type: 'image',
+                        image: img,
+                        x: 50,
+                        y: 50,
+                        width: img.width * scale,
+                        height: img.height * scale,
+                        aspectRatio: img.width / img.height
+                    });
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        e.target.value = '';
+    });
+
+    function selectLayer(layer) {
+        selectedLayer = layer;
+        updateUI();
+    }
+
+    function updateUI() {
+        updateLayersPanel();
+        updatePropertiesPanel();
+        drawCanvas();
+    }
+
+    function updateLayersPanel() {
+        layerList.innerHTML = '';
+        layers.forEach((layer, index) => {
+            const li = document.createElement('li');
+            li.className = `layer-item flex items-center justify-between p-2 rounded-md cursor-pointer hover:bg-[--bg-dark-tertiary] ${selectedLayer && selectedLayer.id === layer.id ? 'selected' : ''}`;
+            li.dataset.id = layer.id;
+            li.draggable = true;
+            
+            li.addEventListener('click', () => selectLayer(layer));
+            
+            li.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', layer.id);
+                setTimeout(() => li.classList.add('ghost'), 0);
+            });
+
+            li.addEventListener('dragend', () => li.classList.remove('ghost'));
+
+            const layerInfo = document.createElement('div');
+            layerInfo.className = 'flex items-center space-x-2 overflow-hidden';
+
+            const icon = document.createElement('i');
+            icon.className = `fas ${layer.type === 'text' ? 'fa-font' : 'fa-image'}`;
+            
+            const name = document.createElement('span');
+            name.className = 'truncate text-sm';
+            name.textContent = layer.type === 'text' ? layer.text : `画像 ${layer.id}`;
+            
+            layerInfo.appendChild(icon);
+            layerInfo.appendChild(name);
+
+            const controls = document.createElement('div');
+            controls.className = 'flex items-center space-x-3 text-xs';
+
+            const visibilityBtn = document.createElement('button');
+            visibilityBtn.innerHTML = `<i class="fas ${layer.visible ? 'fa-eye' : 'fa-eye-slash'}"></i>`;
+            visibilityBtn.className = 'hover:text-white';
+            visibilityBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                layer.visible = !layer.visible;
+                updateUI();
+            });
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+            deleteBtn.className = 'hover:text-red-500';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                layers = layers.filter(l => l.id !== layer.id);
+                if (selectedLayer && selectedLayer.id === layer.id) {
+                    selectedLayer = null;
+                }
+                updateUI();
+            });
+
+            controls.appendChild(visibilityBtn);
+            controls.appendChild(deleteBtn);
+            
+            li.appendChild(layerInfo);
+            li.appendChild(controls);
+            layerList.appendChild(li);
+        });
+    }
+
+    layerList.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const draggingItem = document.querySelector('.ghost');
+        if (!draggingItem) return;
+
+        const siblings = [...layerList.querySelectorAll('.layer-item:not(.ghost)')];
+        const nextSibling = siblings.find(sibling => {
+            const rect = sibling.getBoundingClientRect();
+            return e.clientY < rect.top + rect.height / 2;
+        });
+
+        if (nextSibling) {
+            layerList.insertBefore(draggingItem, nextSibling);
+        } else {
+            layerList.appendChild(draggingItem);
+        }
+    });
+
+    layerList.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const id = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        const draggedLayer = layers.find(l => l.id === id);
+        const liElements = [...layerList.querySelectorAll('.layer-item')];
+        const newIndex = liElements.findIndex(li => parseInt(li.dataset.id, 10) === id);
+
+        layers = layers.filter(l => l.id !== id);
+        
+        const adjustedIndex = layers.length - newIndex;
+        layers.splice(adjustedIndex, 0, draggedLayer);
+        
+        updateUI();
+    });
+
+    function updatePropertiesPanel() {
+        propertiesContent.innerHTML = '';
+        if (!selectedLayer) {
+            propertiesContent.innerHTML = `
+                <div class="text-center text-[--text-dark] text-sm py-8">
+                    <i class="fas fa-mouse-pointer text-2xl mb-2"></i>
+                    <p>オブジェクトを選択して<br>プロパティを編集します</p>
+                </div>
+            `;
+            return;
+        }
+
+        const createRow = (label, input) => {
+            const row = document.createElement('div');
+            row.className = 'grid grid-cols-3 gap-2 items-center';
+            const labelEl = document.createElement('label');
+            labelEl.className = 'text-xs text-[--text-dark]';
+            labelEl.textContent = label;
+            row.appendChild(labelEl);
+            const inputContainer = document.createElement('div');
+            inputContainer.className = 'col-span-2';
+            inputContainer.appendChild(input);
+            row.appendChild(inputContainer);
+            return row;
+        };
+
+        const createTextInput = (value, callback) => {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'property-input';
+            input.value = value;
+            input.addEventListener('input', (e) => callback(e.target.value));
+            return input;
+        };
+
+        const createNumberInput = (value, callback, min = 0, max = 1000) => {
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.className = 'property-input';
+            input.value = value;
+            input.min = min;
+            input.max = max;
+            input.addEventListener('input', (e) => callback(parseFloat(e.target.value)));
+            return input;
+        };
+
+        const createColorInput = (value, callback) => {
+            const input = document.createElement('input');
+            input.type = 'color';
+            input.className = 'property-input w-full h-8 p-0 border-0';
+            input.value = value;
+            input.addEventListener('input', (e) => callback(e.target.value));
+            return input;
+        };
+        
+        const createRangeInput = (value, callback, min=0, max=1, step=0.01) => {
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.className = 'w-full';
+            input.min = min;
+            input.max = max;
+            input.step = step;
+            input.value = value;
+            input.addEventListener('input', (e) => callback(parseFloat(e.target.value)));
+            return input;
+        };
+
+        if (selectedLayer.type === 'text') {
+            propertiesContent.appendChild(createRow('テキスト', createTextInput(selectedLayer.text, val => {
+                selectedLayer.text = val;
+                updateUI();
+            })));
+            propertiesContent.appendChild(createRow('フォントサイズ', createNumberInput(selectedLayer.fontSize, val => {
+                selectedLayer.fontSize = val;
+                updateUI();
+            })));
+             propertiesContent.appendChild(createRow('フォント色', createColorInput(selectedLayer.color, val => {
+                selectedLayer.color = val;
+                updateUI();
+            })));
+        }
+        
+        propertiesContent.appendChild(createRow('不透明度', createRangeInput(selectedLayer.opacity, val => {
+            selectedLayer.opacity = val;
+            updateUI();
+        })));
+    }
+
+    function getMousePos(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+
+    function isPointInRect(point, rect) {
+        return point.x >= rect.x && point.x <= rect.x + rect.width &&
+               point.y >= rect.y && point.y <= rect.y + rect.height;
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+        const mousePos = getMousePos(e);
+        
+        isDragging = false;
+        isResizing = false;
+        
+        if (selectedLayer) {
+            const handles = getResizeHandles(selectedLayer);
+            for (const handle in handles) {
+                const pos = handles[handle];
+                if (Math.abs(mousePos.x - pos.x) < handleSize && Math.abs(mousePos.y - pos.y) < handleSize) {
+                    isResizing = true;
+                    resizeHandle = handle;
+                    document.body.style.cursor = getResizeCursor(handle);
+                    return;
+                }
+            }
+        }
+
+        let clickedLayer = null;
+        for (const layer of layers) {
+             if (layer.visible && isPointInRect(mousePos, getLayerBounds(layer))) {
+                clickedLayer = layer;
+                break;
+            }
+        }
+
+        if (clickedLayer) {
+            selectLayer(clickedLayer);
+            isDragging = true;
+            dragOffsetX = mousePos.x - clickedLayer.x;
+            dragOffsetY = mousePos.y - clickedLayer.y;
+            document.body.style.cursor = 'move';
+        } else {
+            selectLayer(null);
+        }
+        updateUI();
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!selectedLayer) return;
+        const mousePos = getMousePos(e);
+
+        if (isResizing) {
+            handleResize(mousePos);
+            updateUI();
+        } else if (isDragging) {
+            selectedLayer.x = mousePos.x - dragOffsetX;
+            selectedLayer.y = mousePos.y - dragOffsetY;
+            updateUI();
+        } else {
+             const handles = getResizeHandles(selectedLayer);
+             let onHandle = false;
+             for (const handle in handles) {
+                const pos = handles[handle];
+                if (Math.abs(mousePos.x - pos.x) < handleSize && Math.abs(mousePos.y - pos.y) < handleSize) {
+                    canvas.style.cursor = getResizeCursor(handle);
+                    onHandle = true;
+                    break;
+                }
+            }
+            if (!onHandle) {
+                 if(isPointInRect(mousePos, getLayerBounds(selectedLayer))) {
+                     canvas.style.cursor = 'move';
+                 } else {
+                     canvas.style.cursor = 'default';
+                 }
+            }
+        }
+    });
+
+    canvas.addEventListener('mouseup', () => {
+        isDragging = false;
+        isResizing = false;
+        document.body.style.cursor = 'default';
+        canvas.style.cursor = 'default';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+        if (!isDragging && !isResizing) {
+            canvas.style.cursor = 'default';
+        }
+    });
+    
+    function handleResize(mousePos) {
+        const layer = selectedLayer;
+        const oldBounds = { x: layer.x, y: layer.y, width: layer.width, height: layer.height };
+        
+        let newX = layer.x, newY = layer.y, newWidth = layer.width, newHeight = layer.height;
+
+        if (resizeHandle.includes('r')) { newWidth = mousePos.x - oldBounds.x; }
+        if (resizeHandle.includes('l')) {
+            newWidth = oldBounds.x + oldBounds.width - mousePos.x;
+            newX = mousePos.x;
+        }
+        if (resizeHandle.includes('b')) { newHeight = mousePos.y - oldBounds.y; }
+        if (resizeHandle.includes('t')) {
+            newHeight = oldBounds.y + oldBounds.height - mousePos.y;
+            newY = mousePos.y;
+        }
+
+        if(layer.type === 'image' && layer.aspectRatio) {
+            if (newWidth !== oldBounds.width) {
+                newHeight = newWidth / layer.aspectRatio;
+            } else if (newHeight !== oldBounds.height) {
+                newWidth = newHeight * layer.aspectRatio;
+            }
+
+            if (resizeHandle.includes('t')) {
+                newY = oldBounds.y + oldBounds.height - newHeight;
+            }
+            if (resizeHandle.includes('l')) {
+                newX = oldBounds.x + oldBounds.width - newWidth;
+            }
+        }
+        
+        if (newWidth > handleSize) {
+             layer.x = newX;
+             layer.width = newWidth;
+        }
+        if(newHeight > handleSize){
+             layer.y = newY;
+             layer.height = newHeight;
+        }
+    }
+    
+    function getResizeCursor(handle) {
+        switch (handle) {
+            case 'tl': case 'br': return 'nwse-resize';
+            case 'tr': case 'bl': return 'nesw-resize';
+            case 'tm': case 'bm': return 'ns-resize';
+            case 'ml': case 'mr': return 'ew-resize';
+            default: return 'default';
+        }
+    }
+    
+    function exportCanvas(format = 'image/png', quality = 1.0) {
+        selectLayer(null);
+        drawCanvas();
+        
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        if (format === 'image/jpeg') {
+            tempCtx.fillStyle = '#FFFFFF'; // or a user-defined background
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        }
+        
+        tempCtx.drawImage(canvas, 0, 0);
+
+        const dataUrl = tempCanvas.toDataURL(format, quality);
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `thumbnail.${format.split('/')[1]}`;
+        link.click();
+    }
+    
+    exportPngBtn.addEventListener('click', () => exportCanvas('image/png'));
+    exportJpegBtn.addEventListener('click', () => exportCanvas('image/jpeg', 0.9));
+
+    updateUI();
+});
+</script>
+
+</body>
+</html>

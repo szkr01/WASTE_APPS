@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Hitbox Studio - Solid State Pro</title>
+    <meta name="description" content="Professional hitbox editor with Union rendering and Layer-based priority.">
+    <meta name="page:icon" content="fas fa-layer-group">
+    <meta name="page:color" content="#d946ef">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg: #050505;
+            --panel: #0f0f0f;
+            --border: #262626;
+            --accent: #d946ef;
+            --text: #e5e5e5;
+        }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        /* UI Utils */
+        .input-dark {
+            background: #000; border: 1px solid #333; color: #fff;
+            padding: 4px 8px; border-radius: 4px; outline: none; font-size: 12px;
+        }
+        .input-dark:focus { border-color: var(--accent); }
+        
+        .btn {
+            background: #1a1a1a; border: 1px solid #333; color: #ccc;
+            padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            font-size: 11px; font-weight: bold; text-transform: uppercase;
+        }
+        .btn:hover:not(:disabled) { background: #252525; border-color: #555; color: #fff; }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-accent { background: var(--accent); border-color: var(--accent); color: #000; }
+        .btn-accent:hover { background: #f0abfc; }
+
+        .canvas-bg {
+            background-color: #080808;
+            background-image: radial-gradient(#222 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* Tag List Item */
+        .tag-row {
+            display: flex; align-items: center;
+            background: #111; border: 1px solid #222;
+            margin-bottom: 2px; padding: 6px 8px; border-radius: 4px;
+            transition: 0.2s; cursor: pointer;
+        }
+        .tag-row:hover { background: #1a1a1a; border-color: #333; }
+        .tag-row.active { background: #1a1a1a; border-color: currentColor; box-shadow: inset 3px 0 0 currentColor; }
+        
+        .tag-order-btn {
+            width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+            color: #555; border-radius: 3px; margin-left: 2px;
+        }
+        .tag-order-btn:hover { background: #333; color: #fff; }
+
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col text-xs">
+
+    <!-- Header -->
+    <header class="h-12 border-b border-[#262626] bg-[#0a0a0a] flex items-center justify-between px-4 shrink-0 z-30">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-fuchsia-500">
+                <i class="fas fa-layer-group text-lg"></i>
+                <span class="font-bold tracking-widest text-white">HITBOX<span class="text-gray-600">PRO</span></span>
+            </div>
+            <div class="h-5 w-px bg-[#333]"></div>
+            <div class="flex gap-1">
+                <button id="btnUndo" class="btn w-8" disabled title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
+                <button id="btnRedo" class="btn w-8" disabled title="Redo (Ctrl+Y)"><i class="fas fa-redo"></i></button>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button onclick="document.getElementById('fileInput').click()" class="btn">
+                <i class="fas fa-folder-plus"></i> Import
+            </button>
+            <input type="file" id="fileInput" multiple accept="image/*" class="hidden">
+            <button onclick="exportData()" class="btn btn-accent">
+                <i class="fas fa-file-export"></i> Export
+            </button>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left: Files -->
+        <aside class="w-56 bg-[#050505] border-r border-[#262626] flex flex-col shrink-0 z-20">
+            <div class="p-3 border-b border-[#262626] text-gray-500 font-bold uppercase tracking-wider">Files</div>
+            <div id="imageList" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+        </aside>
+
+        <!-- Center: Canvas -->
+        <main class="flex-1 relative bg-[#000] flex flex-col min-w-0">
+            <div class="flex-1 relative overflow-hidden canvas-bg" id="canvasContainer">
+                <canvas id="editorCanvas"></canvas>
+            </div>
+            <div class="h-6 bg-[#0a0a0a] border-t border-[#262626] flex items-center justify-between px-4 text-gray-500 font-mono">
+                <span id="status">Ready</span>
+                <span id="coords">0, 0</span>
+            </div>
+        </main>
+
+        <!-- Right: Tools -->
+        <aside class="w-72 bg-[#080808] border-l border-[#262626] flex flex-col shrink-0 z-20">
+            
+            <!-- Tags (Layers) -->
+            <div class="flex-1 flex flex-col min-h-0 border-b border-[#262626]">
+                <div class="p-3 bg-[#0c0c0c] border-b border-[#262626] flex justify-between items-center">
+                    <span class="text-gray-500 font-bold uppercase tracking-wider">Layers (Priority)</span>
+                    <button onclick="addKind()" class="btn w-6 h-6"><i class="fas fa-plus"></i></button>
+                </div>
+                <div class="p-2 bg-[#0c0c0c] border-b border-[#262626]">
+                     <input type="text" id="newKindInput" placeholder="New Tag Name..." class="w-full input-dark">
+                </div>
+                <div id="kindPalette" class="flex-1 overflow-y-auto p-2 bg-[#080808]">
+                    <!-- Tags generated here -->
+                </div>
+                <div class="p-2 text-[10px] text-gray-600 text-center bg-[#0a0a0a]">
+                    Top = High Priority (Draws Last)
+                </div>
+            </div>
+
+            <!-- Properties -->
+            <div class="h-1/3 flex flex-col bg-[#0a0a0a]">
+                <div class="p-3 border-b border-[#262626] text-gray-500 font-bold uppercase tracking-wider">Selected Circle</div>
+                
+                <div id="propertiesForm" class="p-4 space-y-4 hidden">
+                    <!-- Tag/Layer Select -->
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase font-bold text-gray-500">Layer Assignment</label>
+                        <select id="propKind" class="w-full input-dark cursor-pointer"></select>
+                    </div>
+
+                    <!-- Geometry -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="text-[10px] uppercase font-bold text-gray-500">X</label>
+                            <input type="number" id="propX" class="w-full input-dark text-right">
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase font-bold text-gray-500">Y</label>
+                            <input type="number" id="propY" class="w-full input-dark text-right">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-gray-500">Radius</label>
+                        <div class="flex gap-2">
+                            <input type="range" id="propR_slider" min="1" max="500" class="flex-1 h-1 bg-[#333] rounded appearance-none accent-fuchsia-500 my-auto">
+                            <input type="number" id="propR" class="w-14 input-dark text-right">
+                        </div>
+                    </div>
+
+                    <button onclick="deleteSelectedHitbox()" class="w-full btn border-red-900 text-red-500 hover:bg-red-900/20">
+                        <i class="fas fa-trash mr-2"></i> Delete
+                    </button>
+                </div>
+                
+                <div id="noSelectMsg" class="flex-1 flex items-center justify-center text-gray-600 italic">
+                    No Selection
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <div id="loadingOverlay" class="fixed inset-0 bg-black/80 z-50 hidden flex-col items-center justify-center">
+        <div class="w-8 h-8 border-2 border-t-fuchsia-500 rounded-full animate-spin mb-2"></div>
+        <div class="text-xs font-mono text-white tracking-widest">PROCESSING</div>
+    </div>
+
+    <script>
+        /* --- CONSTANTS --- */
+        const DEFAULT_KINDS = [
+            { name: 'Hurtbox', color: '#22c55e' },
+            { name: 'Hitbox', color: '#d946ef' },
+            { name: 'Collision', color: '#3b82f6' }
+        ];
+
+        /* --- STATE --- */
+        const state = {
+            images: [],
+            currentImageIndex: -1,
+            selectedHitboxId: null,
+            scale: 1,
+            pan: { x: 0, y: 0 },
+            
+            isDragging: false,
+            isPanning: false,
+            lastMouse: { x: 0, y: 0 },
+            dragTarget: null,
+            
+            kinds: JSON.parse(localStorage.getItem('hitboxKinds_v8')) || DEFAULT_KINDS,
+            activeKind: null,
+
+            bufferCtx: null,
+            maskCtx: null
+        };
+        if (state.kinds.length > 0) state.activeKind = state.kinds[state.kinds.length-1].name;
+
+        /* --- DOM --- */
+        const canvas = document.getElementById('editorCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvasContainer');
+        
+        // Init Buffers
+        const bufferCanvas = document.createElement('canvas');
+        state.bufferCtx = bufferCanvas.getContext('2d');
+        const maskCanvas = document.createElement('canvas');
+        state.maskCtx = maskCanvas.getContext('2d');
+
+        /* --- INIT --- */
+        window.onload = () => {
+            resizeCanvas();
+            renderKinds();
+            updatePropOptions();
+            renderLoop();
+        };
+        window.addEventListener('resize', resizeCanvas);
+        
+        /* --- UNDO/REDO --- */
+        function initHistory(img) {
+            img.history = [];
+            img.hPtr = -1;
+            pushHistory(img);
+        }
+        function pushHistory(img) {
+            const data = JSON.stringify(img.hitboxes);
+            // 重複チェック（同じ状態なら保存しない）
+            if (img.hPtr > -1 && img.history[img.hPtr] === data) return;
+            img.history = img.history.slice(0, img.hPtr + 1);
+            img.history.push(data);
+            if (img.history.length > 50) img.history.shift(); else img.hPtr++;
+            updateUndoUI();
+        }
+        function undo() {
+            const img = state.images[state.currentImageIndex];
+            if (img && img.hPtr > 0) {
+                img.hPtr--;
+                img.hitboxes = JSON.parse(img.history[img.hPtr]);
+                state.selectedHitboxId = null;
+                updateUndoUI(); updatePropForm();
+            }
+        }
+        function redo() {
+            const img = state.images[state.currentImageIndex];
+            if (img && img.hPtr < img.history.length - 1) {
+                img.hPtr++;
+                img.hitboxes = JSON.parse(img.history[img.hPtr]);
+                state.selectedHitboxId = null;
+                updateUndoUI(); updatePropForm();
+            }
+        }
+        function updateUndoUI() {
+            const img = state.images[state.currentImageIndex];
+            document.getElementById('btnUndo').disabled = !img || img.hPtr <= 0;
+            document.getElementById('btnRedo').disabled = !img || img.hPtr >= img.history.length - 1;
+        }
+        document.getElementById('btnUndo').onclick = undo;
+        document.getElementById('btnRedo').onclick = redo;
+        window.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+            if (e.key === 'Delete' && document.activeElement.tagName !== 'INPUT') deleteSelectedHitbox();
+        });
+
+        /* --- IMAGES --- */
+        document.getElementById('fileInput').onchange = async e => {
+            for (const f of e.target.files) {
+                const img = new Image();
+                img.src = URL.createObjectURL(f);
+                await new Promise(r => img.onload = r);
+                const newImg = { id: Math.random().toString(36).substr(2), file: f, name: f.name, width: img.width, height: img.height, imgObj: img, hitboxes: [] };
+                initHistory(newImg);
+                state.images.push(newImg);
+            }
+            renderImageList();
+            if (state.currentImageIndex === -1) selectImage(0);
+            e.target.value = '';
+        };
+
+        function selectImage(i) {
+            state.currentImageIndex = i;
+            state.selectedHitboxId = null;
+            renderImageList();
+            const img = state.images[i];
+            if (img) {
+                const sc = Math.min((container.clientWidth-40)/img.width, (container.clientHeight-40)/img.height);
+                state.scale = sc;
+                state.pan = { x: (container.clientWidth - img.width*sc)/2, y: (container.clientHeight - img.height*sc)/2 };
+            }
+            updateUndoUI();
+        }
+
+        function renderImageList() {
+            const list = document.getElementById('imageList');
+            list.innerHTML = '';
+            state.images.forEach((img, i) => {
+                const div = document.createElement('div');
+                div.className = `flex items-center p-2 rounded mb-1 cursor-pointer border ${i===state.currentImageIndex ? 'bg-[#222] border-fuchsia-600' : 'border-transparent hover:bg-[#111]'}`;
+                div.onclick = () => selectImage(i);
+                div.innerHTML = `<div class="text-xs truncate text-gray-300">${img.name}</div>`;
+                list.appendChild(div);
+            });
+        }
+
+        /* --- TAGS (PRIORITY LAYERS) --- */
+        function saveKinds() { localStorage.setItem('hitboxKinds_v8', JSON.stringify(state.kinds)); }
+        function addKind() {
+            const val = document.getElementById('newKindInput').value.trim();
+            if (val && !state.kinds.find(k=>k.name===val)) {
+                state.kinds.push({name:val, color:`hsl(${Math.random()*360},90%,60%)`});
+                saveKinds(); renderKinds(); updatePropOptions();
+                state.activeKind = val;
+                document.getElementById('newKindInput').value = '';
+            }
+        }
+        function moveKind(idx, dir) {
+            if (idx+dir < 0 || idx+dir >= state.kinds.length) return;
+            const tmp = state.kinds[idx];
+            state.kinds[idx] = state.kinds[idx+dir];
+            state.kinds[idx+dir] = tmp;
+            saveKinds(); renderKinds();
+        }
+        function deleteKind(name) {
+             if (confirm(`Delete ${name}?`)) {
+                 state.kinds = state.kinds.filter(k=>k.name!==name);
+                 if (state.activeKind===name) state.activeKind = state.kinds[0]?.name;
+                 saveKinds(); renderKinds(); updatePropOptions();
+             }
+        }
+        function renderKinds() {
+            const el = document.getElementById('kindPalette');
+            el.innerHTML = '';
+            const reversed = [...state.kinds].reverse();
+            
+            reversed.forEach((k, visualIdx) => {
+                const realIdx = state.kinds.length - 1 - visualIdx;
+                const active = state.activeKind === k.name;
+                
+                const row = document.createElement('div');
+                row.className = `tag-row ${active ? 'active' : ''}`;
+                row.style.color = k.color;
+                row.onclick = () => { state.activeKind = k.name; renderKinds(); };
+                
+                row.innerHTML = `
+                    <div class="flex flex-col mr-2">
+                        <div class="tag-order-btn" onclick="event.stopPropagation(); moveKind(${realIdx}, 1)"><i class="fas fa-chevron-up text-[8px]"></i></div>
+                        <div class="tag-order-btn" onclick="event.stopPropagation(); moveKind(${realIdx}, -1)"><i class="fas fa-chevron-down text-[8px]"></i></div>
+                    </div>
+                    <div class="w-2 h-2 rounded-full mr-2" style="background:${k.color}"></div>
+                    <div class="flex-1 text-xs font-bold ${active?'text-white':'text-gray-500'}">${k.name}</div>
+                    <i class="fas fa-times text-gray-600 hover:text-red-500 p-1" onclick="event.stopPropagation(); deleteKind('${k.name}')"></i>
+                `;
+                el.appendChild(row);
+            });
+        }
+
+        /* --- CANVAS LOGIC --- */
+        function resizeCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            bufferCanvas.width = canvas.width;
+            bufferCanvas.height = canvas.height;
+            maskCanvas.width = canvas.width;
+            maskCanvas.height = canvas.height;
+        }
+        
+        function getHitboxAt(x, y) {
+            if (state.currentImageIndex === -1) return null;
+            const img = state.images[state.currentImageIndex];
+            const sortedKinds = [...state.kinds].reverse();
+            
+            for (const k of sortedKinds) {
+                const hits = img.hitboxes.filter(h => h.kind === k.name);
+                for (const h of hits) {
+                    const dist = Math.sqrt((x - h.x)**2 + (y - h.y)**2);
+                    const tol = 5 / state.scale;
+                    if (dist <= h.r + tol) {
+                        if (Math.abs(dist - h.r) < tol) return { hb: h, type: 'edge' };
+                        return { hb: h, type: 'body' };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function screenToWorld(x, y) {
+            return { x: (x - state.pan.x)/state.scale, y: (y - state.pan.y)/state.scale };
+        }
+
+        canvas.onmousedown = e => {
+            if (state.currentImageIndex === -1) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+            const w = screenToWorld(mx, my);
+            state.lastMouse = { x: mx, y: my };
+
+            if (e.button===1 || e.getModifierState('Space')) { state.isPanning = true; return; }
+            
+            const hit = getHitboxAt(w.x, w.y);
+            if (hit) {
+                // 既存を選択
+                state.selectedHitboxId = hit.hb.id;
+                state.dragTarget = hit.type;
+                state.isDragging = true;
+                updatePropForm();
+            } else {
+                // 何もないところ
+                if (state.selectedHitboxId) {
+                    // 【修正】選択解除
+                    state.selectedHitboxId = null;
+                    updatePropForm();
+                    return;
+                }
+
+                // 新規作成
+                if (!state.activeKind) return alert("Select a tag");
+                const img = state.images[state.currentImageIndex];
+                
+                // 画面外チェック
+                if (w.x < 0 || w.y < 0 || w.x > img.width || w.y > img.height) return;
+
+                const hb = { id: Math.random().toString(36).substr(2), kind: state.activeKind, x: Math.round(w.x), y: Math.round(w.y), r: 30 };
+                img.hitboxes.push(hb);
+                
+                // 【修正】ここでは履歴保存しない（ドラッグ完了後のMouseUpで保存）
+                state.selectedHitboxId = hb.id;
+                state.dragTarget = 'edge';
+                state.isDragging = true;
+                updatePropForm();
+            }
+        };
+
+        window.onmousemove = e => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+            const w = screenToWorld(mx, my);
+            const dx = mx - state.lastMouse.x, dy = my - state.lastMouse.y;
+            state.lastMouse = { x: mx, y: my };
+            
+            document.getElementById('coords').innerText = `${Math.round(w.x)}, ${Math.round(w.y)}`;
+
+            if (state.isPanning) {
+                state.pan.x += dx; state.pan.y += dy; return;
+            }
+            if (state.isDragging && state.selectedHitboxId) {
+                const img = state.images[state.currentImageIndex];
+                const hb = img.hitboxes.find(h => h.id === state.selectedHitboxId);
+                if (hb) {
+                    if (state.dragTarget === 'body') { hb.x += dx/state.scale; hb.y += dy/state.scale; }
+                    else { hb.r = Math.sqrt((w.x - hb.x)**2 + (w.y - hb.y)**2); }
+                    updatePropForm(false);
+                }
+            } else {
+                // Cursor
+                const hit = getHitboxAt(w.x, w.y);
+                if (hit) {
+                    if (hit.type === 'body') canvas.style.cursor = 'move';
+                    else {
+                         const ang = Math.atan2(w.y - hit.hb.y, w.x - hit.hb.x) * 180/Math.PI;
+                         if ((ang>-22 && ang<22) || (ang>158 || ang<-158)) canvas.style.cursor = 'ew-resize';
+                         else if ((ang>22 && ang<67) || (ang>-158 && ang<-112)) canvas.style.cursor = 'nwse-resize';
+                         else if ((ang>67 && ang<112) || (ang>-112 && ang<-67)) canvas.style.cursor = 'ns-resize';
+                         else canvas.style.cursor = 'nesw-resize';
+                    }
+                } else {
+                    canvas.style.cursor = e.getModifierState('Space') ? 'grab' : 'crosshair';
+                }
+            }
+        };
+
+        window.onmouseup = () => {
+             if (state.isDragging) {
+                 const img = state.images[state.currentImageIndex];
+                 // 【修正】操作完了時（移動または新規作成＋ドラッグ終了時）に1回だけ履歴を保存
+                 if (img) pushHistory(img);
+             }
+             state.isDragging = false; state.isPanning = false; state.dragTarget = null;
+             updatePropForm();
+        };
+
+        canvas.onwheel = e => {
+            e.preventDefault();
+            const d = e.deltaY < 0 ? 1 : -1;
+            const sc = Math.max(0.1, state.scale * (1 + d*0.15));
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+            const wx = (mx - state.pan.x)/state.scale;
+            const wy = (my - state.pan.y)/state.scale;
+            state.pan.x = mx - wx * sc;
+            state.pan.y = my - wy * sc;
+            state.scale = sc;
+        };
+
+        /* --- RENDER (UNION / OUTLINE) --- */
+        function renderLoop() {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            if (state.currentImageIndex === -1) { requestAnimationFrame(renderLoop); return; }
+            
+            const img = state.images[state.currentImageIndex];
+            
+            ctx.save();
+            ctx.translate(state.pan.x, state.pan.y);
+            ctx.scale(state.scale, state.scale);
+            ctx.drawImage(img.imgObj, 0, 0);
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1/state.scale; ctx.strokeRect(0,0,img.width,img.height);
+            ctx.restore();
+
+            state.kinds.forEach(k => {
+                const hitboxes = img.hitboxes.filter(h => h.kind === k.name);
+                if (hitboxes.length === 0) return;
+                
+                state.bufferCtx.clearRect(0,0,canvas.width,canvas.height);
+                state.maskCtx.clearRect(0,0,canvas.width,canvas.height);
+                
+                state.bufferCtx.save();
+                state.bufferCtx.translate(state.pan.x, state.pan.y);
+                state.bufferCtx.scale(state.scale, state.scale);
+                
+                state.maskCtx.save();
+                state.maskCtx.translate(state.pan.x, state.pan.y);
+                state.maskCtx.scale(state.scale, state.scale);
+
+                state.maskCtx.fillStyle = '#ffffff';
+                hitboxes.forEach(h => {
+                    state.maskCtx.beginPath();
+                    state.maskCtx.arc(h.x, h.y, h.r, 0, Math.PI*2);
+                    state.maskCtx.fill();
+                });
+
+                state.bufferCtx.lineWidth = 3 / state.scale;
+                state.bufferCtx.lineCap = 'round';
+                state.bufferCtx.lineJoin = 'round';
+                state.bufferCtx.strokeStyle = k.color;
+                hitboxes.forEach(h => {
+                    state.bufferCtx.beginPath();
+                    state.bufferCtx.arc(h.x, h.y, h.r, 0, Math.PI*2);
+                    state.bufferCtx.stroke();
+                });
+
+                state.bufferCtx.globalCompositeOperation = 'destination-out';
+                hitboxes.forEach(h => {
+                    state.bufferCtx.beginPath();
+                    state.bufferCtx.arc(h.x, h.y, Math.max(0, h.r - (0.5/state.scale)), 0, Math.PI*2);
+                    state.bufferCtx.fillStyle = '#ffffff';
+                    state.bufferCtx.fill();
+                });
+                state.bufferCtx.globalCompositeOperation = 'source-over';
+
+                state.bufferCtx.restore();
+                state.maskCtx.restore();
+
+                ctx.restore();
+                
+                state.bufferCtx.save();
+                state.bufferCtx.globalCompositeOperation = 'source-in';
+                state.bufferCtx.fillStyle = k.color;
+                state.bufferCtx.fillRect(0,0,canvas.width,canvas.height);
+                state.bufferCtx.restore();
+                
+                state.bufferCtx.clearRect(0,0,canvas.width,canvas.height);
+                state.bufferCtx.save();
+                state.bufferCtx.translate(state.pan.x, state.pan.y);
+                state.bufferCtx.scale(state.scale, state.scale);
+                state.bufferCtx.fillStyle = k.color;
+                hitboxes.forEach(h => {
+                    state.bufferCtx.beginPath();
+                    state.bufferCtx.arc(h.x, h.y, h.r, 0, Math.PI*2);
+                    state.bufferCtx.fill();
+                });
+                state.bufferCtx.restore();
+                
+                ctx.globalAlpha = 0.3;
+                ctx.drawImage(bufferCanvas, 0, 0);
+                ctx.globalAlpha = 1.0;
+                
+                state.bufferCtx.clearRect(0,0,canvas.width,canvas.height);
+                state.bufferCtx.save();
+                state.bufferCtx.translate(state.pan.x, state.pan.y);
+                state.bufferCtx.scale(state.scale, state.scale);
+                
+                state.bufferCtx.lineWidth = 2.5 / state.scale;
+                state.bufferCtx.strokeStyle = k.color;
+                hitboxes.forEach(h => {
+                    state.bufferCtx.beginPath();
+                    state.bufferCtx.arc(h.x, h.y, h.r, 0, Math.PI*2);
+                    state.bufferCtx.stroke();
+                });
+                
+                state.bufferCtx.globalCompositeOperation = 'destination-out';
+                hitboxes.forEach(h => {
+                    state.bufferCtx.beginPath();
+                    state.bufferCtx.arc(h.x, h.y, Math.max(0, h.r - (0.5/state.scale)), 0, Math.PI*2);
+                    state.bufferCtx.fillStyle = 'black';
+                    state.bufferCtx.fill();
+                });
+                state.bufferCtx.restore();
+                
+                ctx.save();
+                ctx.shadowColor = k.color;
+                ctx.shadowBlur = 10;
+                ctx.drawImage(bufferCanvas, 0, 0);
+                ctx.restore();
+            });
+
+            ctx.save();
+            ctx.translate(state.pan.x, state.pan.y);
+            ctx.scale(state.scale, state.scale);
+            
+            if (state.selectedHitboxId) {
+                const h = img.hitboxes.find(x=>x.id===state.selectedHitboxId);
+                if (h) {
+                    const color = (state.kinds.find(k=>k.name===h.kind)||{}).color || '#fff';
+                    ctx.beginPath();
+                    ctx.arc(h.x, h.y, h.r, 0, Math.PI*2);
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2 / state.scale;
+                    ctx.stroke();
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 4 / state.scale;
+                    ctx.globalAlpha = 0.5;
+                    ctx.stroke();
+                    ctx.globalAlpha = 1.0;
+                }
+            }
+            
+            img.hitboxes.forEach(h => {
+                const isSel = h.id === state.selectedHitboxId;
+                const size = (isSel ? 6 : 3) / state.scale;
+                ctx.beginPath();
+                ctx.moveTo(h.x-size, h.y); ctx.lineTo(h.x+size, h.y);
+                ctx.moveTo(h.x, h.y-size); ctx.lineTo(h.x, h.y+size);
+                ctx.lineWidth = (isSel?2:1)/state.scale;
+                ctx.strokeStyle = isSel ? '#fff' : 'rgba(255,255,255,0.5)';
+                ctx.stroke();
+            });
+            
+            ctx.restore();
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        /* --- PROPS & EXPORT --- */
+        function updatePropOptions() {
+            const sel = document.getElementById('propKind');
+            sel.innerHTML = '';
+            state.kinds.forEach(k => {
+                const opt = document.createElement('option');
+                opt.value = k.name; opt.innerText = k.name;
+                sel.appendChild(opt);
+            });
+        }
+        function updatePropForm(sync=true) {
+            if(!state.selectedHitboxId) {
+                document.getElementById('propertiesForm').classList.add('hidden');
+                document.getElementById('noSelectMsg').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('propertiesForm').classList.remove('hidden');
+            document.getElementById('noSelectMsg').classList.add('hidden');
+            if(sync) {
+                const h = state.images[state.currentImageIndex].hitboxes.find(x=>x.id===state.selectedHitboxId);
+                if(h) {
+                    document.getElementById('propKind').value = h.kind;
+                    document.getElementById('propX').value = Math.round(h.x);
+                    document.getElementById('propY').value = Math.round(h.y);
+                    document.getElementById('propR').value = Math.round(h.r);
+                    document.getElementById('propR_slider').value = Math.round(h.r);
+                }
+            }
+        }
+        function deleteSelectedHitbox() {
+            if(!state.selectedHitboxId) return;
+            const img = state.images[state.currentImageIndex];
+            img.hitboxes = img.hitboxes.filter(h=>h.id!==state.selectedHitboxId);
+            pushHistory(img);
+            state.selectedHitboxId = null;
+            updatePropForm();
+        }
+
+        async function exportData() {
+            if(!state.images.length) return alert('No images');
+            const dh = await window.showDirectoryPicker();
+            document.getElementById('loadingOverlay').classList.remove('hidden'); document.getElementById('loadingOverlay').classList.add('flex');
+            
+            const idh = await dh.getDirectoryHandle('images', {create:true});
+            const json = { generated: new Date(), assets: [] };
+            
+            let i = 0;
+            for(const img of state.images) {
+                i++;
+                const c = document.createElement('canvas'); c.width=img.width; c.height=img.height;
+                c.getContext('2d').drawImage(img.imgObj,0,0);
+                const blob = await new Promise(r=>c.toBlob(r,'image/webp',0.9));
+                
+                const fh = await idh.getFileHandle(`${i}.webp`, {create:true});
+                const w = await fh.createWritable(); await w.write(blob); await w.close();
+                
+                const sorted = [];
+                state.kinds.forEach((k, pIdx) => {
+                    const layerHits = img.hitboxes.filter(h=>h.kind===k.name);
+                    layerHits.forEach(h => {
+                        sorted.push({
+                            id: h.id, kind: h.kind, priority: pIdx, 
+                            circle: { x: Math.round(h.x), y: Math.round(h.y), r: Math.round(h.r) }
+                        });
+                    });
+                });
+                
+                json.assets.push({
+                    id: img.id, path: `images/${i}.webp`, original: img.name, width: img.width, height: img.height,
+                    hitboxes: sorted
+                });
+            }
+            
+            const jh = await dh.getFileHandle('ImageAssets.json', {create:true});
+            const jw = await jh.createWritable(); await jw.write(JSON.stringify(json,null,2)); await jw.close();
+            
+            document.getElementById('loadingOverlay').classList.add('hidden'); document.getElementById('loadingOverlay').classList.remove('flex');
+            alert('Export Done');
+        }
+    </script>
+</body>
+</html>

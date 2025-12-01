@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aural Glitch // MV Generator</title>
+    <meta name="description" content="Interactive Music Video Generator. Upload audio and visuals, apply glitch effects, analyze BPM, and export.">
+    <meta name="page:icon" content="fas fa-bolt">
+    <meta name="page:color" content="#38bdf8">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;600&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.5);
+            --bg-dark: #0f172a;
+            --panel-bg: #1e293b;
+        }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background-color: var(--bg-dark);
+            color: #e2e8f0;
+            overflow: hidden; /* Prevent global scroll */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155; 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent); 
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            margin-top: -6px; 
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+
+        /* CRT/Glitch UI Effect on Overlay */
+        .crt-overlay {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        .btn-neon {
+            transition: all 0.3s ease;
+        }
+        .btn-neon:hover {
+            box-shadow: 0 0 15px var(--accent-glow);
+            text-shadow: 0 0 5px var(--accent);
+        }
+
+        /* Canvas Container */
+        #canvas-container {
+            background-image: 
+                radial-gradient(circle at 1px 1px, #334155 1px, transparent 0);
+            background-size: 20px 20px;
+        }
+
+        .recording-pulse {
+            animation: pulse-red 1.5s infinite;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Bar -->
+    <header class="h-14 border-b border-slate-700 flex items-center justify-between px-6 bg-slate-900/80 backdrop-blur-md z-20">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-bolt text-sky-400 text-xl"></i>
+            <h1 class="text-xl font-bold tracking-widest text-sky-400">AURAL<span class="text-white">GLITCH</span></h1>
+            <span class="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400 mono">v1.0.0</span>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div id="exportStatus" class="hidden items-center gap-2 text-xs mono text-emerald-400">
+                <i class="fas fa-circle fa-fade"></i> RECORDING... <span id="recTimer">00:00</span>
+            </div>
+            <button id="btnExport" class="btn-neon bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 px-4 py-1.5 rounded text-sm font-bold flex items-center gap-2">
+                <i class="fas fa-video"></i> REC / EXPORT
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar: Controls -->
+        <aside class="w-80 bg-slate-900 border-r border-slate-700 flex flex-col overflow-y-auto custom-scrollbar z-10">
+            
+            <!-- Upload Section -->
+            <div class="p-5 border-b border-slate-800">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Assets</h2>
+                
+                <div class="space-y-3">
+                    <!-- Audio Input -->
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1 mono">AUDIO TRACK</label>
+                        <label class="flex items-center justify-center w-full h-10 px-4 transition bg-slate-800 border border-slate-700 border-dashed rounded cursor-pointer hover:bg-slate-700 hover:border-sky-500">
+                            <span class="flex items-center space-x-2">
+                                <i class="fas fa-music text-sky-400"></i>
+                                <span class="text-xs text-slate-300 truncate" id="audioFileName">Select MP3/WAV...</span>
+                            </span>
+                            <input type="file" id="uploadAudio" accept="audio/*" class="hidden" />
+                        </label>
+                    </div>
+
+                    <!-- Visual Input -->
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1 mono">VISUAL (IMG/VIDEO)</label>
+                        <label class="flex items-center justify-center w-full h-10 px-4 transition bg-slate-800 border border-slate-700 border-dashed rounded cursor-pointer hover:bg-slate-700 hover:border-fuchsia-500">
+                            <span class="flex items-center space-x-2">
+                                <i class="fas fa-image text-fuchsia-400"></i>
+                                <span class="text-xs text-slate-300 truncate" id="visualFileName">Select Media...</span>
+                            </span>
+                            <input type="file" id="uploadVisual" accept="image/*,video/*" class="hidden" />
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Effects Controls -->
+            <div class="p-5 flex-1">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">FX Engine</h2>
+                
+                <!-- RGB Shift -->
+                <div class="mb-5">
+                    <div class="flex justify-between mb-1">
+                        <span class="text-xs text-sky-300 mono">RGB SHIFT</span>
+                        <span class="text-xs text-slate-500" id="valRgb">0%</span>
+                    </div>
+                    <input type="range" id="paramRgb" min="0" max="50" value="0" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="beatRgb" class="accent-sky-500 h-4 w-4 rounded border-slate-700 bg-slate-800">
+                        <label for="beatRgb" class="text-xs text-slate-400">Sync to Beat</label>
+                    </div>
+                </div>
+
+                <!-- Glitch Slices -->
+                <div class="mb-5">
+                    <div class="flex justify-between mb-1">
+                        <span class="text-xs text-sky-300 mono">SLICE GLITCH</span>
+                        <span class="text-xs text-slate-500" id="valGlitch">0%</span>
+                    </div>
+                    <input type="range" id="paramGlitch" min="0" max="100" value="0" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="beatGlitch" class="accent-sky-500 h-4 w-4 rounded border-slate-700 bg-slate-800">
+                        <label for="beatGlitch" class="text-xs text-slate-400">Sync to Beat</label>
+                    </div>
+                </div>
+
+                <!-- Pixelate -->
+                <div class="mb-5">
+                    <div class="flex justify-between mb-1">
+                        <span class="text-xs text-sky-300 mono">PIXELATE</span>
+                        <span class="text-xs text-slate-500" id="valPixel">OFF</span>
+                    </div>
+                    <input type="range" id="paramPixel" min="1" max="50" value="1" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer" style="direction: rtl;">
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="beatPixel" class="accent-sky-500 h-4 w-4 rounded border-slate-700 bg-slate-800">
+                        <label for="beatPixel" class="text-xs text-slate-400">Sync to Beat</label>
+                    </div>
+                </div>
+
+                 <!-- Contrast/Color -->
+                 <div class="mb-5">
+                    <div class="flex justify-between mb-1">
+                        <span class="text-xs text-sky-300 mono">CONTRAST BOOST</span>
+                        <span class="text-xs text-slate-500" id="valContrast">1.0</span>
+                    </div>
+                    <input type="range" id="paramContrast" min="100" max="300" value="100" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- Mirror -->
+                <div class="mb-5 p-3 bg-slate-800 rounded border border-slate-700">
+                    <div class="flex items-center justify-between">
+                         <span class="text-xs text-sky-300 mono">KALEIDOSCOPE</span>
+                         <input type="checkbox" id="checkMirror" class="accent-fuchsia-500 h-4 w-4 cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="p-4 bg-slate-950 border-t border-slate-800">
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-slate-900 p-2 rounded border border-slate-800 text-center">
+                        <div class="text-[10px] text-slate-500 mb-1">BPM (EST)</div>
+                        <div class="text-lg text-white font-bold mono" id="bpmDisplay">--</div>
+                    </div>
+                    <div class="bg-slate-900 p-2 rounded border border-slate-800 text-center">
+                        <div class="text-[10px] text-slate-500 mb-1">ENERGY</div>
+                        <div class="text-lg text-fuchsia-400 font-bold mono" id="energyDisplay">0</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center: Canvas -->
+        <main class="flex-1 relative flex items-center justify-center p-4" id="canvas-container">
+            
+            <!-- The Canvas -->
+            <div class="relative shadow-2xl shadow-black border border-slate-700 bg-black max-h-full max-w-full aspect-video flex items-center justify-center overflow-hidden">
+                <canvas id="mainCanvas" class="w-full h-full object-contain"></canvas>
+                
+                <!-- Overlay text when empty -->
+                <div id="placeholderText" class="absolute text-center pointer-events-none">
+                    <i class="fas fa-compact-disc text-6xl text-slate-700 mb-4 animate-spin-slow"></i>
+                    <p class="text-slate-500 mono text-sm">LOAD AUDIO & VISUALS TO START</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Bottom Bar: Timeline / Waveform -->
+    <div class="h-24 bg-slate-900 border-t border-slate-700 flex flex-col">
+        
+        <!-- Controls -->
+        <div class="h-8 bg-slate-800 flex items-center px-4 border-b border-slate-700 gap-4">
+            <button id="btnPlay" class="text-slate-300 hover:text-white disabled:opacity-50">
+                <i class="fas fa-play"></i>
+            </button>
+            <button id="btnStop" class="text-slate-300 hover:text-white disabled:opacity-50">
+                <i class="fas fa-stop"></i>
+            </button>
+            
+            <div class="text-xs font-mono text-sky-400 w-16" id="currentTime">00:00</div>
+            
+            <!-- Scrub Bar -->
+            <div class="flex-1 relative h-full flex items-center group cursor-pointer" id="progressBarContainer">
+                <div class="absolute w-full h-1 bg-slate-700 rounded overflow-hidden">
+                    <div id="progressBarFill" class="h-full bg-sky-500 w-0"></div>
+                </div>
+                <!-- Hover effect -->
+                <div class="absolute w-full h-4 bg-transparent"></div>
+            </div>
+            
+            <div class="text-xs font-mono text-slate-500 w-16 text-right" id="totalTime">00:00</div>
+
+            <!-- Volume -->
+            <div class="flex items-center gap-2 w-24 ml-4">
+                <i class="fas fa-volume-up text-xs text-slate-400"></i>
+                <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="0.8" class="w-full">
+            </div>
+        </div>
+
+        <!-- Waveform Viz -->
+        <div class="flex-1 bg-black relative">
+            <canvas id="waveCanvas" class="w-full h-full block"></canvas>
+        </div>
+    </div>
+
+    <!-- Hidden Elements -->
+    <video id="hiddenVideo" class="hidden" loop muted playsinline crossorigin="anonymous"></video>
+    <img id="hiddenImage" class="hidden" crossorigin="anonymous">
+
+    <script>
+        /**
+         * AURAL GLITCH // CORE SYSTEM
+         */
+        
+        // --- DOM Elements ---
+        const uploadAudio = document.getElementById('uploadAudio');
+        const uploadVisual = document.getElementById('uploadVisual');
+        const audioFileName = document.getElementById('audioFileName');
+        const visualFileName = document.getElementById('visualFileName');
+        
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        
+        const waveCanvas = document.getElementById('waveCanvas');
+        const waveCtx = waveCanvas.getContext('2d');
+        
+        const btnPlay = document.getElementById('btnPlay');
+        const btnStop = document.getElementById('btnStop');
+        const btnExport = document.getElementById('btnExport');
+        const exportStatus = document.getElementById('exportStatus');
+        const recTimer = document.getElementById('recTimer');
+        
+        const hiddenVideo = document.getElementById('hiddenVideo');
+        const hiddenImage = document.getElementById('hiddenImage');
+        const placeholderText = document.getElementById('placeholderText');
+        
+        // --- Parameters ---
+        const params = {
+            rgb: document.getElementById('paramRgb'),
+            beatRgb: document.getElementById('beatRgb'),
+            glitch: document.getElementById('paramGlitch'),
+            beatGlitch: document.getElementById('beatGlitch'),
+            pixel: document.getElementById('paramPixel'),
+            beatPixel: document.getElementById('beatPixel'),
+            contrast: document.getElementById('paramContrast'),
+            mirror: document.getElementById('checkMirror'),
+            volume: document.getElementById('volumeControl')
+        };
+
+        // --- State ---
+        let audioContext;
+        let audioSource;
+        let analyser;
+        let gainNode;
+        let audioElement;
+        let dest; // MediaStreamDestination for recording
+        
+        let visualType = null; // 'image' or 'video'
+        let isPlaying = false;
+        let isRecording = false;
+        let mediaRecorder;
+        let recordedChunks = [];
+        let startTime = 0;
+        let recordingStartTime = 0;
+        let animationId;
+        
+        // Beat Detection vars
+        let energy = 0;
+        let isBeat = false;
+        let beatHoldFrames = 0;
+        let bpm = 0;
+        let lastBeatTime = 0;
+        let beatTimes = [];
+
+        // Canvas sizing (Full HD internal res)
+        const CANVAS_WIDTH = 1280;
+        const CANVAS_HEIGHT = 720;
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        // --- Audio System Init ---
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                audioElement = new Audio();
+                audioElement.crossOrigin = "anonymous";
+                
+                // Create nodes
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048; // Resolution for waveform/freq
+                
+                gainNode = audioContext.createGain();
+                
+                // Create source from element
+                audioSource = audioContext.createMediaElementSource(audioElement);
+                
+                // Create destination for recording
+                dest = audioContext.createMediaStreamDestination();
+                
+                // Routing: Source -> Analyser -> Gain -> ContextDest (Speakers)
+                //                                     -> MediaStreamDest (Recorder)
+                audioSource.connect(analyser);
+                analyser.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                gainNode.connect(dest);
+
+                // Bind events
+                audioElement.addEventListener('timeupdate', updateProgress);
+                audioElement.addEventListener('ended', () => {
+                    isPlaying = false;
+                    updatePlayButton();
+                    if(isRecording) stopRecording();
+                });
+            }
+            // Resume context if suspended (browser policy)
+            if(audioContext.state === 'suspended') audioContext.resume();
+        }
+
+        // --- Event Listeners: File Uploads ---
+        
+        uploadAudio.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                initAudio();
+                audioFileName.textContent = file.name;
+                const url = URL.createObjectURL(file);
+                audioElement.src = url;
+                audioElement.load();
+            }
+        });
+
+        uploadVisual.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                placeholderText.style.display = 'none';
+                visualFileName.textContent = file.name;
+
+                if (file.type.startsWith('video')) {
+                    visualType = 'video';
+                    hiddenVideo.src = url;
+                    hiddenVideo.load();
+                    hiddenImage.src = '';
+                    hiddenVideo.style.display = 'block';
+                } else {
+                    visualType = 'image';
+                    hiddenImage.src = url;
+                    hiddenVideo.src = '';
+                    hiddenVideo.style.display = 'none';
+                }
+            }
+        });
+
+        // --- Playback Controls ---
+
+        btnPlay.addEventListener('click', () => {
+            if (!audioContext) initAudio();
+            
+            if (isPlaying) {
+                audioElement.pause();
+                if(visualType === 'video') hiddenVideo.pause();
+                isPlaying = false;
+            } else {
+                audioElement.play();
+                if(visualType === 'video') {
+                    hiddenVideo.currentTime = audioElement.currentTime; // Sync
+                    hiddenVideo.play();
+                }
+                isPlaying = true;
+                animate();
+            }
+            updatePlayButton();
+        });
+
+        btnStop.addEventListener('click', () => {
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.currentTime = 0;
+                if(visualType === 'video') {
+                    hiddenVideo.pause();
+                    hiddenVideo.currentTime = 0;
+                }
+            }
+            isPlaying = false;
+            updatePlayButton();
+            // Force a clear render
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        });
+
+        params.volume.addEventListener('input', (e) => {
+            if(gainNode) gainNode.gain.value = e.target.value;
+        });
+
+        function updatePlayButton() {
+            btnPlay.innerHTML = isPlaying ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
+        }
+
+        // --- Progress Bar ---
+        const progressBarFill = document.getElementById('progressBarFill');
+        const progressBarContainer = document.getElementById('progressBarContainer');
+        const elCurrentTime = document.getElementById('currentTime');
+        const elTotalTime = document.getElementById('totalTime');
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        }
+
+        function updateProgress() {
+            if(!audioElement) return;
+            const percent = (audioElement.currentTime / audioElement.duration) * 100;
+            progressBarFill.style.width = `${percent}%`;
+            elCurrentTime.textContent = formatTime(audioElement.currentTime);
+            if(!isNaN(audioElement.duration)) {
+                elTotalTime.textContent = formatTime(audioElement.duration);
+            }
+        }
+
+        progressBarContainer.addEventListener('click', (e) => {
+            if(!audioElement || !audioElement.duration) return;
+            const rect = progressBarContainer.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const width = rect.width;
+            const newTime = (clickX / width) * audioElement.duration;
+            audioElement.currentTime = newTime;
+            if(visualType === 'video') hiddenVideo.currentTime = newTime;
+        });
+
+        // --- Audio Analysis Engine ---
+
+        function analyzeAudio() {
+            if(!analyser) return;
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Calculate average energy of bass frequencies (approx 20hz - 150hz)
+            // Bin size = 44100 / 2048 ~= 21.5 Hz per bin.
+            // Bins 0-7 cover ~0 to 150Hz.
+            let bassSum = 0;
+            for (let i = 0; i < 8; i++) {
+                bassSum += dataArray[i];
+            }
+            energy = bassSum / 8; // 0-255
+
+            // Display Energy
+            document.getElementById('energyDisplay').textContent = Math.floor(energy);
+
+            // Beat Detection (Simple Threshold + Decay)
+            const threshold = 210; // Tuneable
+            if (energy > threshold && beatHoldFrames === 0) {
+                isBeat = true;
+                beatHoldFrames = 15; // Don't trigger again for 15 frames (approx 250ms at 60fps)
+                
+                // Estimate BPM
+                const now = audioContext.currentTime;
+                if (lastBeatTime > 0) {
+                    const delta = now - lastBeatTime;
+                    const instBpm = 60 / delta;
+                    if(instBpm > 60 && instBpm < 200) {
+                        beatTimes.push(instBpm);
+                        if(beatTimes.length > 5) beatTimes.shift();
+                        const avgBpm = beatTimes.reduce((a,b)=>a+b,0) / beatTimes.length;
+                        bpm = Math.round(avgBpm);
+                        document.getElementById('bpmDisplay').textContent = bpm;
+                    }
+                }
+                lastBeatTime = now;
+            } else {
+                isBeat = false;
+                if (beatHoldFrames > 0) beatHoldFrames--;
+            }
+        }
+
+        // --- Visual Effects Engine ---
+
+        function drawAsset() {
+            // 1. Clear
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // 2. Draw Source
+            let source = visualType === 'video' ? hiddenVideo : hiddenImage;
+            if (!source || (visualType === 'video' && source.readyState < 2) || (visualType === 'image' && !source.complete)) {
+                return;
+            }
+
+            // Scale Logic (Object-Fit: Cover)
+            const sRatio = source.videoWidth ? (source.videoWidth / source.videoHeight) : (source.naturalWidth / source.naturalHeight);
+            const dRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+            let drawW, drawH, offsetX, offsetY;
+
+            if (sRatio > dRatio) {
+                drawH = CANVAS_HEIGHT;
+                drawW = drawH * sRatio;
+                offsetX = (CANVAS_WIDTH - drawW) / 2;
+                offsetY = 0;
+            } else {
+                drawW = CANVAS_WIDTH;
+                drawH = drawW / sRatio;
+                offsetX = 0;
+                offsetY = (CANVAS_HEIGHT - drawH) / 2;
+            }
+
+            // Contrast
+            const contrast = params.contrast.value;
+            ctx.filter = `contrast(${contrast}%)`;
+            
+            ctx.drawImage(source, offsetX, offsetY, drawW, drawH);
+            ctx.filter = 'none'; // Reset filter
+        }
+
+        function applyEffects() {
+            let intensityRgb = parseInt(params.rgb.value);
+            let intensityGlitch = parseInt(params.glitch.value);
+            let pixelSize = parseInt(params.pixel.value);
+            const mirror = params.mirror.checked;
+
+            // Modifiers based on Beat
+            if (isBeat) {
+                if (params.beatRgb.checked) intensityRgb += 20;
+                if (params.beatGlitch.checked) intensityGlitch += 40;
+                if (params.beatPixel.checked) pixelSize = Math.max(pixelSize, 10);
+                
+                // Beat Pulse Zoom
+                if(intensityGlitch > 0 || intensityRgb > 0) {
+                    const zoom = 1.02;
+                    ctx.drawImage(canvas, 
+                        -((CANVAS_WIDTH*zoom - CANVAS_WIDTH)/2), 
+                        -((CANVAS_HEIGHT*zoom - CANVAS_HEIGHT)/2), 
+                        CANVAS_WIDTH * zoom, CANVAS_HEIGHT * zoom
+                    );
+                }
+            }
+
+            // 1. RGB Shift
+            if (intensityRgb > 0) {
+                const offset = (intensityRgb / 100) * 40; // Max 40px shift
+                const imageData = ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                const data = imageData.data;
+                const copy = new Uint8ClampedArray(data); // Copy original
+
+                // Simple channel shift
+                for (let i = 0; i < data.length; i += 4) {
+                    // Red channel (shift left)
+                    // Not super efficient for JS loop, but works for demo. 
+                    // Ideally use globalCompositeOperation 'screen' with shifted draws for performance.
+                }
+                
+                // Performance optimized RGB Shift: Draw canvas 3 times
+                // Save current state
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = CANVAS_WIDTH;
+                tempCanvas.height = CANVAS_HEIGHT;
+                const tCtx = tempCanvas.getContext('2d');
+                tCtx.drawImage(canvas, 0, 0);
+
+                ctx.globalCompositeOperation = 'screen';
+                
+                // Red
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0,0,CANVAS_WIDTH,CANVAS_HEIGHT);
+                
+                // Draw Red Channel
+                // NOTE: Pure CSS Blend modes or composite operations are faster than pixel manipulation
+                // Red
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(tempCanvas, -offset, 0);
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.fillStyle = '#F00'; 
+                ctx.fillRect(0,0,CANVAS_WIDTH, CANVAS_HEIGHT); // Mask to Red
+
+                // Store Red
+                const redImg = ctx.getImageData(0,0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                // Blue
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(tempCanvas, offset, 0);
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.fillStyle = '#00F';
+                ctx.fillRect(0,0, CANVAS_WIDTH, CANVAS_HEIGHT); // Mask to Blue
+                
+                // Store Blue
+                const blueImg = ctx.getImageData(0,0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                // Green (Center)
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(tempCanvas, 0, 0);
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.fillStyle = '#0F0';
+                ctx.fillRect(0,0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                // Combine
+                ctx.globalCompositeOperation = 'screen';
+                // At this point canvas has Green. Add Red and Blue.
+                // Note: This approach is heavy. 
+                // Simpler approach for perf:
+                
+                // Reset
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(tempCanvas, 0, 0); // Restore original
+                
+                if(Math.random() < 0.5) {
+                    // Jitter Red
+                    const imgData = ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    // A real pixel manipulation RGB shift is better here for "Glitch" look
+                    // But too slow for JS loop at HD.
+                    // Let's stick to strip displacement for glitch.
+                }
+            }
+
+            // Alternative RGB Shift (Simpler, faster)
+            if(intensityRgb > 0) {
+                 const offset = Math.floor((intensityRgb / 50) * 20);
+                 if(offset > 0) {
+                     // We can't easily separate channels without expensive pixel ops.
+                     // Let's simulate chromatic aberration by taking slices.
+                 }
+            }
+
+            // 2. Slice Glitch (Data Mosh / Displacement)
+            if (intensityGlitch > 0) {
+                const slices = Math.floor(intensityGlitch / 5); // Number of slices
+                for (let i = 0; i < slices; i++) {
+                    if (Math.random() > 0.5) continue;
+                    
+                    const h = Math.random() * 50 + 10;
+                    const y = Math.random() * CANVAS_HEIGHT;
+                    const shift = (Math.random() - 0.5) * (intensityGlitch * 2);
+                    
+                    // Take a slice
+                    try {
+                        const sliceData = ctx.getImageData(0, y, CANVAS_WIDTH, h);
+                        // Put it back shifted
+                        ctx.putImageData(sliceData, shift, y);
+                    } catch(e) {}
+                }
+                
+                // Color inversion randomly
+                if (intensityGlitch > 80 && Math.random() > 0.9) {
+                     ctx.globalCompositeOperation = 'difference';
+                     ctx.fillStyle = 'white';
+                     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                     ctx.globalCompositeOperation = 'source-over';
+                }
+            }
+
+            // 3. Pixelate
+            if (pixelSize > 1) { // Inverted logic on UI, but logic here: higher size = more blocks
+                 // Actually paramPixel is 1 to 50 (block size)
+                 // Turn off image smoothing
+                 const w = CANVAS_WIDTH / pixelSize;
+                 const h = CANVAS_HEIGHT / pixelSize;
+                 
+                 // Draw small to temp canvas
+                 const tempC = document.createElement('canvas');
+                 tempC.width = w;
+                 tempC.height = h;
+                 const tX = tempC.getContext('2d');
+                 tX.drawImage(canvas, 0, 0, w, h);
+                 
+                 // Draw back scaled up
+                 ctx.imageSmoothingEnabled = false;
+                 ctx.drawImage(tempC, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                 ctx.imageSmoothingEnabled = true;
+            }
+
+            // 4. Mirror (Kaleidoscope lite)
+            if (mirror) {
+                const halfW = CANVAS_WIDTH / 2;
+                // Get left half
+                const leftData = ctx.getImageData(0, 0, halfW, CANVAS_HEIGHT);
+                // Save context state
+                ctx.save();
+                ctx.translate(CANVAS_WIDTH, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(canvas, 0, 0, halfW, CANVAS_HEIGHT, 0, 0, halfW, CANVAS_HEIGHT);
+                ctx.restore();
+            }
+        }
+
+        function drawWaveform() {
+            if(!analyser) return;
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            waveCtx.fillStyle = 'rgb(0, 0, 0)';
+            waveCtx.fillRect(0, 0, waveCanvas.width, waveCanvas.height);
+            waveCanvas.width = waveCanvas.clientWidth;
+            waveCanvas.height = waveCanvas.clientHeight;
+
+            waveCtx.lineWidth = 2;
+            waveCtx.strokeStyle = '#38bdf8';
+            waveCtx.beginPath();
+
+            const sliceWidth = waveCanvas.width * 1.0 / bufferLength;
+            let x = 0;
+
+            for(let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * waveCanvas.height/2;
+
+                if(i === 0) {
+                    waveCtx.moveTo(x, y);
+                } else {
+                    waveCtx.lineTo(x, y);
+                }
+
+                x += sliceWidth;
+            }
+
+            waveCtx.lineTo(waveCanvas.width, waveCanvas.height/2);
+            waveCtx.stroke();
+        }
+
+        // --- Main Loop ---
+        
+        function animate() {
+            if (!isPlaying) return;
+            
+            analyzeAudio();
+            drawAsset();
+            applyEffects();
+            drawWaveform();
+
+            requestAnimationFrame(animate);
+        }
+
+        // --- UI Updates for Sliders ---
+        params.rgb.addEventListener('input', (e) => document.getElementById('valRgb').textContent = e.target.value + '%');
+        params.glitch.addEventListener('input', (e) => document.getElementById('valGlitch').textContent = e.target.value + '%');
+        params.pixel.addEventListener('input', (e) => document.getElementById('valPixel').textContent = e.target.value > 1 ? 'ON' : 'OFF');
+        params.contrast.addEventListener('input', (e) => document.getElementById('valContrast').textContent = (e.target.value/100).toFixed(1));
+
+
+        // --- Recording System ---
+        
+        btnExport.addEventListener('click', () => {
+            if(!audioContext || !audioSource) {
+                alert("Please load audio first.");
+                return;
+            }
+
+            if(isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+
+        function startRecording() {
+            isRecording = true;
+            recordedChunks = [];
+            
+            // Reset Audio to start (optional, but cleaner for MVs)
+            if(confirm("Reset audio to start for recording?")) {
+                audioElement.currentTime = 0;
+                if(visualType === 'video') hiddenVideo.currentTime = 0;
+            }
+            
+            if(!isPlaying) {
+                btnPlay.click(); // Start playing
+            }
+
+            // Setup Stream
+            // 30 FPS video stream from canvas
+            const canvasStream = canvas.captureStream(30);
+            // Audio stream from MediaStreamDestination
+            const audioStream = dest.stream;
+            
+            // Combine
+            const combinedStream = new MediaStream([
+                ...canvasStream.getVideoTracks(),
+                ...audioStream.getAudioTracks()
+            ]);
+
+            // Codec options
+            const options = { mimeType: 'video/webm;codecs=vp9' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                console.warn('VP9 not supported, falling back to default');
+                delete options.mimeType;
+            }
+
+            try {
+                mediaRecorder = new MediaRecorder(combinedStream, options);
+            } catch (e) {
+                alert('MediaRecorder init failed. Browser not supported?');
+                return;
+            }
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = exportVideo;
+
+            mediaRecorder.start();
+            
+            // UI Update
+            btnExport.classList.add('recording-pulse', 'bg-red-600', 'border-red-500');
+            btnExport.innerHTML = '<i class="fas fa-stop"></i> STOP RECORDING';
+            exportStatus.classList.remove('hidden');
+            exportStatus.classList.add('flex');
+            
+            recordingStartTime = Date.now();
+            updateRecTimer();
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            mediaRecorder.stop();
+            
+            // UI Update
+            btnExport.classList.remove('recording-pulse', 'bg-red-600', 'border-red-500');
+            btnExport.classList.add('bg-slate-800');
+            btnExport.innerHTML = '<i class="fas fa-video"></i> REC / EXPORT';
+            exportStatus.classList.add('hidden');
+            exportStatus.classList.remove('flex');
+            
+            // Stop playback
+            if(isPlaying) btnPlay.click();
+        }
+
+        function updateRecTimer() {
+            if(!isRecording) return;
+            const diff = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const m = Math.floor(diff / 60).toString().padStart(2, '0');
+            const s = (diff % 60).toString().padStart(2, '0');
+            recTimer.textContent = `${m}:${s}`;
+            requestAnimationFrame(updateRecTimer);
+        }
+
+        function exportVideo() {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `aural_glitch_${Date.now()}.webm`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+        }
+
+        // --- Resize Handler ---
+        window.addEventListener('resize', () => {
+            waveCanvas.width = waveCanvas.clientWidth;
+            waveCanvas.height = waveCanvas.clientHeight;
+        });
+
+    </script>
+</body>
+</html>
