@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- REQUIRED META DATA -->
+    <title>RegView Pro: 高速レジストリビューア</title>
+    <meta name="description" content="An interactive drawing application built with the HTML5 Canvas API. Explore different brushes and colors.">
+    <meta name="page:icon" content="fas fa-search">
+    <meta name="page:color" content="#f8fafc">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent global scroll */
+        }
+        
+        .font-mono {
+            font-family: 'Fira Code', monospace;
+        }
+
+        /* Custom Scrollbar for modern look */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        /* Virtual Scroll Container */
+        #virtual-container {
+            height: calc(100vh - 140px); /* Adjust based on header height */
+            overflow-y: auto;
+            position: relative;
+            will-change: transform;
+        }
+
+        .highlight-match {
+            background-color: #fef08a; /* yellow-200 */
+            color: #854d0e;
+            padding: 0 2px;
+            border-radius: 2px;
+            font-weight: 600;
+        }
+
+        /* Loading Spinner Animation */
+        .loader {
+            border-top-color: #3b82f6;
+            -webkit-animation: spinner 1.5s linear infinite;
+            animation: spinner 1.5s linear infinite;
+        }
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Toggle Switch CSS */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #3b82f6;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen flex flex-col">
+
+    <!-- APPLICATION HEADER -->
+    <header class="bg-white border-b border-slate-200 h-[140px] flex-none z-20 shadow-sm">
+        <div class="max-w-full mx-auto px-4 h-full flex flex-col justify-center">
+            
+            <!-- Top Row: Title & File Import -->
+            <div class="flex justify-between items-center mb-3">
+                <div class="flex items-center gap-3">
+                    <div class="bg-blue-600 text-white p-2 rounded-lg shadow-lg shadow-blue-200">
+                        <i class="fas fa-file-signature text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold tracking-tight text-slate-800">RegView Pro</h1>
+                        <p class="text-xs text-slate-400">Large File Support & Advanced Search</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <div id="stats-panel" class="hidden text-xs text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                        <span id="total-keys">0</span> キー / <span id="total-values">0</span> 値
+                    </div>
+                    <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition flex items-center gap-2 shadow-md">
+                        <i class="fas fa-folder-open"></i>
+                        .regを開く
+                        <input type="file" id="file-input" accept=".reg,.txt" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Search & Filters -->
+            <div class="flex gap-4">
+                <!-- Search Input -->
+                <div class="relative flex-grow">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-slate-400"></i>
+                    </div>
+                    <input type="text" id="search-input" disabled 
+                        class="block w-full pl-10 pr-20 py-2.5 border border-slate-300 rounded-lg leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition shadow-inner" 
+                        placeholder="ファイルを読み込んで検索を開始...">
+                    
+                    <div class="absolute inset-y-0 right-0 flex items-center pr-2">
+                        <span id="match-count" class="text-xs text-slate-400 font-mono mr-2"></span>
+                    </div>
+                </div>
+
+                <!-- Advanced Filters -->
+                <div class="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 shadow-sm">
+                    
+                    <!-- Regex Toggle -->
+                    <label class="flex items-center gap-2 cursor-pointer select-none group relative" title="正規表現を使用">
+                        <input type="checkbox" id="use-regex" class="peer sr-only">
+                        <div class="text-slate-400 peer-checked:text-blue-600 font-bold font-mono text-xs border border-slate-300 peer-checked:border-blue-600 rounded px-1.5 py-0.5 transition">.*</div>
+                        <span class="text-xs text-slate-600">Regex</span>
+                    </label>
+
+                    <div class="w-px h-5 bg-slate-200"></div>
+
+                    <!-- Case Sensitive Toggle -->
+                    <label class="flex items-center gap-2 cursor-pointer select-none group" title="大文字小文字を区別">
+                        <input type="checkbox" id="case-sensitive" class="peer sr-only">
+                        <div class="text-slate-400 peer-checked:text-blue-600 font-bold font-serif text-xs border border-slate-300 peer-checked:border-blue-600 rounded px-1.5 py-0.5 transition">Aa</div>
+                        <span class="text-xs text-slate-600">Case</span>
+                    </label>
+
+                    <div class="w-px h-5 bg-slate-200"></div>
+
+                    <!-- Scope Toggles -->
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="text-slate-400 font-medium mr-1">対象:</span>
+                        <label class="flex items-center gap-1 cursor-pointer">
+                            <input type="checkbox" id="scope-key" checked class="accent-blue-600 rounded">
+                            <span>キー</span>
+                        </label>
+                        <label class="flex items-center gap-1 cursor-pointer">
+                            <input type="checkbox" id="scope-name" checked class="accent-blue-600 rounded">
+                            <span>名前</span>
+                        </label>
+                        <label class="flex items-center gap-1 cursor-pointer">
+                            <input type="checkbox" id="scope-data" class="accent-blue-600 rounded">
+                            <span>データ</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT: VIRTUAL SCROLL AREA -->
+    <main class="flex-grow bg-slate-50 relative">
+        
+        <!-- Empty State -->
+        <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 z-10">
+            <i class="fas fa-file-code text-6xl mb-4 text-slate-200"></i>
+            <h2 class="text-lg font-medium text-slate-500">ファイルが読み込まれていません</h2>
+            <p class="text-sm">右上のボタンから.regファイルを選択してください</p>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-slate-200 h-12 w-12 mb-4"></div>
+            <h2 class="text-lg font-semibold text-slate-700">処理中...</h2>
+            <p id="loading-text" class="text-sm text-slate-500 mt-2">ファイルを解析しています</p>
+        </div>
+
+        <!-- Virtual Scroller -->
+        <div id="virtual-container" class="hidden custom-scrollbar">
+            <!-- This spacer sets the total height for scrolling -->
+            <div id="virtual-spacer" class="w-full"></div>
+            <!-- This content layer holds the visible items and moves with scroll -->
+            <div id="virtual-content" class="w-full absolute top-0 left-0"></div>
+        </div>
+    </main>
+
+    <!-- STATUS BAR -->
+    <footer class="bg-white border-t border-slate-200 py-1 px-4 text-[10px] text-slate-400 flex justify-between items-center select-none">
+        <div>RegView Pro v1.0.0 &bull; Local Environment Mode</div>
+        <div id="perf-stats">Ready</div>
+    </footer>
+
+    <script>
+        /**
+         * APPLICATION STATE & CONFIGURATION
+         */
+        const state = {
+            allEntries: [],      // The complete parsed dataset
+            filteredEntries: [], // The dataset currently being displayed (result of search)
+            rowHeight: 0,        // Dynamic row height is tricky, we will use an estimated fixed height per Key block or variable height logic
+            scrollTop: 0,
+            isParsing: false,
+            searchQuery: '',
+            filters: {
+                regex: false,
+                caseSensitive: false,
+                scopeKey: true,
+                scopeName: true,
+                scopeData: false
+            }
+        };
+
+        const DOM = {
+            fileInput: document.getElementById('file-input'),
+            searchInput: document.getElementById('search-input'),
+            virtualContainer: document.getElementById('virtual-container'),
+            virtualSpacer: document.getElementById('virtual-spacer'),
+            virtualContent: document.getElementById('virtual-content'),
+            emptyState: document.getElementById('empty-state'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            loadingText: document.getElementById('loading-text'),
+            statsPanel: document.getElementById('stats-panel'),
+            totalKeys: document.getElementById('total-keys'),
+            totalValues: document.getElementById('total-values'),
+            matchCount: document.getElementById('match-count'),
+            perfStats: document.getElementById('perf-stats'),
+            // Filters
+            useRegex: document.getElementById('use-regex'),
+            caseSensitive: document.getElementById('case-sensitive'),
+            scopeKey: document.getElementById('scope-key'),
+            scopeName: document.getElementById('scope-name'),
+            scopeData: document.getElementById('scope-data'),
+        };
+
+        // Worker simulation for keeping main thread responsive (Using async chunking)
+        // Since we cannot use actual Web Workers easily in a single-file strict constraint (Blob URLs are messy with CSP sometimes),
+        // we will use async/await with setTimeout(0) to yield control.
+
+        /**
+         * FILE PARSING LOGIC
+         */
+        DOM.fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            resetUI();
+            showLoading(true, 'ファイルを読み込んでいます...');
+
+            // Delay to allow UI to render loading state
+            setTimeout(async () => {
+                const text = await readFileAsync(file);
+                parseRegistryFile(text);
+            }, 50);
+        });
+
+        function readFileAsync(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (e) => reject(e);
+                // Attempt to read as text. If encoding is weird, browsers usually default to UTF-8. 
+                // Windows Reg files are often UTF-16LE. FileReader usually detects BOM.
+                reader.readAsText(file); 
+            });
+        }
+
+        async function parseRegistryFile(text) {
+            showLoading(true, '解析中... (大規模ファイルの場合は時間がかかります)');
+            
+            const lines = text.split(/\r?\n/);
+            const totalLines = lines.length;
+            const entries = [];
+            let currentKey = null;
+            let valueCount = 0;
+
+            const startTime = performance.now();
+
+            // Chunk processing to prevent freeze
+            const CHUNK_SIZE = 5000;
+            
+            for (let i = 0; i < totalLines; i++) {
+                let line = lines[i].trim();
+                
+                if (!line || line.startsWith(';')) continue;
+
+                // Detect Key: [HKEY_...]
+                if (line.startsWith('[') && line.endsWith(']')) {
+                    if (currentKey) {
+                        entries.push(currentKey);
+                    }
+                    currentKey = {
+                        type: 'key',
+                        path: line.slice(1, -1), // Remove brackets
+                        values: [],
+                        height: 60 // Base height for header + padding
+                    };
+                } 
+                // Detect Value
+                else if (currentKey && line.includes('=')) {
+                    // Simple parser for "Name"="Value" or "Name"=type:data
+                    // Handle multi-line hex later if needed (simplified for Viewer)
+                    const firstEq = line.indexOf('=');
+                    let name = line.substring(0, firstEq);
+                    let data = line.substring(firstEq + 1);
+
+                    // Clean name (remove quotes)
+                    if (name.startsWith('"') && name.endsWith('"')) {
+                        name = name.slice(1, -1);
+                    } else if (name === '@') {
+                        name = '(既定)';
+                    }
+
+                    // Clean data (simple string cleanup)
+                    if (data.startsWith('"') && data.endsWith('"')) {
+                        data = data.slice(1, -1).replace(/\\\\/g, '\\').replace(/\\"/g, '"');
+                    }
+
+                    // Add to current key
+                    currentKey.values.push({ name, data, raw: line });
+                    currentKey.height += 24; // Estimate height per value row
+                    valueCount++;
+                }
+                // Handle hex multiline continuation (simplified: just append to previous data for searchability)
+                else if (currentKey && currentKey.values.length > 0 && line.endsWith('\\')) {
+                   // This is complex for a simple viewer, usually hex data. 
+                   // We ignore deep parsing of hex dumps for speed, but treat them as text.
+                }
+
+                // Yield to UI thread every CHUNK_SIZE lines
+                if (i % CHUNK_SIZE === 0) {
+                    DOM.loadingText.textContent = `解析中: ${Math.round((i / totalLines) * 100)}%`;
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            // Push last key
+            if (currentKey) entries.push(currentKey);
+
+            const endTime = performance.now();
+            console.log(`Parsed ${entries.length} keys in ${(endTime - startTime).toFixed(2)}ms`);
+
+            // Update State
+            state.allEntries = entries;
+            state.filteredEntries = entries;
+            
+            // Update UI Stats
+            DOM.totalKeys.textContent = entries.length.toLocaleString();
+            DOM.totalValues.textContent = valueCount.toLocaleString();
+            DOM.statsPanel.classList.remove('hidden');
+            DOM.searchInput.disabled = false;
+            DOM.emptyState.classList.add('hidden');
+            DOM.virtualContainer.classList.remove('hidden');
+            DOM.searchInput.focus();
+
+            showLoading(false);
+            
+            // Initial Render
+            initVirtualScroll();
+        }
+
+        function resetUI() {
+            state.allEntries = [];
+            state.filteredEntries = [];
+            DOM.virtualContent.innerHTML = '';
+            DOM.virtualSpacer.style.height = '0px';
+            DOM.statsPanel.classList.add('hidden');
+            DOM.searchInput.value = '';
+            DOM.searchInput.disabled = true;
+            DOM.matchCount.textContent = '';
+        }
+
+        function showLoading(show, text = '') {
+            if (show) {
+                DOM.loadingOverlay.classList.remove('hidden');
+                DOM.loadingText.textContent = text;
+            } else {
+                DOM.loadingOverlay.classList.add('hidden');
+            }
+        }
+
+        /**
+         * SEARCH ENGINE
+         */
+        
+        // Debounce utility
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), wait);
+            };
+        }
+
+        const performSearch = async () => {
+            const query = DOM.searchInput.value;
+            state.searchQuery = query;
+            
+            // Get filter states
+            const useRegex = DOM.useRegex.checked;
+            const isCaseSensitive = DOM.caseSensitive.checked;
+            const scopeKey = DOM.scopeKey.checked;
+            const scopeName = DOM.scopeName.checked;
+            const scopeData = DOM.scopeData.checked;
+
+            if (!query) {
+                state.filteredEntries = state.allEntries;
+                DOM.matchCount.textContent = '';
+                initVirtualScroll();
+                return;
+            }
+
+            showLoading(true, '検索中...');
+            
+            // Allow UI to draw loading
+            await new Promise(r => setTimeout(r, 10));
+
+            const startTime = performance.now();
+            let regex;
+            let lowerQuery = '';
+
+            try {
+                if (useRegex) {
+                    regex = new RegExp(query, isCaseSensitive ? 'g' : 'gi');
+                } else {
+                    lowerQuery = isCaseSensitive ? query : query.toLowerCase();
+                }
+            } catch (e) {
+                alert('無効な正規表現です');
+                showLoading(false);
+                return;
+            }
+
+            const results = [];
+            
+            // Search Algorithm
+            for (const key of state.allEntries) {
+                let isMatch = false;
+
+                // 1. Check Key Path
+                if (scopeKey) {
+                    if (useRegex) {
+                        if (regex.test(key.path)) isMatch = true;
+                    } else {
+                        const target = isCaseSensitive ? key.path : key.path.toLowerCase();
+                        if (target.includes(lowerQuery)) isMatch = true;
+                    }
+                }
+
+                // 2. Check Values (Name or Data)
+                if (!isMatch && (scopeName || scopeData)) {
+                    for (const val of key.values) {
+                        // Check Name
+                        if (scopeName) {
+                            if (useRegex) {
+                                if (regex.test(val.name)) { isMatch = true; break; }
+                            } else {
+                                const target = isCaseSensitive ? val.name : val.name.toLowerCase();
+                                if (target.includes(lowerQuery)) { isMatch = true; break; }
+                            }
+                        }
+                        // Check Data
+                        if (scopeData) {
+                             if (useRegex) {
+                                if (regex.test(val.data)) { isMatch = true; break; }
+                            } else {
+                                const target = isCaseSensitive ? val.data : val.data.toLowerCase();
+                                if (target.includes(lowerQuery)) { isMatch = true; break; }
+                            }
+                        }
+                    }
+                }
+
+                if (isMatch) {
+                    results.push(key);
+                }
+            }
+
+            const endTime = performance.now();
+            state.filteredEntries = results;
+            DOM.matchCount.textContent = `${results.length.toLocaleString()} 件の一致 (${(endTime - startTime).toFixed(0)}ms)`;
+
+            initVirtualScroll(); // Re-initialize scroll for new dataset
+            showLoading(false);
+        };
+
+        // Attach Search Listeners
+        DOM.searchInput.addEventListener('input', debounce(performSearch, 400));
+        DOM.useRegex.addEventListener('change', performSearch);
+        DOM.caseSensitive.addEventListener('change', performSearch);
+        DOM.scopeKey.addEventListener('change', performSearch);
+        DOM.scopeName.addEventListener('change', performSearch);
+        DOM.scopeData.addEventListener('change', performSearch);
+
+        /**
+         * VIRTUAL SCROLLING RENDERER
+         * Since items have variable heights (based on number of values), strict index calculation is hard.
+         * We will pre-calculate positions or use a simplified approximation.
+         * For this demo, to keep it fast, we recalculate the accumulated height map when filtering.
+         */
+
+        let positionMap = []; // Stores { index, top, height } for each filtered item
+        let totalContentHeight = 0;
+
+        function initVirtualScroll() {
+            // Build the Position Map
+            positionMap = [];
+            let currentTop = 0;
+            
+            // Limit mapping for extreme datasets to avoid memory issues (e.g. > 1M items)
+            // But assume user filters down.
+            
+            const count = state.filteredEntries.length;
+            for (let i = 0; i < count; i++) {
+                const entry = state.filteredEntries[i];
+                // Recalculate height dynamically based on value count is better
+                // Header (40px) + Padding (10px) + Values * 28px + BottomBorder(1px)
+                const height = 50 + (entry.values.length * 28);
+                
+                positionMap.push({
+                    index: i,
+                    top: currentTop,
+                    height: height,
+                    entry: entry
+                });
+                currentTop += height;
+            }
+
+            totalContentHeight = currentTop;
+            DOM.virtualSpacer.style.height = `${totalContentHeight}px`;
+            
+            // Reset Scroll
+            DOM.virtualContainer.scrollTop = 0;
+            renderVirtualItems();
+        }
+
+        function renderVirtualItems() {
+            const scrollTop = DOM.virtualContainer.scrollTop;
+            const containerHeight = DOM.virtualContainer.clientHeight;
+            const buffer = 500; // Render extra pixels outside view for smoothness
+
+            const startY = Math.max(0, scrollTop - buffer);
+            const endY = scrollTop + containerHeight + buffer;
+
+            // Binary search to find start index could be faster, but linear is okay for <100k filtered items.
+            // Let's use a simple binary search for start index to be robust for large lists.
+            let startIndex = findStartIndex(startY);
+            let endIndex = startIndex;
+
+            // Find end index
+            for (let i = startIndex; i < positionMap.length; i++) {
+                if (positionMap[i].top > endY) {
+                    break;
+                }
+                endIndex = i;
+            }
+
+            // Generate HTML
+            let html = '';
+            
+            // Optimization: If no items found
+            if (positionMap.length === 0) {
+                DOM.virtualContent.innerHTML = `<div class="p-8 text-center text-slate-400">条件に一致する項目がありません</div>`;
+                return;
+            }
+
+            // Set Offset for the content block
+            // We use transform translateY to position the chunk of rendered items correctly
+            const startNode = positionMap[startIndex];
+            DOM.virtualContent.style.transform = `translateY(${startNode.top}px)`;
+
+            for (let i = startIndex; i <= endIndex; i++) {
+                const item = positionMap[i];
+                html += createEntryHTML(item.entry);
+            }
+
+            DOM.virtualContent.innerHTML = html;
+            DOM.perfStats.textContent = `Rendered items: ${startIndex} - ${endIndex} / ${positionMap.length}`;
+        }
+
+        function findStartIndex(scrollY) {
+            let low = 0;
+            let high = positionMap.length - 1;
+
+            while (low <= high) {
+                const mid = Math.floor((low + high) / 2);
+                const item = positionMap[mid];
+                
+                if (item.top + item.height < scrollY) {
+                    low = mid + 1;
+                } else if (item.top > scrollY) {
+                    high = mid - 1;
+                } else {
+                    return mid;
+                }
+            }
+            return Math.max(0, low - 1); // fallback
+        }
+
+        function createEntryHTML(entry) {
+            const highlight = (text) => {
+                if (!state.searchQuery) return escapeHtml(text);
+                
+                // If regex
+                if (DOM.useRegex.checked) {
+                    try {
+                        const re = new RegExp(`(${state.searchQuery})`, DOM.caseSensitive.checked ? 'g' : 'gi');
+                        return escapeHtml(text).replace(re, '<span class="highlight-match">$1</span>');
+                    } catch(e) { return escapeHtml(text); }
+                }
+
+                // Simple text
+                const query = state.searchQuery;
+                const lowerText = text.toLowerCase();
+                const lowerQuery = query.toLowerCase();
+                
+                if (!DOM.caseSensitive.checked) {
+                    const start = lowerText.indexOf(lowerQuery);
+                    if (start === -1) return escapeHtml(text);
+                    // This is simple replacement, doesn't handle multiple occurrences perfectly without regex, 
+                    // but is safer for performance in large loops.
+                    // For better UI, let's use a regex anyway, escaped.
+                    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const re = new RegExp(`(${escapedQuery})`, 'gi');
+                    return text.replace(re, '<span class="highlight-match">$1</span>');
+                } else {
+                    if (text.includes(query)) {
+                        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const re = new RegExp(`(${escapedQuery})`, 'g');
+                        return text.replace(re, '<span class="highlight-match">$1</span>');
+                    }
+                }
+                return escapeHtml(text);
+            };
+
+            const pathHtml = highlight(entry.path);
+            
+            // Generate Values HTML
+            let valuesHtml = '';
+            if (entry.values.length === 0) {
+                valuesHtml = '<div class="text-xs text-slate-400 italic px-2 py-1">(値なし)</div>';
+            } else {
+                valuesHtml = entry.values.map(val => `
+                    <div class="grid grid-cols-12 gap-2 text-xs py-1 border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                        <div class="col-span-4 font-medium text-slate-700 truncate pl-2" title="${escapeHtml(val.name)}">${highlight(val.name)}</div>
+                        <div class="col-span-8 font-mono text-slate-600 truncate pr-2" title="${escapeHtml(val.data)}">${highlight(val.data)}</div>
+                    </div>
+                `).join('');
+            }
+
+            return `
+                <div class="bg-white border-b border-slate-200 hover:shadow-md transition-shadow duration-200">
+                    <div class="bg-slate-50 px-4 py-2 border-b border-slate-100 flex items-center gap-2">
+                        <i class="fas fa-folder text-yellow-400"></i>
+                        <h3 class="font-mono text-sm font-semibold text-slate-800 break-all">${pathHtml}</h3>
+                    </div>
+                    <div class="px-2 py-1">
+                        ${valuesHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        // HTML Escape Helper
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Scroll Event Listener with rAF throttling
+        let isScrolling = false;
+        DOM.virtualContainer.addEventListener('scroll', () => {
+            if (!isScrolling) {
+                window.requestAnimationFrame(() => {
+                    renderVirtualItems();
+                    isScrolling = false;
+                });
+                isScrolling = true;
+            }
+        });
+
+        // Window Resize Listener
+        window.addEventListener('resize', debounce(() => {
+            if(state.filteredEntries.length > 0) initVirtualScroll();
+        }, 200));
+
+    </script>
+</body>
+</html>

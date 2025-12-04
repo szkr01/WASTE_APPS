@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WaveSort: Bi-Directional</title>
+    <meta name="description" content="Sorting visualizer with selectable algorithm direction (L->R or R->L).">
+    <meta name="page:icon" content="fas fa-exchange-alt">
+    <meta name="page:color" content="#0ea5e9">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg-dark: #050505; --accent: #0ea5e9; }
+        body { background-color: var(--bg-dark); font-family: 'Inter', sans-serif; color: #e4e4e7; overflow: hidden; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+        .canvas-container { background: radial-gradient(circle at center, #18181b 0%, #000000 100%); box-shadow: inset 0 0 100px rgba(0,0,0,0.9); }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -4px; box-shadow: 0 0 10px rgba(14,165,233,0.3); }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #27272a; border-radius: 2px; }
+        select { appearance: none; background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2371717a' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E"); background-position: right 0.5rem center; background-repeat: no-repeat; background-size: 1.5em 1.5em; }
+        .btn-glass { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(5px); }
+        .btn-glass:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); }
+        .algo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; }
+        
+        .dot-swap { background-color: #ffffff; box-shadow: 0 0 5px #ffffff; }
+        .dot-write { background-color: #ef4444; box-shadow: 0 0 5px #ef4444; }
+        .dot-read { background-color: #0ea5e9; box-shadow: 0 0 5px #0ea5e9; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col text-zinc-300">
+
+    <header class="h-12 border-b border-zinc-900 bg-black/80 backdrop-blur-md flex items-center justify-between px-6 z-20 shrink-0">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-exchange-alt text-sky-500"></i>
+            <h1 class="text-xs font-bold tracking-[0.2em] mono text-white">WAVE<span class="text-sky-500">SORT</span>_DIR</h1>
+        </div>
+        <div class="flex items-center gap-4 text-[9px] mono uppercase tracking-wider">
+            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full dot-swap"></span>Swap</div>
+            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full dot-write"></span>Overwrite</div>
+            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full dot-read"></span>Read</div>
+            <div class="w-[1px] h-3 bg-zinc-800 mx-2"></div>
+            <div class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-zinc-600" id="status-dot"></span>
+                <span id="status-text" class="text-zinc-500">Idle</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        <aside class="w-80 border-r border-zinc-900 bg-[#08080a] flex flex-col z-10 shadow-2xl relative">
+            <div class="flex-1 overflow-y-auto p-5 space-y-6">
+                
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">1. Source</label>
+                    <label class="block relative group cursor-pointer">
+                        <input type="file" id="audio-input" accept="audio/*" class="hidden" />
+                        <div class="border border-dashed border-zinc-800 bg-zinc-900/30 rounded-lg h-16 flex flex-col items-center justify-center transition-all group-hover:border-sky-500/50 group-hover:bg-zinc-900/80">
+                            <div class="flex items-center gap-2 text-zinc-500 group-hover:text-sky-400">
+                                <i class="fas fa-file-audio"></i>
+                                <span class="text-xs font-medium">Load</span>
+                            </div>
+                            <span id="filename-display" class="text-[9px] text-zinc-600 mt-0.5 truncate max-w-[90%] opacity-50">Select File</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="space-y-2">
+                    <div class="flex justify-between text-[10px] mb-1">
+                        <span class="text-zinc-500 font-bold uppercase tracking-widest">2. Slices</span>
+                        <span id="slice-val" class="text-sky-500 mono">128</span>
+                    </div>
+                    <input type="range" id="slice-slider" min="32" max="40000" step="32" value="128" class="w-full">
+                </div>
+
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">3. Algorithm</label>
+                        <select id="algo-direction" class="bg-zinc-900 border border-zinc-800 text-[10px] text-zinc-400 rounded px-1.5 py-0.5 focus:border-sky-500 focus:outline-none">
+                            <option value="forward">Fwd (L→R)</option>
+                            <option value="backward">Bwd (R→L)</option>
+                        </select>
+                    </div>
+                    <div class="algo-grid" id="algo-container"></div>
+                </div>
+
+                <div class="space-y-3">
+                    <label class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">4. Strategy</label>
+                    <div class="relative">
+                        <select id="construction-logic" class="w-full bg-zinc-900/50 border border-zinc-800 text-xs text-zinc-300 rounded px-3 py-2 focus:border-sky-500 focus:outline-none font-mono">
+                            <option value="seq_ab">Sequential (A then B)</option>
+                            <option value="mix_ab">Parallel (A + B)</option>
+                            <option value="only_a">Primary (A Only)</option>
+                            <option value="only_b">Secondary (B Only)</option>
+                            <option value="reads">Reads Only</option>
+                            <option value="writes">Writes Only</option>
+                            <option value="high">High Pitch</option>
+                            <option value="low">Low Pitch</option>
+                        </select>
+                    </div>
+
+                    <div class="pt-2">
+                         <div class="grid grid-cols-2 gap-2 mb-2">
+                             <button id="btn-shuffle" disabled class="btn-glass py-2 text-xs rounded text-zinc-400 hover:text-white transition-colors disabled:opacity-30">
+                                <i class="fas fa-random mr-2"></i>Shuffle
+                            </button>
+                            <button id="btn-render" disabled class="bg-sky-600 hover:bg-sky-500 text-white py-2 text-xs rounded shadow-[0_0_15px_rgba(14,165,233,0.3)] transition-all disabled:opacity-30 disabled:shadow-none font-bold">
+                                <i class="fas fa-check mr-2"></i>Build
+                            </button>
+                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 bg-[#050505] border-t border-zinc-900 space-y-3">
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-zinc-500 w-8">SPD</span>
+                    <input type="range" id="speed-slider" min="0.5" max="3.0" step="0.1" value="1.0" class="flex-1">
+                    <span id="speed-val" class="text-[10px] text-sky-500 w-8 text-right mono">1.0x</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-zinc-500 w-8">VOL</span>
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.7" class="flex-1">
+                </div>
+                <button id="btn-stop" disabled class="w-full py-2 border border-red-900/30 text-red-500/70 hover:bg-red-900/10 hover:text-red-400 text-xs rounded transition-all disabled:opacity-0">Stop Playback</button>
+            </div>
+        </aside>
+
+        <div class="flex-1 relative bg-black flex flex-col overflow-hidden">
+            <div class="absolute inset-0 canvas-container flex items-center justify-center">
+                <canvas id="main-canvas"></canvas>
+            </div>
+            <div class="absolute top-6 right-6 text-right pointer-events-none mix-blend-difference z-10">
+                <h2 id="overlay-main" class="text-5xl font-black text-zinc-800 mono tracking-tighter">INIT</h2>
+                <div class="flex justify-end gap-4 mt-2">
+                    <div class="text-[10px] text-zinc-600 mono" id="overlay-sub1">-- / --</div>
+                    <div class="text-[10px] text-zinc-600 mono" id="overlay-sub2">0.00s</div>
+                </div>
+            </div>
+            <div class="absolute bottom-0 left-0 right-0 h-1 bg-zinc-900 z-20">
+                <div id="playback-bar" class="h-full bg-sky-500 w-0 shadow-[0_0_10px_#0ea5e9]"></div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center hidden">
+        <div class="w-96 bg-zinc-950 border border-zinc-800 p-8 rounded-2xl shadow-2xl text-center relative overflow-hidden">
+            <div class="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-sky-500 to-transparent shadow-[0_0_20px_#0ea5e9]"></div>
+            <i class="fas fa-circle-notch fa-spin text-3xl text-sky-500 mb-4"></i>
+            <h3 class="text-white font-bold tracking-wider mb-2">PROCESSING</h3>
+            <p id="modal-text" class="text-xs text-zinc-500 mono mb-6">...</p>
+            <div class="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                <div id="modal-bar" class="h-full bg-sky-500 w-0 transition-all duration-100"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ALGORITHMS = {
+            bubble: { name: 'Bubble', complex: 'O(n²)' },
+            selection: { name: 'Selection', complex: 'O(n²)' },
+            insertion: { name: 'Insertion', complex: 'O(n²)' },
+            quick: { name: 'Quick', complex: 'O(n log n)' },
+            merge: { name: 'Merge', complex: 'O(n log n)' },
+            heap: { name: 'Heap', complex: 'O(n log n)' },
+            radix: { name: 'Radix LSD', complex: 'O(nk)' },
+            gnome: { name: 'Gnome', complex: 'O(n²)' },
+            comb: { name: 'Comb', complex: 'O(n log n)' }
+        };
+
+        const state = {
+            ctx: null, masterGain: null, sourceBuffer: null, 
+            generatedBuffer: null, audioElement: null, blobUrl: null,
+            chunks: [], currentOrder: [], syncMap: [], highlights: [],
+            totalDuration: 0, sortDuration: 0,
+            config: { slices: 128, algo: 'bubble', direction: 'forward', logic: 'seq_ab', speed: 1.0, volume: 0.7 },
+            isPlaying: false, animationId: null
+        };
+
+        const els = {
+            file: document.getElementById('audio-input'),
+            fileName: document.getElementById('filename-display'),
+            slider: document.getElementById('slice-slider'),
+            val: document.getElementById('slice-val'),
+            algoContainer: document.getElementById('algo-container'),
+            algoDir: document.getElementById('algo-direction'),
+            logic: document.getElementById('construction-logic'),
+            speed: document.getElementById('speed-slider'),
+            speedVal: document.getElementById('speed-val'),
+            btnShuffle: document.getElementById('btn-shuffle'),
+            btnRender: document.getElementById('btn-render'),
+            btnStop: document.getElementById('btn-stop'),
+            canvas: document.getElementById('main-canvas'),
+            modal: document.getElementById('modal'),
+            modalText: document.getElementById('modal-text'),
+            modalBar: document.getElementById('modal-bar'),
+            overlayMain: document.getElementById('overlay-main'),
+            overlaySub1: document.getElementById('overlay-sub1'),
+            overlaySub2: document.getElementById('overlay-sub2'),
+            bar: document.getElementById('playback-bar'),
+            vol: document.getElementById('volume-slider'),
+            statusText: document.getElementById('status-text'),
+            statusDot: document.getElementById('status-dot')
+        };
+        const ctx2d = els.canvas.getContext('2d');
+
+        function initUI() {
+            Object.keys(ALGORITHMS).forEach(key => {
+                const btn = document.createElement('button');
+                btn.className = `px-2 py-2 text-[10px] rounded border border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300 transition-all font-mono uppercase truncate ${key === 'bubble' ? 'border-sky-500/50 text-sky-400 bg-sky-900/10' : ''}`;
+                btn.textContent = ALGORITHMS[key].name;
+                btn.onclick = () => selectAlgo(key, btn);
+                els.algoContainer.appendChild(btn);
+            });
+        }
+
+        function selectAlgo(key, btn) {
+            state.config.algo = key;
+            Array.from(els.algoContainer.children).forEach(b => {
+                b.className = b.className.replace('border-sky-500/50 text-sky-400 bg-sky-900/10', 'border-zinc-800 text-zinc-500 bg-zinc-900');
+            });
+            btn.className = btn.className.replace('border-zinc-800 text-zinc-500 bg-zinc-900', 'border-sky-500/50 text-sky-400 bg-sky-900/10');
+            els.overlayMain.textContent = key.toUpperCase();
+        }
+
+        function initAudio() {
+            if(!state.ctx) {
+                state.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                state.masterGain = state.ctx.createGain();
+                state.masterGain.gain.value = state.config.volume;
+                state.masterGain.connect(state.ctx.destination);
+            }
+            if(state.ctx.state === 'suspended') state.ctx.resume();
+        }
+
+        els.file.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            els.fileName.textContent = file.name;
+            updateStatus('Loading', 'bg-yellow-500');
+            try {
+                initAudio();
+                const ab = await file.arrayBuffer();
+                state.sourceBuffer = await state.ctx.decodeAudioData(ab);
+                createChunks();
+                els.btnShuffle.disabled = false;
+                updateStatus('Ready', 'bg-green-500');
+                draw(state.currentOrder);
+            } catch(err) {
+                console.error(err);
+                alert("Error decoding audio");
+            }
+        });
+
+        els.slider.addEventListener('input', (e) => {
+            state.config.slices = parseInt(e.target.value);
+            els.val.textContent = state.config.slices;
+            if(state.sourceBuffer) {
+                createChunks();
+                draw(state.currentOrder);
+            }
+        });
+
+        els.algoDir.addEventListener('change', (e) => state.config.direction = e.target.value);
+        els.logic.addEventListener('change', (e) => state.config.logic = e.target.value);
+        els.speed.addEventListener('input', (e) => {
+            state.config.speed = parseFloat(e.target.value);
+            els.speedVal.textContent = state.config.speed.toFixed(1) + 'x';
+            if(state.audioElement) {
+                state.audioElement.playbackRate = state.config.speed;
+            }
+        });
+        els.vol.addEventListener('input', (e) => {
+            state.config.volume = parseFloat(e.target.value);
+            if(state.masterGain) state.masterGain.gain.setTargetAtTime(state.config.volume, state.ctx.currentTime, 0.05);
+        });
+
+        els.btnShuffle.addEventListener('click', () => {
+            if(!state.chunks.length) return;
+            for(let i = state.currentOrder.length - 1; i > 0; i--){
+                const j = Math.floor(Math.random() * (i + 1));
+                [state.currentOrder[i], state.currentOrder[j]] = [state.currentOrder[j], state.currentOrder[i]];
+            }
+            draw(state.currentOrder);
+            els.overlayMain.textContent = "SHUFFLED";
+            els.btnRender.disabled = false;
+        });
+
+        function createChunks() {
+            if(!state.sourceBuffer) return;
+            const b = state.sourceBuffer;
+            const N = state.config.slices;
+            const len = Math.floor(b.length / N);
+            state.chunks = [];
+            for(let i=0; i<N; i++) {
+                const start = i * len;
+                const end = (i===N-1) ? b.length : (i+1)*len;
+                const buf = state.ctx.createBuffer(b.numberOfChannels, end-start, b.sampleRate);
+                let rms = 0;
+                for(let c=0; c<b.numberOfChannels; c++) {
+                    const data = b.getChannelData(c).subarray(start, end);
+                    buf.copyToChannel(data, c);
+                    if(c===0) {
+                        for(let k=0; k<data.length; k+=100) rms += data[k]*data[k];
+                        rms = Math.sqrt(rms / (data.length/100));
+                    }
+                }
+                state.chunks.push({ id: i, buffer: buf, rms: rms, color: i/N });
+            }
+            state.currentOrder = state.chunks.map(c => c.id);
+        }
+
+        // --- Render Logic ---
+        els.btnRender.addEventListener('click', async () => {
+            if(state.isPlaying) stopPlayback();
+            els.modal.classList.remove('hidden');
+            els.modalText.textContent = `Tracing ${ALGORITHMS[state.config.algo].name} (${state.config.direction})...`;
+            await new Promise(r => setTimeout(r, 50));
+
+            const steps = [];
+            const simOrder = [...state.currentOrder];
+            const generator = getSorter(state.config.algo, simOrder, state.config.direction);
+            
+            let done = false;
+            let count = 0;
+            const simStart = performance.now();
+
+            while(!done) {
+                if (performance.now() - simStart > 10000) break; // Timeout check
+                for(let i=0; i<2000; i++) {
+                    const res = generator.next();
+                    if(res.done) { done = true; break; }
+                    steps.push(res.value);
+                }
+                count += 2000;
+                if(count % 10000 === 0) {
+                     els.modalBar.style.width = '20%'; 
+                     await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            els.modalText.textContent = `Building Logic...`;
+            await new Promise(r => setTimeout(r, 50));
+
+            const LOGIC = state.config.logic;
+            let operations = [];
+            let currentTime = 0;
+            const sampleRate = state.sourceBuffer.sampleRate;
+            const chunkLen = state.chunks[0].buffer.length;
+            const durPerChunk = chunkLen / sampleRate;
+            
+            state.syncMap = [];
+
+            steps.forEach(step => {
+                const p = step.primaryId;
+                const s = step.secondaryId;
+                const type = step.type;
+
+                let opsToAdd = [];
+
+                if (LOGIC === 'seq_ab') {
+                    if (p != null) opsToAdd.push({ ids: [p], step: step });
+                    if (s != null) opsToAdd.push({ ids: [s], step: step });
+                }
+                else if (LOGIC === 'mix_ab') {
+                    const ids = [];
+                    if (p != null) ids.push(p);
+                    if (s != null) ids.push(s);
+                    if (ids.length > 0) opsToAdd.push({ ids: ids, mix: true, step: step });
+                }
+                else if (LOGIC === 'only_a') {
+                    if (p != null) opsToAdd.push({ ids: [p], step: step });
+                }
+                else if (LOGIC === 'only_b') {
+                    if (s != null) opsToAdd.push({ ids: [s], step: step });
+                }
+                else if (LOGIC === 'reads') {
+                    if (type === 'compare' || type === 'read') {
+                        if (p != null) opsToAdd.push({ ids: [p], step: step });
+                    }
+                }
+                else if (LOGIC === 'writes') {
+                    if (type === 'swap' || type === 'overwrite') {
+                        if (p != null) opsToAdd.push({ ids: [p], step: step });
+                    }
+                }
+                else if (LOGIC === 'high') {
+                    let target = null;
+                    if (p != null && s != null) target = (p > s) ? p : s;
+                    else if (p != null) target = p;
+                    if (target != null) opsToAdd.push({ ids: [target], step: step });
+                }
+                else if (LOGIC === 'low') {
+                    let target = null;
+                    if (p != null && s != null) target = (p < s) ? p : s;
+                    else if (p != null) target = p;
+                    if (target != null) opsToAdd.push({ ids: [target], step: step });
+                }
+
+                opsToAdd.forEach(op => operations.push(op));
+                const timeConsumed = opsToAdd.length * durPerChunk;
+
+                if (type === 'swap' || type === 'overwrite') {
+                    state.syncMap.push({
+                        time: currentTime,
+                        type: type,
+                        indices: step.indices,
+                        value: step.value
+                    });
+                } else {
+                    state.syncMap.push({
+                        time: currentTime,
+                        type: type,
+                        indices: step.indices
+                    });
+                }
+                currentTime += timeConsumed;
+            });
+
+            let totalLength = operations.length * chunkLen;
+            const finalSeqLen = state.chunks.reduce((acc, c) => acc + c.buffer.length, 0);
+            totalLength += finalSeqLen;
+
+            els.modalText.textContent = `Building Buffer...`;
+            await new Promise(r => setTimeout(r, 10));
+
+            const outBuf = state.ctx.createBuffer(state.sourceBuffer.numberOfChannels, totalLength, sampleRate);
+            
+            for(let c=0; c<outBuf.numberOfChannels; c++) {
+                const chan = outBuf.getChannelData(c);
+                let offset = 0;
+                
+                operations.forEach(op => {
+                    if (op.mix && op.ids.length > 1) {
+                        const srcA = state.chunks[op.ids[0]].buffer.getChannelData(c);
+                        const srcB = state.chunks[op.ids[1]].buffer.getChannelData(c);
+                        for(let k=0; k<srcA.length; k++) {
+                            chan[offset + k] = (srcA[k] + srcB[k]) * 0.5;
+                        }
+                    } else {
+                        const src = state.chunks[op.ids[0]].buffer.getChannelData(c);
+                        chan.set(src, offset);
+                    }
+                    offset += chunkLen;
+                });
+                state.chunks.forEach(chunk => {
+                    chan.set(chunk.buffer.getChannelData(c), offset);
+                    offset += chunk.buffer.length;
+                });
+            }
+
+            state.sortDuration = currentTime;
+            state.generatedBuffer = outBuf;
+            state.totalDuration = outBuf.duration;
+
+            els.modalText.textContent = `Encoding WAV...`;
+            els.modalBar.style.width = '80%';
+            await new Promise(r => setTimeout(r, 100));
+
+            const wavBlob = bufferToWave(outBuf, outBuf.length);
+            if(state.blobUrl) URL.revokeObjectURL(state.blobUrl);
+            state.blobUrl = URL.createObjectURL(wavBlob);
+            
+            els.modal.classList.add('hidden');
+            els.overlayMain.textContent = "BUILT";
+            els.overlaySub1.textContent = `${(state.totalDuration).toFixed(2)}s`;
+            
+            playAudio();
+        });
+
+        function bufferToWave(abuffer, len) {
+            let numOfChan = abuffer.numberOfChannels,
+                length = len * numOfChan * 2 + 44,
+                buffer = new ArrayBuffer(length),
+                view = new DataView(buffer),
+                channels = [], i, sample, offset = 0, pos = 0;
+
+            setUint32(0x46464952); 
+            setUint32(length - 8); 
+            setUint32(0x45564157); 
+            setUint32(0x20746d66); 
+            setUint32(16); 
+            setUint16(1); 
+            setUint16(numOfChan);
+            setUint32(abuffer.sampleRate);
+            setUint32(abuffer.sampleRate * 2 * numOfChan); 
+            setUint16(numOfChan * 2); 
+            setUint16(16); 
+            setUint32(0x61746164); 
+            setUint32(length - pos - 4); 
+
+            for(i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i));
+
+            while(pos < len) {
+                for(i = 0; i < numOfChan; i++) {
+                    sample = Math.max(-1, Math.min(1, channels[i][pos]));
+                    sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767)|0;
+                    view.setInt16(offset, sample, true); 
+                    offset += 2;
+                }
+                pos++;
+            }
+            return new Blob([buffer], { type: "audio/wav" });
+            function setUint16(data) { view.setUint16(offset, data, true); offset += 2; }
+            function setUint32(data) { view.setUint32(offset, data, true); offset += 4; }
+        }
+
+        // --- Sorters with Direction Support ---
+        function* getSorter(type, arr, dir = 'forward') {
+            const len = arr.length;
+            const isFwd = dir === 'forward';
+
+            if(type === 'bubble') {
+                if (isFwd) {
+                    for(let i=0; i<len; i++) {
+                        for(let j=0; j<len-i-1; j++) {
+                            yield { type: 'compare', primaryId: arr[j+1], secondaryId: arr[j], indices: [j, j+1] };
+                            if(arr[j] > arr[j+1]) {
+                                [arr[j], arr[j+1]] = [arr[j+1], arr[j]];
+                                yield { type: 'swap', primaryId: arr[j], secondaryId: arr[j+1], indices: [j, j+1] };
+                            }
+                        }
+                    }
+                } else {
+                    // Backward: Bubble Smallest to Left
+                    for(let i=0; i<len; i++) {
+                        for(let j=len-1; j>i; j--) {
+                            yield { type: 'compare', primaryId: arr[j], secondaryId: arr[j-1], indices: [j, j-1] };
+                            if(arr[j] < arr[j-1]) {
+                                [arr[j], arr[j-1]] = [arr[j-1], arr[j]];
+                                yield { type: 'swap', primaryId: arr[j], secondaryId: arr[j-1], indices: [j, j-1] };
+                            }
+                        }
+                    }
+                }
+            } else if (type === 'selection') {
+                if (isFwd) {
+                    for(let i=0; i<len; i++) {
+                        let min = i;
+                        for(let j=i+1; j<len; j++) {
+                            yield { type: 'compare', primaryId: arr[j], secondaryId: arr[min], indices: [j, min] };
+                            if(arr[j] < arr[min]) min = j;
+                        }
+                        if(min !== i) {
+                            [arr[i], arr[min]] = [arr[min], arr[i]];
+                            yield { type: 'swap', primaryId: arr[i], secondaryId: arr[min], indices: [i, min] };
+                        }
+                    }
+                } else {
+                    // Backward: Select Max and put at Right
+                    for(let i=len-1; i>=0; i--) {
+                        let max = i;
+                        for(let j=i-1; j>=0; j--) {
+                            yield { type: 'compare', primaryId: arr[j], secondaryId: arr[max], indices: [j, max] };
+                            if(arr[j] > arr[max]) max = j;
+                        }
+                        if(max !== i) {
+                            [arr[i], arr[max]] = [arr[max], arr[i]];
+                            yield { type: 'swap', primaryId: arr[i], secondaryId: arr[max], indices: [i, max] };
+                        }
+                    }
+                }
+            } else if (type === 'insertion') {
+                if (isFwd) {
+                    for(let i=1; i<len; i++) {
+                        let key = arr[i];
+                        let j = i-1;
+                        yield { type: 'compare', primaryId: key, secondaryId: arr[j], indices: [i, j] };
+                        while(j >= 0 && arr[j] > key) {
+                            arr[j+1] = arr[j];
+                            yield { type: 'overwrite', primaryId: arr[j], secondaryId: null, indices: [j+1], value: arr[j] };
+                            j--;
+                        }
+                        arr[j+1] = key;
+                        yield { type: 'overwrite', primaryId: key, secondaryId: null, indices: [j+1], value: key };
+                    }
+                } else {
+                    // Backward: Insert into sorted partition on the Right
+                    for(let i=len-2; i>=0; i--) {
+                        let key = arr[i];
+                        let j = i+1;
+                        yield { type: 'compare', primaryId: key, secondaryId: arr[j], indices: [i, j] };
+                        while(j < len && arr[j] < key) {
+                            arr[j-1] = arr[j];
+                            yield { type: 'overwrite', primaryId: arr[j], secondaryId: null, indices: [j-1], value: arr[j] };
+                            j++;
+                        }
+                        arr[j-1] = key;
+                        yield { type: 'overwrite', primaryId: key, secondaryId: null, indices: [j-1], value: key };
+                    }
+                }
+            } else if (type === 'quick') {
+                let stack = [{l:0, r:len-1}];
+                while(stack.length) {
+                    const {l, r} = stack.pop();
+                    if(l >= r) continue;
+                    let pivot = arr[r];
+                    let i = l - 1;
+                    // Standard partition logic used for both, direction changes recursion order
+                    for(let j=l; j<r; j++) {
+                        yield { type: 'compare', primaryId: arr[j], secondaryId: pivot, indices: [j, r] };
+                        if(arr[j] < pivot) {
+                            i++;
+                            [arr[i], arr[j]] = [arr[j], arr[i]];
+                            yield { type: 'swap', primaryId: arr[i], secondaryId: arr[j], indices: [i, j] };
+                        }
+                    }
+                    [arr[i+1], arr[r]] = [arr[r], arr[i+1]];
+                    yield { type: 'swap', primaryId: arr[i+1], secondaryId: arr[r], indices: [i+1, r] };
+                    
+                    if (isFwd) {
+                        // Push right then left (so left pops first)
+                        stack.push({l: i+2, r: r});
+                        stack.push({l: l, r: i});
+                    } else {
+                        // Push left then right (so right pops first)
+                        stack.push({l: l, r: i});
+                        stack.push({l: i+2, r: r});
+                    }
+                }
+            } else if (type === 'merge') {
+                // Iterative Merge Sort
+                let curr_size;
+                for (curr_size = 1; curr_size <= len - 1; curr_size = 2 * curr_size) {
+                    // To "reverse" the scan, we iterate the blocks from right to left
+                    if (isFwd) {
+                        for (let left_start = 0; left_start < len - 1; left_start += 2 * curr_size) {
+                           yield* mergeBlock(left_start, curr_size);
+                        }
+                    } else {
+                        // Find the starting point that aligns with the block structure
+                        let start = 0;
+                        while(start + 2*curr_size < len) start += 2*curr_size;
+                        for (let left_start = start; left_start >= 0; left_start -= 2 * curr_size) {
+                           yield* mergeBlock(left_start, curr_size);
+                        }
+                    }
+                }
+                function* mergeBlock(left_start, curr_size) {
+                    let mid = Math.min(left_start + curr_size - 1, len - 1);
+                    let right_end = Math.min(left_start + 2 * curr_size - 1, len - 1);
+                    let n1 = mid - left_start + 1;
+                    let n2 = right_end - mid;
+                    let L = new Array(n1);
+                    let R = new Array(n2);
+                    for (let i = 0; i < n1; i++) L[i] = arr[left_start + i];
+                    for (let j = 0; j < n2; j++) R[j] = arr[mid + 1 + j];
+                    let i = 0, j = 0, k = left_start;
+                    while (i < n1 && j < n2) {
+                        yield { type: 'compare', primaryId: L[i], secondaryId: R[j], indices: [k] };
+                        if (L[i] <= R[j]) {
+                            arr[k] = L[i];
+                            yield { type: 'overwrite', primaryId: L[i], secondaryId: null, indices: [k], value: L[i] };
+                            i++;
+                        } else {
+                            arr[k] = R[j];
+                            yield { type: 'overwrite', primaryId: R[j], secondaryId: null, indices: [k], value: R[j] };
+                            j++;
+                        }
+                        k++;
+                    }
+                    while (i < n1) {
+                        arr[k] = L[i];
+                        yield { type: 'overwrite', primaryId: L[i], secondaryId: null, indices: [k], value: L[i] };
+                        i++; k++;
+                    }
+                    while (j < n2) {
+                        arr[k] = R[j];
+                        yield { type: 'overwrite', primaryId: R[j], secondaryId: null, indices: [k], value: R[j] };
+                        j++; k++;
+                    }
+                }
+            } else if (type === 'gnome') {
+                if (isFwd) {
+                    let pos = 0;
+                    while(pos < len) {
+                        if(pos === 0 || arr[pos] >= arr[pos-1]) {
+                            if(pos > 0) yield { type: 'compare', primaryId: arr[pos], secondaryId: arr[pos-1], indices: [pos, pos-1] };
+                            pos++;
+                        } else {
+                            yield { type: 'compare', primaryId: arr[pos], secondaryId: arr[pos-1], indices: [pos, pos-1] };
+                            [arr[pos], arr[pos-1]] = [arr[pos-1], arr[pos]];
+                            yield { type: 'swap', primaryId: arr[pos], secondaryId: arr[pos-1], indices: [pos, pos-1] };
+                            pos--;
+                        }
+                    }
+                } else {
+                    let pos = len - 1;
+                    while(pos >= 0) {
+                        if(pos === len - 1 || arr[pos] <= arr[pos+1]) {
+                            if(pos < len - 1) yield { type: 'compare', primaryId: arr[pos], secondaryId: arr[pos+1], indices: [pos, pos+1] };
+                            pos--;
+                        } else {
+                            yield { type: 'compare', primaryId: arr[pos], secondaryId: arr[pos+1], indices: [pos, pos+1] };
+                            [arr[pos], arr[pos+1]] = [arr[pos+1], arr[pos]];
+                            yield { type: 'swap', primaryId: arr[pos], secondaryId: arr[pos+1], indices: [pos, pos+1] };
+                            pos++;
+                        }
+                    }
+                }
+            } else if (type === 'comb') {
+                let gap = len;
+                let shrink = 1.3;
+                let sorted = false;
+                while(!sorted) {
+                    gap = Math.floor(gap / shrink);
+                    if(gap <= 1) { gap = 1; sorted = true; }
+                    
+                    if (isFwd) {
+                        for(let i=0; i + gap < len; i++) {
+                            yield { type: 'compare', primaryId: arr[i], secondaryId: arr[i+gap], indices: [i, i+gap] };
+                            if(arr[i] > arr[i+gap]) {
+                                [arr[i], arr[i+gap]] = [arr[i+gap], arr[i]];
+                                yield { type: 'swap', primaryId: arr[i], secondaryId: arr[i+gap], indices: [i, i+gap] };
+                                sorted = false;
+                            }
+                        }
+                    } else {
+                         for(let i=len - gap - 1; i >= 0; i--) {
+                            yield { type: 'compare', primaryId: arr[i], secondaryId: arr[i+gap], indices: [i, i+gap] };
+                            if(arr[i] > arr[i+gap]) {
+                                [arr[i], arr[i+gap]] = [arr[i+gap], arr[i]];
+                                yield { type: 'swap', primaryId: arr[i], secondaryId: arr[i+gap], indices: [i, i+gap] };
+                                sorted = false;
+                            }
+                        }
+                    }
+                }
+            } else if (type === 'radix') {
+                // Radix generally processes specifically for stability, reversing loop might break stability
+                // unless we change LSD to MSD (too complex here). 
+                // We will just invert the read loop for visualization effect.
+                let max = Math.max(...arr);
+                for (let exp = 1; Math.floor(max / exp) > 0; exp *= 10) {
+                    let output = new Array(len);
+                    let count = new Array(10).fill(0);
+                    
+                    if(isFwd) {
+                        for (let i = 0; i < len; i++) {
+                            let bucket = Math.floor(arr[i] / exp) % 10;
+                            count[bucket]++;
+                            yield { type: 'read', primaryId: arr[i], secondaryId: null, indices: [i] };
+                        }
+                    } else {
+                        for (let i = len-1; i >= 0; i--) {
+                            let bucket = Math.floor(arr[i] / exp) % 10;
+                            count[bucket]++;
+                            yield { type: 'read', primaryId: arr[i], secondaryId: null, indices: [i] };
+                        }
+                    }
+                    
+                    for (let i = 1; i < 10; i++) count[i] += count[i - 1];
+                    for (let i = len - 1; i >= 0; i--) {
+                        let bucket = Math.floor(arr[i] / exp) % 10;
+                        output[count[bucket] - 1] = arr[i];
+                        count[bucket]--;
+                        yield { type: 'read', primaryId: arr[i], secondaryId: null, indices: [i] };
+                    }
+                    for (let i = 0; i < len; i++) {
+                        arr[i] = output[i];
+                        yield { type: 'overwrite', primaryId: arr[i], secondaryId: null, indices: [i], value: arr[i] };
+                    }
+                }
+            } else if (type === 'heap') {
+                 // Heap scan direction isn't easily reversible in the same way, but we can change build direction
+                 const heapify = function*(n, i) {
+                    let largest = i;
+                    let l = 2 * i + 1;
+                    let r = 2 * i + 2;
+                    if (l < n) yield { type: 'compare', primaryId: arr[l], secondaryId: arr[largest], indices: [l, largest] };
+                    if (l < n && arr[l] > arr[largest]) largest = l;
+                    if (r < n) yield { type: 'compare', primaryId: arr[r], secondaryId: arr[largest], indices: [r, largest] };
+                    if (r < n && arr[r] > arr[largest]) largest = r;
+                    if (largest != i) {
+                        [arr[i], arr[largest]] = [arr[largest], arr[i]];
+                        yield { type: 'swap', primaryId: arr[i], secondaryId: arr[largest], indices: [i, largest] };
+                        yield* heapify(n, largest);
+                    }
+                };
+                // Build heap
+                for (let i = Math.floor(len / 2) - 1; i >= 0; i--) yield* heapify(len, i);
+                
+                // Extract
+                for (let i = len - 1; i > 0; i--) {
+                    [arr[0], arr[i]] = [arr[i], arr[0]];
+                    yield { type: 'swap', primaryId: arr[0], secondaryId: arr[i], indices: [0, i] };
+                    yield* heapify(i, 0);
+                }
+            }
+        }
+
+        function playAudio() {
+            if(!state.blobUrl) return;
+
+            if(state.audioElement) {
+                state.audioElement.pause();
+                state.audioElement = null;
+            }
+
+            const audio = new Audio(state.blobUrl);
+            audio.preservesPitch = true;
+            audio.playbackRate = state.config.speed;
+            
+            const source = state.ctx.createMediaElementSource(audio);
+            source.connect(state.masterGain);
+            
+            state.audioElement = audio;
+            audio.play();
+
+            state.startTime = state.ctx.currentTime;
+            state.isPlaying = true;
+            els.btnStop.disabled = false;
+            els.btnStop.classList.remove('opacity-0');
+            els.overlayMain.textContent = "PLAYING";
+            
+            let syncIndex = 0;
+            const workArray = [...state.currentOrder]; // Start from shuffled state
+            state.highlights = new Array(workArray.length).fill(null).map(() => ({ val: 0, type: '' }));
+            
+            function loop() {
+                if(!state.isPlaying) return;
+                
+                const bufferTime = state.audioElement.currentTime;
+                
+                const prog = Math.min(1, bufferTime / state.totalDuration);
+                els.bar.style.width = `${prog * 100}%`;
+                els.overlaySub2.textContent = `${bufferTime.toFixed(2)}s`;
+
+                for(let i=0; i<state.highlights.length; i++) {
+                    state.highlights[i].val *= 0.4;
+                    if(state.highlights[i].val < 0.01) state.highlights[i].val = 0;
+                }
+
+                while(syncIndex < state.syncMap.length) {
+                    const ev = state.syncMap[syncIndex];
+                    if(bufferTime >= ev.time) {
+                        if(ev.type === 'swap') {
+                            const [a, b] = ev.indices;
+                            [workArray[a], workArray[b]] = [workArray[b], workArray[a]];
+                            if(state.highlights[a]) state.highlights[a] = { val: 1.0, type: 'swap' };
+                            if(state.highlights[b]) state.highlights[b] = { val: 1.0, type: 'swap' };
+                        } else if (ev.type === 'overwrite') {
+                            const idx = ev.indices[0];
+                            workArray[idx] = ev.value;
+                            if(state.highlights[idx]) state.highlights[idx] = { val: 1.0, type: 'overwrite' };
+                        } else if (ev.type === 'compare' || ev.type === 'read') {
+                            ev.indices.forEach(idx => {
+                                if(state.highlights[idx]) state.highlights[idx] = { val: 1.0, type: 'read' };
+                            });
+                        }
+                        syncIndex++;
+                    } else break;
+                }
+                
+                if(bufferTime > state.sortDuration) els.overlayMain.textContent = "RESULT";
+                draw(workArray);
+
+                if(!state.audioElement.paused && !state.audioElement.ended) {
+                    state.animationId = requestAnimationFrame(loop);
+                } else {
+                    stopPlayback();
+                }
+            }
+            state.animationId = requestAnimationFrame(loop);
+        }
+
+        function stopPlayback() {
+            state.isPlaying = false;
+            cancelAnimationFrame(state.animationId);
+            if(state.audioElement) {
+                state.audioElement.pause();
+                state.audioElement.currentTime = 0;
+            }
+            els.btnStop.disabled = true;
+            els.btnStop.classList.add('opacity-0');
+            els.bar.style.width = '0%';
+            els.overlayMain.textContent = "STOPPED";
+        }
+
+        function draw(arr) {
+            const w = els.canvas.width, h = els.canvas.height;
+            const ctx = ctx2d;
+            ctx.fillStyle = '#000000'; ctx.fillRect(0,0,w,h);
+            ctx.strokeStyle = '#18181b'; ctx.beginPath(); ctx.moveTo(0, h/2); ctx.lineTo(w, h/2); ctx.stroke();
+            if(!arr.length) return;
+            const barW = w / arr.length;
+            
+            for(let i=0; i<arr.length; i++) {
+                const chunk = state.chunks[arr[i]];
+                if(!chunk) continue;
+                
+                const hue = (chunk.color * 360);
+                let fillColor = `hsla(${hue}, 80%, 50%, 0.8)`;
+                let glowColor = `hsla(${hue}, 80%, 50%, 0.1)`;
+                
+                if(state.highlights && state.highlights[i] && state.highlights[i].val > 0.01) {
+                    const hl = state.highlights[i];
+                    if(hl.type === 'swap') {
+                        fillColor = `rgba(255, 255, 255, ${hl.val})`;
+                        glowColor = `rgba(255, 255, 255, ${hl.val * 0.5})`;
+                    } else if (hl.type === 'overwrite') {
+                        fillColor = `rgba(239, 68, 68, ${hl.val})`; 
+                        glowColor = `rgba(239, 68, 68, ${hl.val * 0.5})`;
+                    } else if (hl.type === 'read') {
+                        fillColor = `hsla(${hue}, 80%, ${50 + (hl.val*50)}%, 1.0)`;
+                        glowColor = `rgba(14, 165, 233, ${hl.val * 0.3})`;
+                    }
+                }
+
+                ctx.fillStyle = fillColor;
+                const height = Math.max(2, chunk.rms * h * 1.8);
+                const x = i * barW; const y = (h - height) / 2;
+                ctx.fillRect(x, y, barW + 0.5, height);
+                ctx.fillStyle = glowColor;
+                ctx.fillRect(x, y + height, barW + 0.5, height * 0.5);
+            }
+        }
+        function resize() { els.canvas.width = els.canvas.parentElement.offsetWidth; els.canvas.height = els.canvas.parentElement.offsetHeight; if(state.currentOrder.length) draw(state.currentOrder); }
+        window.addEventListener('resize', resize);
+        function updateStatus(txt, col) { els.statusText.textContent = txt; els.statusDot.className = `w-1.5 h-1.5 rounded-full ${col}`; }
+        initUI(); resize();
+    </script>
+</body>
+</html>
