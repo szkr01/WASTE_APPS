@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Snake AI</title>
+    <meta name="description" content="Advanced Snake AI using BFS, Safety Simulation, and Flood Fill heuristics.">
+    <meta name="page:icon" content="fas fa-brain">
+    <meta name="page:color" content="#8b5cf6">
+
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            850: '#1a202c',
+                            900: '#111827',
+                            950: '#030712', // Darker background
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['"Fira Code"', 'Consolas', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom UI Tweaks */
+        body { font-family: 'Inter', sans-serif; }
+        canvas { image-rendering: pixelated; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #111827; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200 h-screen flex flex-col md:flex-row overflow-hidden">
+
+    <!-- Sidebar Control Panel -->
+    <aside class="w-full md:w-80 bg-gray-900 border-b md:border-b-0 md:border-r border-gray-800 flex flex-col shadow-2xl z-20 shrink-0">
+        <!-- Header -->
+        <div class="p-5 border-b border-gray-800 bg-gray-900">
+            <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent flex items-center gap-2">
+                <i class="fas fa-robot text-purple-400"></i> Smart Snake AI
+            </h1>
+            <p class="text-xs text-gray-500 mt-1">Heuristic Pathfinding Simulation</p>
+        </div>
+
+        <!-- Scrollable Settings -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6">
+            
+            <!-- Settings Group -->
+            <div class="space-y-5">
+                <!-- Instance Count -->
+                <div class="control-group">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-xs font-semibold uppercase text-gray-400 tracking-wider">Parallel Games</label>
+                        <span id="disp-instances" class="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded border border-purple-800">9</span>
+                    </div>
+                    <input type="range" id="inp-instances" min="1" max="25" value="9" class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500 hover:accent-purple-400 transition-colors">
+                </div>
+
+                <!-- Board Size -->
+                <div class="control-group">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-xs font-semibold uppercase text-gray-400 tracking-wider">Grid Size</label>
+                        <span id="disp-size" class="text-xs bg-blue-900/50 text-blue-300 px-2 py-1 rounded border border-blue-800">15x15</span>
+                    </div>
+                    <input type="range" id="inp-size" min="6" max="30" value="15" class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-colors">
+                </div>
+
+                <!-- Speed -->
+                <div class="control-group">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-xs font-semibold uppercase text-gray-400 tracking-wider">Simulation Speed</label>
+                        <span id="disp-speed" class="text-xs bg-green-900/50 text-green-300 px-2 py-1 rounded border border-green-800">40 FPS</span>
+                    </div>
+                    <input type="range" id="inp-speed" min="1" max="120" value="40" class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500 hover:accent-green-400 transition-colors">
+                </div>
+            </div>
+
+            <!-- Live Stats -->
+            <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 backdrop-blur-sm">
+                <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">Performance Metrics</h3>
+                <div class="grid grid-cols-2 gap-y-3">
+                    <div>
+                        <p class="text-xs text-gray-400">Living Agents</p>
+                        <p id="stat-alive" class="text-lg font-mono font-bold text-white">0</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-400">Avg Length</p>
+                        <p id="stat-avg" class="text-lg font-mono font-bold text-blue-400">0</p>
+                    </div>
+                    <div class="col-span-2 border-t border-gray-700/50 pt-2 mt-1">
+                        <p class="text-xs text-gray-400">Best Score</p>
+                        <p id="stat-best" class="text-xl font-mono font-bold text-yellow-400">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Algorithm Details -->
+            <div class="text-[10px] text-gray-500 space-y-1.5 bg-gray-900/50 p-3 rounded border border-gray-800/50">
+                <p class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span> <strong>Mode 1:</strong> Greedy BFS (Seek Food)</p>
+                <p class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-yellow-500"></span> <strong>Mode 2:</strong> Tail Chase (Safety Stall)</p>
+                <p class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-500"></span> <strong>Mode 3:</strong> Max Space (Flood Fill)</p>
+            </div>
+        </div>
+
+        <!-- Action Button -->
+        <div class="p-5 border-t border-gray-800 bg-gray-900">
+            <button id="btn-restart" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 text-sm uppercase tracking-wide">
+                <i class="fas fa-play mr-2"></i> Run Simulation
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Viewport -->
+    <main class="flex-1 bg-gray-950 p-4 md:p-6 overflow-y-auto custom-scrollbar relative">
+        <div id="grid-container" class="grid-layout pb-10">
+            <!-- Canvases injected here -->
+        </div>
+    </main>
+
+    <!-- LOGIC -->
+    <script>
+        /**
+         * GLOBAL CONFIG
+         */
+        const CONFIG = {
+            rows: 15,
+            cols: 15,
+            instances: 9,
+            fps: 40
+        };
+
+        const COLORS = {
+            bg: '#111827',
+            grid: '#1f2937',
+            snake: '#8b5cf6', // purple-500
+            snakeHead: '#c4b5fd', // purple-300
+            food: '#f472b6', // pink-400
+            wall: '#374151'
+        };
+
+        /**
+         * DATA STRUCTURES
+         */
+        class PriorityQueue {
+            constructor() { this.items = []; }
+            enqueue(element, priority) {
+                const node = { element, priority };
+                let added = false;
+                for (let i = 0; i < this.items.length; i++) {
+                    if (node.priority < this.items[i].priority) {
+                        this.items.splice(i, 0, node);
+                        added = true;
+                        break;
+                    }
+                }
+                if (!added) this.items.push(node);
+            }
+            dequeue() { return this.items.shift(); }
+            isEmpty() { return this.items.length === 0; }
+        }
+
+        /**
+         * AI LOGIC CORE
+         */
+        const AI = {
+            dirs: [
+                {x: 0, y: -1}, // Up
+                {x: 0, y: 1},  // Down
+                {x: -1, y: 0}, // Left
+                {x: 1, y: 0}   // Right
+            ],
+
+            // Main entry point
+            decideMove: function(game) {
+                const head = game.snake[0];
+                const food = game.food;
+
+                // 1. Try to find shortest path to Food
+                const pathToFood = this.bfs(game, head, food);
+
+                if (pathToFood.length > 0) {
+                    // Simulation Check: If we take this path, can we still reach our tail?
+                    // We simulate eating the food (growing) and then checking tail reachability.
+                    const virtualState = this.simulatePath(game, pathToFood);
+                    
+                    // Critical: After eating, the tail is effectively the NEW tail.
+                    // But in snake, if we eat, tail doesn't move. 
+                    const vHead = virtualState.snake[0];
+                    const vTail = virtualState.snake[virtualState.snake.length - 1];
+
+                    if (this.canReachTail(virtualState, vHead, vTail)) {
+                        game.status = 'searching';
+                        return pathToFood[0];
+                    }
+                }
+
+                // 2. If path to food is unsafe or blocked, follow tail (Stall)
+                // We want to make the longest move possible towards the tail/safe area to buy time
+                game.status = 'stalling';
+                return this.stall(game);
+            },
+
+            // Basic BFS for shortest path
+            bfs: function(game, start, target) {
+                const q = [{pos: start, path: []}];
+                const visited = new Set([`${start.x},${start.y}`]);
+                
+                // Helper to check if point is valid (not wall, not snake body)
+                // Note: For Food pathfinding, we treat the current tail as an obstacle unless we are chasing it specifically.
+                // However, technically if we don't eat, tail moves. BFS implies static obstacles.
+                // Standard approach: Treat all body parts as walls.
+                
+                while(q.length > 0) {
+                    const {pos, path} = q.shift();
+
+                    if(pos.x === target.x && pos.y === target.y) {
+                        return path;
+                    }
+
+                    for(let d of this.dirs) {
+                        const next = {x: pos.x + d.x, y: pos.y + d.y};
+                        const key = `${next.x},${next.y}`;
+
+                        if(this.isValid(game, next) && !visited.has(key)) {
+                            visited.add(key);
+                            q.push({pos: next, path: [...path, next]});
+                        }
+                    }
+                }
+                return [];
+            },
+
+            // Check if pos is inside bounds and not hitting snake body
+            // optional: 'ignoreTail' allows treating the tail as empty (since it moves away)
+            isValid: function(game, pos, ignoreTail = false) {
+                if (pos.x < 0 || pos.x >= CONFIG.cols || pos.y < 0 || pos.y >= CONFIG.rows) return false;
+                
+                // Collision check
+                for(let i = 0; i < game.snake.length; i++) {
+                    if (ignoreTail && i === game.snake.length - 1) continue; 
+                    if (game.snake[i].x === pos.x && game.snake[i].y === pos.y) return false;
+                }
+                return true;
+            },
+
+            // Simulate the game state after following a path (eating food implies growth)
+            simulatePath: function(game, path) {
+                // Creates a virtual game state
+                let vSnake = JSON.parse(JSON.stringify(game.snake));
+                let eaten = false;
+
+                // Apply full path movement
+                // Note: We only strictly need to know the state after eating.
+                // Path connects Head -> Food.
+                
+                // Simple simulation: Head jumps to Food position, Body follows.
+                // If path length is k, we process k moves.
+                
+                // Optimized simulation:
+                // If we reach food, the snake grows by 1. 
+                // The new head is at 'path[last]'.
+                // The body segments shift.
+                // Tail remains if grew.
+                
+                // Let's just simulate step by step to be safe
+                for (let move of path) {
+                    vSnake.unshift(move); // New Head
+                    // If this move is food, we grow (don't pop tail)
+                    // In this context, the last move of 'path' IS the food.
+                    // Intermediate moves are empty space.
+                    if (move.x === game.food.x && move.y === game.food.y) {
+                        eaten = true;
+                    } else {
+                        vSnake.pop();
+                    }
+                }
+                
+                return {
+                    snake: vSnake,
+                    food: eaten ? {x:-1, y:-1} : game.food // Food consumed
+                };
+            },
+
+            canReachTail: function(virtualGame, head, tail) {
+                // BFS from virtual head to virtual tail
+                // Here we allow the tail position to be a valid target
+                const q = [head];
+                const visited = new Set([`${head.x},${head.y}`]);
+                
+                // Build a quick lookup for body collision
+                const bodySet = new Set(virtualGame.snake.map(s => `${s.x},${s.y}`));
+
+                while(q.length > 0) {
+                    const curr = q.shift();
+                    if(curr.x === tail.x && curr.y === tail.y) return true;
+
+                    for(let d of this.dirs) {
+                        const next = {x: curr.x + d.x, y: curr.y + d.y};
+                        const key = `${next.x},${next.y}`;
+
+                        if (next.x < 0 || next.x >= CONFIG.cols || next.y < 0 || next.y >= CONFIG.rows) continue;
+                        if (visited.has(key)) continue;
+
+                        // It is valid if it's NOT in bodySet OR it is the tail
+                        // (Because we want to reach the tail)
+                        if (!bodySet.has(key) || (next.x === tail.x && next.y === tail.y)) {
+                            visited.add(key);
+                            q.push(next);
+                        }
+                    }
+                }
+                return false;
+            },
+
+            // Strategy when food is unreachable: Survive
+            stall: function(game) {
+                const head = game.snake[0];
+                const tail = game.snake[game.snake.length - 1];
+
+                let bestMove = null;
+                let maxSpace = -1;
+                let maxDistToTail = -1;
+
+                // Evaluate all adjacent moves
+                for (let d of this.dirs) {
+                    const next = {x: head.x + d.x, y: head.y + d.y};
+                    
+                    // Basic validity (walls/body) - but treat tail as valid because it will move
+                    if (!this.isValid(game, next, true)) continue;
+
+                    // 1. Calculate Flood Fill space from this neighbor
+                    // This tells us if we are entering a dead end
+                    const space = this.floodFill(game, next);
+                    
+                    // 2. Calculate distance to tail (Longest Path heuristic)
+                    const dist = Math.abs(next.x - tail.x) + Math.abs(next.y - tail.y);
+
+                    // Decision Logic:
+                    // Priority 1: Must have space to survive
+                    // Priority 2: Further from tail is usually better to stretch out the snake (filling space)
+                    
+                    // If space is tiny, avoid it at all costs unless it's the only option
+                    if (space > maxSpace) {
+                        maxSpace = space;
+                        maxDistToTail = dist;
+                        bestMove = next;
+                    } else if (space === maxSpace) {
+                        // Tie-breaker: pick move that keeps us further from tail (stalling)
+                        // or pick move closer to tail (looping)?
+                        // Usually, to fill space, we want to maximize path length.
+                        // But to be safe, we just want to ensure we don't trap ourselves.
+                        if (dist > maxDistToTail) {
+                            maxDistToTail = dist;
+                            bestMove = next;
+                        }
+                    }
+                }
+
+                return bestMove;
+            },
+
+            floodFill: function(game, start) {
+                const q = [start];
+                const visited = new Set([`${start.x},${start.y}`]);
+                // Mark current snake body as obstacles
+                const obstacles = new Set(game.snake.map(s => `${s.x},${s.y}`));
+                // But the tail will move, so it's technically free space in the next frame.
+                // For safety, let's treat tail as obstacle in flood fill to be conservative,
+                // OR treat it as free. Conservative is better for survival.
+                // Let's remove tail from obstacles for FloodFill to see "future" space.
+                const tailKey = `${game.snake[game.snake.length-1].x},${game.snake[game.snake.length-1].y}`;
+                obstacles.delete(tailKey);
+
+                let count = 0;
+                const limit = CONFIG.rows * CONFIG.cols; // Optimization cap
+
+                while(q.length > 0) {
+                    const curr = q.shift();
+                    count++;
+                    if (count >= limit) break; // Full board reachable
+
+                    for(let d of this.dirs) {
+                        const next = {x: curr.x + d.x, y: curr.y + d.y};
+                        const key = `${next.x},${next.y}`;
+
+                        if (next.x >= 0 && next.x < CONFIG.cols && next.y >= 0 && next.y < CONFIG.rows) {
+                            if (!visited.has(key) && !obstacles.has(key)) {
+                                visited.add(key);
+                                q.push(next);
+                            }
+                        }
+                    }
+                }
+                return count;
+            }
+        };
+
+        /**
+         * GAME ENGINE
+         */
+        class SnakeGame {
+            constructor(id) {
+                this.canvas = document.getElementById(id);
+                this.ctx = this.canvas.getContext('2d');
+                this.id = id;
+                this.reset();
+            }
+
+            reset() {
+                this.snake = [
+                    {x: Math.floor(CONFIG.cols/2), y: Math.floor(CONFIG.rows/2)}
+                ];
+                // Initial snake length of 3
+                this.snake.push({x: this.snake[0].x, y: this.snake[0].y + 1});
+                this.snake.push({x: this.snake[0].x, y: this.snake[0].y + 2});
+
+                this.score = 0;
+                this.alive = true;
+                this.status = 'idle'; // searching, stalling
+                this.spawnFood();
+                this.draw();
+            }
+
+            spawnFood() {
+                let valid = false;
+                while (!valid) {
+                    this.food = {
+                        x: Math.floor(Math.random() * CONFIG.cols),
+                        y: Math.floor(Math.random() * CONFIG.rows)
+                    };
+                    valid = !this.snake.some(s => s.x === this.food.x && s.y === this.food.y);
+                }
+            }
+
+            update() {
+                if (!this.alive) return;
+
+                const move = AI.decideMove(this);
+
+                if (move) {
+                    // Move Head
+                    this.snake.unshift(move);
+
+                    // Check Food
+                    if (move.x === this.food.x && move.y === this.food.y) {
+                        this.score++;
+                        // Win check
+                        if (this.snake.length === CONFIG.rows * CONFIG.cols) {
+                            this.alive = false;
+                            this.status = 'win';
+                            return;
+                        }
+                        this.spawnFood();
+                    } else {
+                        // Remove Tail
+                        this.snake.pop();
+                    }
+                } else {
+                    // No valid moves = Death
+                    this.alive = false;
+                    this.status = 'dead';
+                }
+            }
+
+            draw() {
+                const ctx = this.ctx;
+                const w = this.canvas.width;
+                const h = this.canvas.height;
+                const cs = w / CONFIG.cols; // cell size
+
+                // BG
+                ctx.fillStyle = COLORS.bg;
+                ctx.fillRect(0, 0, w, h);
+
+                // Grid (subtle)
+                // ctx.strokeStyle = COLORS.grid;
+                // ctx.lineWidth = 0.5;
+                // ctx.beginPath();
+                // for(let i=0; i<=CONFIG.cols; i++) { ctx.moveTo(i*cs, 0); ctx.lineTo(i*cs, h); }
+                // for(let i=0; i<=CONFIG.rows; i++) { ctx.moveTo(0, i*cs); ctx.lineTo(w, i*cs); }
+                // ctx.stroke();
+
+                // Snake
+                this.snake.forEach((s, i) => {
+                    ctx.fillStyle = i === 0 ? COLORS.snakeHead : COLORS.snake;
+                    // Make snake segments slightly smaller for visual appeal
+                    const pad = 1;
+                    ctx.fillRect(s.x*cs + pad, s.y*cs + pad, cs - pad*2, cs - pad*2);
+                });
+
+                // Food
+                ctx.fillStyle = COLORS.food;
+                ctx.beginPath();
+                const cx = this.food.x * cs + cs/2;
+                const cy = this.food.y * cs + cs/2;
+                ctx.arc(cx, cy, cs/3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Status Indicator
+                ctx.font = 'bold 10px monospace';
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = 'white';
+                
+                // Score
+                ctx.fillText(this.score, 4, 4);
+
+                // State Dot
+                if (!this.alive) {
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.4)'; // Red overlay
+                    ctx.fillRect(0,0,w,h);
+                }
+            }
+        }
+
+        /**
+         * APP CONTROLLER
+         */
+        let games = [];
+        let timer = null;
+        let lastTime = 0;
+
+        // UI Refs
+        const ui = {
+            instances: document.getElementById('inp-instances'),
+            size: document.getElementById('inp-size'),
+            speed: document.getElementById('inp-speed'),
+            dispInst: document.getElementById('disp-instances'),
+            dispSize: document.getElementById('disp-size'),
+            dispSpeed: document.getElementById('disp-speed'),
+            container: document.getElementById('grid-container'),
+            btnRestart: document.getElementById('btn-restart'),
+            statAlive: document.getElementById('stat-alive'),
+            statAvg: document.getElementById('stat-avg'),
+            statBest: document.getElementById('stat-best'),
+        };
+
+        function updateLabels() {
+            ui.dispInst.innerText = ui.instances.value;
+            ui.dispSize.innerText = `${ui.size.value}x${ui.size.value}`;
+            ui.dispSpeed.innerText = `${ui.speed.value} FPS`;
+        }
+
+        [ui.instances, ui.size, ui.speed].forEach(el => el.addEventListener('input', updateLabels));
+
+        function initGames() {
+            // Update Config
+            CONFIG.instances = parseInt(ui.instances.value);
+            CONFIG.rows = parseInt(ui.size.value);
+            CONFIG.cols = parseInt(ui.size.value);
+            CONFIG.fps = parseInt(ui.speed.value);
+
+            // Clear
+            ui.container.innerHTML = '';
+            games = [];
+
+            // Build
+            for(let i=0; i<CONFIG.instances; i++) {
+                const div = document.createElement('div');
+                div.className = 'relative group'; // container for potential overlays
+
+                const cvs = document.createElement('canvas');
+                cvs.id = `g-${i}`;
+                cvs.width = 300;
+                cvs.height = 300;
+                cvs.className = 'w-full h-auto bg-gray-900 rounded-lg shadow-lg border border-gray-800';
+                
+                div.appendChild(cvs);
+                ui.container.appendChild(div);
+                games.push(new SnakeGame(cvs.id));
+            }
+
+            if(timer) cancelAnimationFrame(timer);
+            lastTime = performance.now();
+            requestAnimationFrame(loop);
+        }
+
+        function loop(timestamp) {
+            timer = requestAnimationFrame(loop);
+
+            const interval = 1000 / CONFIG.fps;
+            const delta = timestamp - lastTime;
+
+            if (delta > interval) {
+                lastTime = timestamp - (delta % interval);
+
+                let totalScore = 0;
+                let aliveCount = 0;
+                let maxScore = 0;
+
+                games.forEach(g => {
+                    g.update();
+                    g.draw();
+                    if(g.alive) aliveCount++;
+                    totalScore += g.score;
+                    if(g.score > maxScore) maxScore = g.score;
+                });
+
+                // Stats
+                ui.statAlive.innerText = aliveCount;
+                ui.statAvg.innerText = games.length ? (totalScore / games.length).toFixed(1) : 0;
+                ui.statBest.innerText = maxScore;
+                
+                // Allow dynamic speed adjustment
+                CONFIG.fps = parseInt(ui.speed.value);
+            }
+        }
+
+        ui.btnRestart.addEventListener('click', initGames);
+
+        // Start
+        updateLabels();
+        initGames();
+
+    </script>
+</body>
+</html>

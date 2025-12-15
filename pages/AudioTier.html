@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>SonicRank: Audio Tier List</title>
+    <meta name="description" content="Create audio-based tier lists with real-time waveform visualization. Upload audio files and rank them.">
+    <meta name="page:icon" content="fas fa-wave-square">
+    <meta name="page:color" content="#0a0a0a">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #050505;
+            color: #e5e5e5;
+            overflow: hidden; /* Prevent global scroll */
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #171717; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #404040; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #525252; 
+        }
+
+        /* Tier Gradients */
+        .tier-label-s { background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
+        .tier-label-a { background: linear-gradient(135deg, #f97316, #c2410c); box-shadow: 0 0 15px rgba(249, 115, 22, 0.3); }
+        .tier-label-b { background: linear-gradient(135deg, #eab308, #a16207); box-shadow: 0 0 15px rgba(234, 179, 8, 0.3); }
+        .tier-label-c { background: linear-gradient(135deg, #22c55e, #15803d); box-shadow: 0 0 15px rgba(34, 197, 94, 0.3); }
+        .tier-label-d { background: linear-gradient(135deg, #3b82f6, #1d4ed8); box-shadow: 0 0 15px rgba(59, 130, 246, 0.3); }
+
+        /* Audio Item Styling */
+        .audio-item {
+            width: 100px;
+            height: 100px;
+            background: #171717;
+            border: 1px solid #333;
+            border-radius: 8px;
+            position: relative;
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .audio-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            border-color: #555;
+        }
+
+        .audio-item:active {
+            cursor: grabbing;
+        }
+
+        .audio-item.playing {
+            border-color: #38bdf8;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5) inset;
+        }
+
+        .audio-filename {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            color: #a3a3a3;
+            position: absolute;
+            bottom: 4px;
+            left: 4px;
+            right: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+            pointer-events: none;
+            z-index: 10;
+            background: rgba(0,0,0,0.6);
+            border-radius: 4px;
+            padding: 2px 4px;
+        }
+
+        canvas.waveform-canvas {
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* Drag Operations */
+        .drop-zone {
+            min-height: 110px;
+            transition: background-color 0.2s;
+        }
+        .drop-zone.drag-over {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="h-16 border-b border-neutral-800 bg-neutral-900 flex items-center justify-between px-6 shrink-0 z-20">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-wave-square text-sky-400 text-2xl"></i>
+            <h1 class="text-xl font-bold tracking-tight text-white">Sonic<span class="text-sky-400">Rank</span></h1>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <label for="audio-upload" class="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-white text-sm px-4 py-2 rounded transition cursor-pointer border border-neutral-700">
+                <i class="fas fa-plus"></i>
+                <span>音声ファイルを追加</span>
+                <input type="file" id="audio-upload" accept="audio/*" multiple class="hidden">
+            </label>
+            <button onclick="screenshotMode()" class="text-neutral-400 hover:text-white transition" title="Clean View for Screenshot">
+                <i class="fas fa-camera"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col overflow-hidden relative">
+        
+        <!-- Tier List Container -->
+        <div id="tier-container" class="flex-1 overflow-y-auto p-6 space-y-2 pb-40">
+            <!-- S Tier -->
+            <div class="flex min-h-[120px] bg-neutral-900/50 border border-neutral-800 rounded-lg overflow-hidden group">
+                <div class="w-24 md:w-32 bg-neutral-800 flex flex-col items-center justify-center shrink-0 tier-label-s">
+                    <span class="text-4xl font-black text-white drop-shadow-md">S</span>
+                </div>
+                <div class="flex-1 p-2 flex flex-wrap gap-2 drop-zone bg-neutral-900/30" data-tier="s"></div>
+            </div>
+
+            <!-- A Tier -->
+            <div class="flex min-h-[120px] bg-neutral-900/50 border border-neutral-800 rounded-lg overflow-hidden group">
+                <div class="w-24 md:w-32 bg-neutral-800 flex flex-col items-center justify-center shrink-0 tier-label-a">
+                    <span class="text-4xl font-black text-white drop-shadow-md">A</span>
+                </div>
+                <div class="flex-1 p-2 flex flex-wrap gap-2 drop-zone bg-neutral-900/30" data-tier="a"></div>
+            </div>
+
+            <!-- B Tier -->
+            <div class="flex min-h-[120px] bg-neutral-900/50 border border-neutral-800 rounded-lg overflow-hidden group">
+                <div class="w-24 md:w-32 bg-neutral-800 flex flex-col items-center justify-center shrink-0 tier-label-b">
+                    <span class="text-4xl font-black text-white drop-shadow-md">B</span>
+                </div>
+                <div class="flex-1 p-2 flex flex-wrap gap-2 drop-zone bg-neutral-900/30" data-tier="b"></div>
+            </div>
+
+            <!-- C Tier -->
+            <div class="flex min-h-[120px] bg-neutral-900/50 border border-neutral-800 rounded-lg overflow-hidden group">
+                <div class="w-24 md:w-32 bg-neutral-800 flex flex-col items-center justify-center shrink-0 tier-label-c">
+                    <span class="text-4xl font-black text-white drop-shadow-md">C</span>
+                </div>
+                <div class="flex-1 p-2 flex flex-wrap gap-2 drop-zone bg-neutral-900/30" data-tier="c"></div>
+            </div>
+
+            <!-- D Tier -->
+            <div class="flex min-h-[120px] bg-neutral-900/50 border border-neutral-800 rounded-lg overflow-hidden group">
+                <div class="w-24 md:w-32 bg-neutral-800 flex flex-col items-center justify-center shrink-0 tier-label-d">
+                    <span class="text-4xl font-black text-white drop-shadow-md">D</span>
+                </div>
+                <div class="flex-1 p-2 flex flex-wrap gap-2 drop-zone bg-neutral-900/30" data-tier="d"></div>
+            </div>
+        </div>
+
+        <!-- The "Bank" (Unranked Items) -->
+        <div class="h-48 shrink-0 bg-[#0f0f0f] border-t border-neutral-800 flex flex-col z-10 shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
+            <div class="px-4 py-2 bg-neutral-900 border-b border-neutral-800 flex justify-between items-center text-xs uppercase tracking-wider text-neutral-500 font-bold">
+                <span>Unranked Pool</span>
+                <span id="pool-count">0 Items</span>
+            </div>
+            <div id="bank-zone" class="flex-1 p-4 overflow-x-auto overflow-y-hidden whitespace-nowrap drop-zone flex items-center gap-3">
+                <!-- Items appear here -->
+                <div id="empty-state" class="w-full text-center text-neutral-600 pointer-events-none select-none">
+                    <i class="fas fa-music mb-2 text-2xl opacity-50"></i>
+                    <p>音声ファイルをアップロードしてください</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Hidden Audio Element for Playback -->
+    <audio id="global-player"></audio>
+
+    <script>
+        // --- State Management ---
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let draggedItem = null;
+        let currentPlayingItem = null;
+        let currentSource = null; // For WebAudio API playback
+        let audioBuffers = new Map(); // Store decoded buffers: id -> AudioBuffer
+
+        // --- DOM Elements ---
+        const uploadInput = document.getElementById('audio-upload');
+        const bankZone = document.getElementById('bank-zone');
+        const dropZones = document.querySelectorAll('.drop-zone');
+        const poolCount = document.getElementById('pool-count');
+        const emptyState = document.getElementById('empty-state');
+
+        // --- Drag & Drop Logic ---
+        
+        dropZones.forEach(zone => {
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('drag-over');
+            });
+
+            zone.addEventListener('dragleave', () => {
+                zone.classList.remove('drag-over');
+            });
+
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                if (draggedItem) {
+                    zone.appendChild(draggedItem);
+                    updatePoolCount();
+                    checkEmptyState();
+                }
+            });
+        });
+
+        function makeDraggable(element) {
+            element.addEventListener('dragstart', (e) => {
+                draggedItem = element;
+                e.dataTransfer.effectAllowed = 'move';
+                // Slight transparency when dragging
+                setTimeout(() => element.classList.add('opacity-50'), 0);
+            });
+
+            element.addEventListener('dragend', () => {
+                draggedItem = null;
+                element.classList.remove('opacity-50');
+            });
+        }
+
+        // --- Audio Processing ---
+
+        uploadInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            // Remove empty state if it exists
+            if (emptyState) emptyState.style.display = 'none';
+
+            for (const file of files) {
+                await createAudioItem(file);
+            }
+            updatePoolCount();
+            uploadInput.value = ''; // Reset input
+        });
+
+        async function createAudioItem(file) {
+            const id = 'audio-' + Math.random().toString(36).substr(2, 9);
+            
+            // UI Container
+            const item = document.createElement('div');
+            item.className = 'audio-item';
+            item.draggable = true;
+            item.id = id;
+            item.title = file.name;
+
+            // Loader
+            const loader = document.createElement('div');
+            loader.className = 'loader';
+            item.appendChild(loader);
+
+            // Add to bank immediately so user sees something happening
+            bankZone.appendChild(item);
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                // Store buffer for playback
+                audioBuffers.set(id, audioBuffer);
+
+                // Remove loader
+                item.removeChild(loader);
+
+                // Canvas for Waveform
+                const canvas = document.createElement('canvas');
+                canvas.className = 'waveform-canvas';
+                canvas.width = 200; // Resolution for drawing
+                canvas.height = 200;
+                item.appendChild(canvas);
+
+                // Filename Label
+                const label = document.createElement('span');
+                label.className = 'audio-filename';
+                label.textContent = file.name;
+                item.appendChild(label);
+
+                // Play icon overlay (hidden by default or subtle)
+                const playIcon = document.createElement('i');
+                playIcon.className = 'fas fa-play text-white absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity duration-200 pointer-events-none drop-shadow-md text-2xl';
+                item.appendChild(playIcon);
+
+                // Draw Waveform
+                drawWaveform(canvas, audioBuffer);
+
+                // Event Listeners
+                makeDraggable(item);
+                
+                item.addEventListener('click', () => {
+                    togglePlayback(id, item, playIcon);
+                });
+
+                item.addEventListener('mouseenter', () => playIcon.classList.remove('opacity-0'));
+                item.addEventListener('mouseleave', () => {
+                    if (currentPlayingItem !== item) playIcon.classList.add('opacity-0');
+                });
+
+            } catch (error) {
+                console.error("Error decoding audio:", error);
+                item.remove();
+                alert(`Error loading ${file.name}: The format might not be supported.`);
+            }
+        }
+
+        function drawWaveform(canvas, audioBuffer) {
+            const ctx = canvas.getContext('2d');
+            const data = audioBuffer.getChannelData(0); // Use left channel
+            const step = Math.ceil(data.length / canvas.width);
+            const amp = canvas.height / 2;
+
+            ctx.fillStyle = '#171717'; // Match bg
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#38bdf8'; // Sky blue neon
+            ctx.beginPath();
+
+            for (let i = 0; i < canvas.width; i++) {
+                let min = 1.0;
+                let max = -1.0;
+                for (let j = 0; j < step; j++) {
+                    const datum = data[(i * step) + j];
+                    if (datum < min) min = datum;
+                    if (datum > max) max = datum;
+                }
+                
+                // Draw a vertical line for this segment
+                ctx.moveTo(i, (1 + min) * amp);
+                ctx.lineTo(i, (1 + max) * amp);
+            }
+            ctx.stroke();
+
+            // Add a gradient overlay to make it look nicer
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, "rgba(56, 189, 248, 0.8)");
+            gradient.addColorStop(0.5, "rgba(56, 189, 248, 0.2)");
+            gradient.addColorStop(1, "rgba(56, 189, 248, 0.8)");
+            
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // --- Playback Logic ---
+
+        function togglePlayback(id, itemElement, iconElement) {
+            // Stop current if playing
+            if (currentPlayingItem) {
+                const prevIcon = currentPlayingItem.querySelector('.fa-pause');
+                if (prevIcon) {
+                    prevIcon.classList.remove('fa-pause');
+                    prevIcon.classList.add('fa-play');
+                    prevIcon.classList.add('opacity-0');
+                }
+                currentPlayingItem.classList.remove('playing');
+                if (currentSource) {
+                    currentSource.stop();
+                    currentSource = null;
+                }
+
+                // If clicked the same item, just stop and return
+                if (currentPlayingItem === itemElement) {
+                    currentPlayingItem = null;
+                    return;
+                }
+            }
+
+            // Start new
+            const buffer = audioBuffers.get(id);
+            if (!buffer) return;
+
+            currentSource = audioContext.createBufferSource();
+            currentSource.buffer = buffer;
+            currentSource.connect(audioContext.destination);
+            
+            currentSource.start(0);
+            
+            currentPlayingItem = itemElement;
+            itemElement.classList.add('playing');
+            iconElement.classList.remove('fa-play');
+            iconElement.classList.add('fa-pause');
+            iconElement.classList.remove('opacity-0');
+
+            currentSource.onended = () => {
+                itemElement.classList.remove('playing');
+                iconElement.classList.remove('fa-pause');
+                iconElement.classList.add('fa-play');
+                iconElement.classList.add('opacity-0');
+                if (currentPlayingItem === itemElement) {
+                    currentPlayingItem = null;
+                }
+            };
+        }
+
+        // --- Helpers ---
+
+        function updatePoolCount() {
+            const count = bankZone.children.length - (emptyState.style.display === 'none' ? 0 : 1);
+            poolCount.textContent = `${count} Items`;
+        }
+
+        function checkEmptyState() {
+            const itemsInBank = bankZone.querySelectorAll('.audio-item');
+            if (itemsInBank.length === 0) {
+                emptyState.style.display = 'block';
+                bankZone.appendChild(emptyState);
+            } else {
+                emptyState.style.display = 'none';
+            }
+        }
+
+        function screenshotMode() {
+            // Simple toggle to hide controls for a clean screenshot
+            const header = document.querySelector('header');
+            const bank = document.querySelector('.h-48'); // Bottom bank
+            const tiers = document.getElementById('tier-container');
+
+            if (header.style.display === 'none') {
+                header.style.display = 'flex';
+                bank.style.display = 'flex';
+                tiers.style.paddingBottom = '10rem'; // restore padding
+                document.body.style.backgroundColor = '#050505';
+            } else {
+                header.style.display = 'none';
+                bank.style.display = 'none';
+                tiers.style.paddingBottom = '0';
+                // Adjust for full height view
+                tiers.style.height = '100vh';
+                // Provide a hint to exit
+                const hint = document.createElement('div');
+                hint.id = 'ss-hint';
+                hint.textContent = 'Click anywhere to exit Screenshot Mode';
+                hint.style.position = 'fixed';
+                hint.style.top = '10px';
+                hint.style.left = '50%';
+                hint.style.transform = 'translateX(-50%)';
+                hint.style.background = 'rgba(0,0,0,0.7)';
+                hint.style.color = 'white';
+                hint.style.padding = '8px 16px';
+                hint.style.borderRadius = '20px';
+                hint.style.zIndex = '9999';
+                hint.style.pointerEvents = 'none';
+                document.body.appendChild(hint);
+
+                document.body.onclick = () => {
+                    header.style.display = 'flex';
+                    bank.style.display = 'flex';
+                    tiers.style.height = 'auto';
+                    tiers.style.paddingBottom = '10rem';
+                    const h = document.getElementById('ss-hint');
+                    if(h) h.remove();
+                    document.body.onclick = null;
+                };
+            }
+        }
+
+        // Initialize state
+        checkEmptyState();
+
+        // Handle window resize for waveform redraw optimization? 
+        // Not strictly necessary for this fixed icon size implementation.
+    </script>
+</body>
+</html>

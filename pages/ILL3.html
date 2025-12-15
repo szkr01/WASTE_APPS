@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImageL3 Explorer</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Tailwind Config for Custom Colors/Fonts -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        glass: "rgba(20, 20, 25, 0.7)",
+                        glassBorder: "rgba(255, 255, 255, 0.1)",
+                        accent: "#3b82f6", // blue-500
+                    },
+                    backdropBlur: {
+                        xs: '2px',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+        body {
+            background-color: #050505;
+            color: #e5e5e5;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* App handles scrolling */
+        }
+
+        /* Scrollbar Customization */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(20, 20, 25, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .glass-header {
+            background: rgba(20, 20, 25, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* Directory Tree */
+        .dir-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        .dir-item.active {
+            background-color: rgba(59, 130, 246, 0.2);
+            color: #fff;
+            border-left: 2px solid #3b82f6;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Range Slider */
+        input[type=range] {
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #ffffff;
+            margin-top: -5px; 
+            cursor: pointer;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+        
+        /* Modal Animation */
+        .modal-enter { opacity: 0; transform: scale(0.98); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
+        .modal-exit { opacity: 1; transform: scale(1); }
+        .modal-exit-active { opacity: 0; transform: scale(0.98); transition: all 0.2s ease-in; }
+
+        /* Autocomplete dropdown */
+        .autocomplete-items {
+            position: absolute;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-bottom: none;
+            border-top: none;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: #1a1a1a;
+            max-height: 200px;
+            overflow-y: auto;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+        .autocomplete-item {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .autocomplete-item:hover {
+            background-color: #2a2a2a;
+        }
+    </style>
+</head>
+<body class="h-screen flex text-sm">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2"></div>
+
+    <!-- Sidebar -->
+    <aside class="w-80 flex-shrink-0 glass-panel flex flex-col h-full z-20">
+        <!-- Logo / Nav -->
+        <div class="p-6 border-b border-white/5">
+            <h1 class="text-xl font-bold tracking-tight flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-blue-500"></i>
+                ImageL3 <span class="text-xs font-normal text-gray-400">Explorer</span>
+            </h1>
+        </div>
+        
+        <!-- Main Nav -->
+        <nav class="p-4 space-y-1">
+            <button onclick="app.resetView()" class="w-full text-left px-4 py-2 rounded-md hover:bg-white/5 text-gray-300 hover:text-white transition-colors flex items-center gap-3">
+                <i class="fa-solid fa-images w-4 text-center"></i> Gallery
+            </button>
+            <button class="w-full text-left px-4 py-2 rounded-md hover:bg-white/5 text-gray-300 hover:text-white transition-colors flex items-center gap-3">
+                <i class="fa-solid fa-chart-pie w-4 text-center"></i> Clustering
+            </button>
+            <button class="w-full text-left px-4 py-2 rounded-md hover:bg-white/5 text-gray-300 hover:text-white transition-colors flex items-center gap-3">
+                <i class="fa-solid fa-sliders w-4 text-center"></i> Settings
+            </button>
+        </nav>
+
+        <!-- System Monitor -->
+        <div class="px-6 py-4 border-t border-b border-white/5">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase mb-3">System Monitor</h3>
+            <div class="space-y-3">
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-gray-400">GPU Usage</span>
+                        <span id="gpu-val" class="text-blue-400">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1">
+                        <div id="gpu-bar" class="bg-blue-600 h-1 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-gray-400">VRAM</span>
+                        <span id="vram-val" class="text-purple-400">0 GB</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1">
+                        <div id="vram-bar" class="bg-purple-600 h-1 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Directory Filter -->
+        <div class="flex-1 flex flex-col min-h-0">
+            <div class="px-6 py-3 bg-white/5 flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-400 uppercase">Directories</span>
+                <i class="fa-solid fa-folder-tree text-gray-600"></i>
+            </div>
+            <div id="directory-tree" class="flex-1 overflow-y-auto p-2 space-y-0.5">
+                <!-- Tree items injected by JS -->
+                <div class="text-center text-gray-500 py-4 text-xs">Loading directories...</div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col min-w-0 bg-black relative">
+        
+        <!-- Header: Search & Query Builder -->
+        <header class="glass-header z-10 flex flex-col">
+            <!-- Top Bar: Text Search & Controls -->
+            <div class="p-4 flex items-center gap-4">
+                <div class="relative flex-1 group">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fa-solid fa-search text-gray-500 group-focus-within:text-blue-400 transition-colors"></i>
+                    </div>
+                    <input type="text" id="search-input" 
+                        class="block w-full pl-10 pr-3 py-2.5 bg-gray-900/50 border border-white/10 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent focus:bg-gray-900 transition-all text-sm"
+                        placeholder="Search by prompt, tags, or text..." autocomplete="off">
+                    <div id="autocomplete-list" class="autocomplete-items hidden"></div>
+                </div>
+                
+                <div class="flex items-center gap-2 border-l border-white/10 pl-4">
+                    <button id="search-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20 flex items-center gap-2">
+                        <span>Search</span>
+                    </button>
+                    <button id="refresh-random-btn" class="bg-white/5 hover:bg-white/10 text-gray-300 px-3 py-2 rounded-lg transition-colors" title="Random Shuffle">
+                        <i class="fa-solid fa-shuffle"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Advanced Query Area (Collapsible or Always visible if items exist) -->
+            <div class="px-4 pb-4 border-t border-white/5 bg-black/20">
+                <div class="flex gap-4 pt-3">
+                    
+                    <!-- Drop Zone / Image Query List -->
+                    <div id="image-query-area" class="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-[100px] items-center">
+                        <!-- Dropzone Placeholder -->
+                        <div id="drop-zone" class="flex-shrink-0 w-24 h-24 border-2 border-dashed border-white/10 rounded-lg flex flex-col items-center justify-center text-gray-500 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all cursor-pointer">
+                            <i class="fa-solid fa-cloud-arrow-up mb-1"></i>
+                            <span class="text-[10px]">Drop Image</span>
+                        </div>
+                        <!-- Dynamic Image Cards will appear here -->
+                    </div>
+
+                    <!-- Sliders -->
+                    <div class="w-64 flex flex-col justify-center gap-3 border-l border-white/10 pl-4">
+                        <div>
+                            <div class="flex justify-between text-[10px] text-gray-400 mb-1">
+                                <span>Text vs Image (Alpha)</span>
+                                <span id="alpha-val">0.5</span>
+                            </div>
+                            <input type="range" id="alpha-slider" min="0" max="1" step="0.05" value="0.5" class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[10px] text-gray-400 mb-1">
+                                <span>Content vs Style (Beta)</span>
+                                <span id="beta-val">0.5</span>
+                            </div>
+                            <input type="range" id="beta-slider" min="0" max="1" step="0.05" value="0.5" class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Gallery Area -->
+        <div id="gallery-container" class="flex-1 overflow-y-auto p-4 relative">
+            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+                <!-- Gallery Items Injected Here -->
+            </div>
+            
+            <!-- Loading State -->
+            <div id="loading-indicator" class="absolute inset-0 flex items-center justify-center bg-black/50 z-20 hidden">
+                <div class="flex flex-col items-center gap-3">
+                    <div class="loader"></div>
+                    <span class="text-xs text-gray-300 tracking-wider">LOADING...</span>
+                </div>
+            </div>
+            
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden h-full flex flex-col items-center justify-center text-gray-500">
+                <i class="fa-regular fa-folder-open text-4xl mb-4 opacity-50"></i>
+                <p>No images found.</p>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <footer class="h-8 glass-panel border-t-0 border-r-0 flex items-center px-4 justify-between text-xs text-gray-500">
+            <span id="status-text">Ready</span>
+            <span id="result-count">0 items</span>
+        </footer>
+    </main>
+
+    <!-- Detailed Modal -->
+    <div id="detail-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/95 backdrop-blur-sm" onclick="app.closeModal()"></div>
+        
+        <div class="relative z-10 w-full h-full flex flex-col lg:flex-row overflow-hidden modal-content opacity-0 transition-opacity duration-300">
+            <!-- Close Button -->
+            <button onclick="app.closeModal()" class="absolute top-4 right-4 z-50 text-white/50 hover:text-white bg-black/50 hover:bg-black/80 rounded-full p-2 w-10 h-10 flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+
+            <!-- Image Area -->
+            <div class="flex-1 flex items-center justify-center bg-black/40 p-4 lg:p-8 h-1/2 lg:h-full relative group">
+                <img id="modal-img" src="" class="max-w-full max-h-full object-contain shadow-2xl drop-shadow-2xl" alt="Detail">
+                <!-- Image Actions Overlay -->
+                <div class="absolute bottom-10 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <button id="modal-search-btn" class="bg-black/70 hover:bg-blue-600 text-white px-4 py-2 rounded-full text-xs font-medium backdrop-blur-md border border-white/10 transition-colors">
+                        <i class="fa-solid fa-magnifying-glass mr-1"></i> Find Similar
+                    </button>
+                    <a id="modal-download-btn" href="#" download class="bg-black/70 hover:bg-green-600 text-white px-4 py-2 rounded-full text-xs font-medium backdrop-blur-md border border-white/10 transition-colors">
+                        <i class="fa-solid fa-download mr-1"></i> Download
+                    </a>
+                </div>
+            </div>
+
+            <!-- Info Panel -->
+            <div class="w-full lg:w-[400px] bg-gray-900/90 border-l border-white/10 flex flex-col h-1/2 lg:h-full backdrop-blur-md">
+                <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                    <h2 class="text-lg font-bold text-white mb-1 break-all" id="modal-filename">filename.png</h2>
+                    <p class="text-xs text-gray-500 mb-6 font-mono break-all" id="modal-path">/path/to/file</p>
+
+                    <!-- Analysis Section -->
+                    <div class="mb-6">
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Generation Info</h3>
+                        <div class="space-y-2 text-xs" id="modal-gen-info">
+                            <!-- Injected -->
+                        </div>
+                        <div class="mt-4 p-3 bg-black/30 rounded border border-white/5">
+                            <span class="text-[10px] text-gray-500 block mb-1">PROMPT</span>
+                            <p class="text-gray-300 text-xs leading-relaxed" id="modal-prompt">---</p>
+                        </div>
+                        <div class="mt-2 p-3 bg-black/30 rounded border border-white/5">
+                            <span class="text-[10px] text-red-400/70 block mb-1">NEGATIVE</span>
+                            <p class="text-gray-400 text-xs leading-relaxed" id="modal-neg-prompt">---</p>
+                        </div>
+                    </div>
+
+                    <!-- Tags Section -->
+                    <div>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Detected Tags</h3>
+                        <div class="flex flex-wrap gap-1.5" id="modal-tags">
+                            <!-- Tags injected here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- File Meta Footer -->
+                <div class="p-4 bg-black/20 border-t border-white/5 text-[10px] text-gray-500 flex justify-between">
+                    <span id="modal-res">1024x1024</span>
+                    <span id="modal-size">2.4 MB</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        /**
+         * API Client
+         */
+        const API_BASE = 'http://localhost:8001';
+
+        class ApiClient {
+            async get(endpoint) {
+                try {
+                    const res = await fetch(`${API_BASE}${endpoint}`);
+                    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+                    return await res.json();
+                } catch (e) {
+                    console.error(e);
+                    app.toast(e.message, 'error');
+                    return null;
+                }
+            }
+
+            async post(endpoint, body) {
+                try {
+                    const res = await fetch(`${API_BASE}${endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+                    return await res.json();
+                } catch (e) {
+                    console.error(e);
+                    app.toast(e.message, 'error');
+                    return null;
+                }
+            }
+        }
+
+        const api = new ApiClient();
+
+        /**
+         * Application State & Logic
+         */
+        const app = {
+            state: {
+                currentImages: [],
+                directoryTree: [],
+                searchConfig: {
+                    text: "",
+                    imageQueries: [], // {id, data, type, weight}
+                    paths: [],
+                    alpha: 0.5,
+                    beta: 0.5
+                },
+                tags: [],
+                isLoading: false,
+                currentModalId: null
+            },
+
+            async init() {
+                this.setupEventListeners();
+                this.loadSystemInfo();
+                this.loadDirectories();
+                this.loadTags();
+                this.searchRandom(); // Initial load
+            },
+
+            // --- Data Loading ---
+
+            async loadSystemInfo() {
+                const status = await api.get('/api/v1/system/status');
+                if(status) this.updateSystemMonitor(status);
+                // Poll every 5s
+                setInterval(async () => {
+                    const s = await api.get('/api/v1/system/status');
+                    if(s) this.updateSystemMonitor(s);
+                }, 5000);
+            },
+
+            updateSystemMonitor(status) {
+                const gpu = status.resources.gpu_usage_pct || 0;
+                const vram = status.resources.vram_usage_mb || 0;
+                // Assuming 24GB VRAM max for bar scale (just an estimate for UI)
+                const vramPct = Math.min((vram / 24576) * 100, 100);
+                
+                document.getElementById('gpu-val').textContent = `${gpu.toFixed(1)}%`;
+                document.getElementById('gpu-bar').style.width = `${gpu}%`;
+                
+                document.getElementById('vram-val').textContent = `${(vram/1024).toFixed(1)} GB`;
+                document.getElementById('vram-bar').style.width = `${vramPct}%`;
+            },
+
+            async loadDirectories() {
+                // API returns arbitrary object key-value, assuming nested structure for the tree
+                // Requirement says: "recursive children"
+                const dirs = await api.get('/api/v1/system/directories');
+                if (dirs) {
+                    const container = document.getElementById('directory-tree');
+                    container.innerHTML = '';
+                    this.renderDirectoryTree(dirs, container);
+                }
+            },
+
+            async loadTags() {
+                // 1. Get Models
+                const modelsRes = await api.get('/api/v1/system/models');
+                if(!modelsRes) return;
+                
+                // Find tagger
+                let taggerId = null;
+                // Assuming modelsRes is object { "model_id": { type: "..." } } or list based on docs "arbitrary key value"
+                // Let's assume values have type.
+                for (const [key, val] of Object.entries(modelsRes)) {
+                    if (val && (val.type === 'tagger' || key.includes('wd') || key.includes('tag'))) {
+                        taggerId = key;
+                        break;
+                    }
+                }
+
+                if (taggerId) {
+                    const tagsRes = await api.get(`/api/v1/system/models/${taggerId}/tags`);
+                    if (tagsRes && tagsRes.tags) {
+                        this.state.tags = tagsRes.tags;
+                    }
+                }
+            },
+
+            // --- Search Actions ---
+
+            async searchRandom() {
+                this.setLoading(true);
+                const res = await api.get('/api/v1/search/random?limit=50');
+                this.setLoading(false);
+                if (res) this.renderGallery(res.items, res.total);
+            },
+
+            async executeSearch() {
+                this.setLoading(true);
+                const { text, imageQueries, paths, alpha, beta } = this.state.searchConfig;
+
+                const vectorConfig = {
+                    enabled: (!!text || imageQueries.length > 0),
+                    text: text || null,
+                    images: imageQueries.map(q => ({
+                        type: q.type,
+                        data: q.data,
+                        weight: q.weight
+                    })),
+                    config: { alpha, beta }
+                };
+
+                const metaConfig = {
+                    enabled: true,
+                    paths: paths.length > 0 ? paths : null,
+                    include_deleted: false,
+                    status: "OK"
+                };
+
+                const payload = {
+                    vector: vectorConfig,
+                    meta: metaConfig,
+                    pagination: { limit: 50, sort_by: "score", sort_order: "desc" }
+                };
+
+                const res = await api.post('/api/v1/search/', payload);
+                this.setLoading(false);
+                if (res) this.renderGallery(res.items, res.total);
+            },
+
+            // --- Rendering ---
+
+            renderDirectoryTree(node, container, level = 0, parentPath = "") {
+                // Assuming node structure: { "FolderA": { "SubFolder": {}, "__files__": 10 }, ... }
+                // Need to adapt based on actual API response structure which is just described as "arbitrary key value".
+                // Let's assume keys are folder names and values are sub-objects.
+                
+                for (const [key, value] of Object.entries(node)) {
+                    if (key === '__files__' || typeof value !== 'object') continue;
+
+                    const fullPath = parentPath ? `${parentPath}/${key}` : key;
+                    
+                    const div = document.createElement('div');
+                    
+                    // Header
+                    const header = document.createElement('div');
+                    header.className = `dir-item flex items-center justify-between px-3 py-1.5 cursor-pointer rounded text-gray-400 hover:text-gray-200 transition-colors`;
+                    header.style.paddingLeft = `${level * 12 + 12}px`;
+                    
+                    // Icon & Name
+                    const left = document.createElement('div');
+                    left.className = 'flex items-center gap-2 overflow-hidden';
+                    const icon = document.createElement('i');
+                    icon.className = 'fa-solid fa-folder text-xs';
+                    const name = document.createElement('span');
+                    name.className = 'truncate text-xs';
+                    name.textContent = key;
+                    left.appendChild(icon);
+                    left.appendChild(name);
+
+                    header.appendChild(left);
+
+                    // Click to filter
+                    header.onclick = (e) => {
+                        e.stopPropagation();
+                        // Toggle active state visually
+                        document.querySelectorAll('.dir-item').forEach(el => el.classList.remove('active'));
+                        header.classList.add('active');
+                        
+                        this.state.searchConfig.paths = [fullPath];
+                        this.executeSearch();
+                    };
+
+                    div.appendChild(header);
+
+                    // Children container
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'hidden'; // Collapsed by default
+                    // Toggle expand
+                    const toggle = document.createElement('i');
+                    toggle.className = 'fa-solid fa-chevron-right text-[10px] text-gray-600 mr-2 cursor-pointer hover:text-white';
+                    toggle.onclick = (e) => {
+                        e.stopPropagation();
+                        const isHidden = childrenContainer.classList.contains('hidden');
+                        childrenContainer.classList.toggle('hidden');
+                        toggle.className = isHidden ? 
+                            'fa-solid fa-chevron-down text-[10px] text-gray-600 mr-2 cursor-pointer hover:text-white' : 
+                            'fa-solid fa-chevron-right text-[10px] text-gray-600 mr-2 cursor-pointer hover:text-white';
+                    };
+                    
+                    // Insert toggle before icon
+                    left.insertBefore(toggle, icon);
+
+                    if (Object.keys(value).length > 0) {
+                        this.renderDirectoryTree(value, childrenContainer, level + 1, fullPath);
+                        div.appendChild(childrenContainer);
+                    }
+                    
+                    container.appendChild(div);
+                }
+            },
+
+            renderGallery(items, total) {
+                const grid = document.getElementById('gallery-grid');
+                const empty = document.getElementById('empty-state');
+                const statusText = document.getElementById('status-text');
+                const resultCount = document.getElementById('result-count');
+
+                grid.innerHTML = '';
+                this.state.currentImages = items;
+                
+                statusText.textContent = this.state.searchConfig.paths.length > 0 
+                    ? `Filtering: ${this.state.searchConfig.paths[0]}` 
+                    : 'All Files';
+                resultCount.textContent = `${total} items found`;
+
+                if (!items || items.length === 0) {
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                empty.classList.add('hidden');
+
+                const fragment = document.createDocumentFragment();
+
+                items.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'group relative aspect-square bg-gray-800 rounded-lg overflow-hidden border border-white/5 hover:border-blue-500/50 transition-all cursor-pointer';
+                    card.draggable = true;
+
+                    // Image URL
+                    const imgUrl = `${API_BASE}/api/v1/files/${item.id}/content?size=512`;
+
+                    card.innerHTML = `
+                        <img src="${imgUrl}" loading="lazy" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="">
+                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors"></div>
+                        ${item.score ? `<div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-0.5 rounded-full border border-white/10">${item.score.toFixed(3)}</div>` : ''}
+                    `;
+
+                    // Events
+                    card.onclick = () => this.openModal(item.id);
+                    
+                    // Drag Start
+                    card.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData('application/json', JSON.stringify({
+                            id: item.id,
+                            type: 'id'
+                        }));
+                        e.dataTransfer.effectAllowed = 'copy';
+                        // Add visual feedback
+                        card.style.opacity = '0.5';
+                    });
+                    
+                    card.addEventListener('dragend', () => {
+                        card.style.opacity = '1';
+                    });
+
+                    // Hover Preview Logic (Medium Hover)
+                    let hoverTimer;
+                    card.addEventListener('mouseenter', () => {
+                        hoverTimer = setTimeout(() => {
+                            // Show preview popup (Simplified logic: creating a fixed div)
+                            this.showHoverPreview(item.id, card);
+                        }, 600);
+                    });
+                    card.addEventListener('mouseleave', () => {
+                        clearTimeout(hoverTimer);
+                        this.hideHoverPreview();
+                    });
+
+                    fragment.appendChild(card);
+                });
+
+                grid.appendChild(fragment);
+            },
+
+            // --- Preview ---
+            showHoverPreview(id, targetEl) {
+                // Implementation for hover preview
+                // For prototype, we'll skip complex positioning logic to keep code concise
+            },
+            hideHoverPreview() {
+                // Remove preview
+            },
+
+            // --- Modal ---
+
+            async openModal(id) {
+                this.state.currentModalId = id;
+                const modal = document.getElementById('detail-modal');
+                const content = modal.querySelector('.modal-content');
+                const img = document.getElementById('modal-img');
+                
+                // Reset
+                img.src = ''; 
+                document.getElementById('modal-tags').innerHTML = '<span class="text-gray-500 text-xs">Loading analysis...</span>';
+                document.getElementById('modal-gen-info').innerHTML = '';
+                
+                modal.classList.remove('hidden');
+                // Animation frame
+                requestAnimationFrame(() => {
+                    content.classList.remove('opacity-0', 'scale-95');
+                });
+
+                // Load Basic Info (from cache or API if needed, but we used lazy loading, so fetch details now)
+                const fileInfo = await api.get(`/api/v1/files/${id}/info`);
+                if(fileInfo) {
+                    document.getElementById('modal-filename').textContent = fileInfo.path.split(/[/\\]/).pop();
+                    document.getElementById('modal-path').textContent = fileInfo.path;
+                    document.getElementById('modal-res').textContent = `${fileInfo.width} x ${fileInfo.height}`;
+                    document.getElementById('modal-size').textContent = `${(fileInfo.size_bytes / 1024 / 1024).toFixed(2)} MB`;
+                }
+
+                // Load Content
+                img.src = `${API_BASE}/api/v1/files/${id}/content`; // Full size
+
+                // Load Analysis
+                const analysis = await api.get(`/api/v1/analysis/${id}`);
+                if(analysis) {
+                    this.renderAnalysis(analysis);
+                }
+
+                // Setup actions
+                document.getElementById('modal-search-btn').onclick = () => {
+                    this.addImageQuery({ type: 'id', data: id, weight: 1.0 });
+                    this.closeModal();
+                    this.executeSearch();
+                };
+                document.getElementById('modal-download-btn').href = `${API_BASE}/api/v1/files/${id}/content`;
+            },
+
+            renderAnalysis(data) {
+                // Tags
+                const tagsContainer = document.getElementById('modal-tags');
+                tagsContainer.innerHTML = '';
+                
+                if (data.inference && data.inference.tags) {
+                    data.inference.tags.sort((a,b) => b.confidence - a.confidence).forEach(tag => {
+                        const span = document.createElement('span');
+                        // Color based on confidence: Red(0) -> Green(120) in Hue
+                        const hue = Math.floor(tag.confidence * 120); 
+                        span.className = 'px-2 py-0.5 rounded text-[10px] font-medium border border-white/5 cursor-pointer hover:border-white/30 transition-colors';
+                        span.style.backgroundColor = `hsla(${hue}, 70%, 20%, 0.6)`;
+                        span.style.color = `hsla(${hue}, 80%, 90%, 1)`;
+                        span.textContent = `${tag.name} ${Math.floor(tag.confidence * 100)}%`;
+                        
+                        span.onclick = () => {
+                            // Add tag to search
+                            const current = document.getElementById('search-input').value;
+                            document.getElementById('search-input').value = current ? `${current}, ${tag.name}` : tag.name;
+                            this.state.searchConfig.text = document.getElementById('search-input').value;
+                            this.closeModal();
+                            this.executeSearch();
+                        };
+                        tagsContainer.appendChild(span);
+                    });
+                }
+
+                // Gen Info
+                const infoContainer = document.getElementById('modal-gen-info');
+                infoContainer.innerHTML = '';
+                
+                if (data.generation) {
+                    const g = data.generation;
+                    const fields = [
+                        { k: 'Model', v: g.base_model },
+                        { k: 'Sampler', v: g.sampler },
+                        { k: 'Steps', v: g.steps },
+                        { k: 'CFG', v: g.cfg_scale },
+                        { k: 'Seed', v: g.seed }
+                    ];
+                    
+                    fields.forEach(f => {
+                        if(f.v) {
+                            const row = document.createElement('div');
+                            row.className = 'flex justify-between border-b border-white/5 pb-1';
+                            row.innerHTML = `<span class="text-gray-500">${f.k}</span><span class="text-gray-300 font-mono">${f.v}</span>`;
+                            infoContainer.appendChild(row);
+                        }
+                    });
+
+                    document.getElementById('modal-prompt').textContent = g.positive_prompt || 'N/A';
+                    document.getElementById('modal-neg-prompt').textContent = g.negative_prompt || 'N/A';
+                }
+            },
+
+            closeModal() {
+                const modal = document.getElementById('detail-modal');
+                const content = modal.querySelector('.modal-content');
+                content.classList.add('opacity-0', 'scale-95');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    this.state.currentModalId = null;
+                }, 200);
+            },
+
+            // --- Image Query Builder ---
+
+            addImageQuery(queryItem) {
+                // queryItem: { type: 'id'|'base64', data: '...', weight: 1.0 }
+                // Avoid duplicates if ID
+                if (queryItem.type === 'id' && this.state.searchConfig.imageQueries.find(q => q.type === 'id' && q.data === queryItem.data)) {
+                    this.toast('Image already in query', 'info');
+                    return;
+                }
+
+                this.state.searchConfig.imageQueries.push(queryItem);
+                this.renderImageQueries();
+            },
+
+            removeImageQuery(index) {
+                this.state.searchConfig.imageQueries.splice(index, 1);
+                this.renderImageQueries();
+            },
+
+            renderImageQueries() {
+                const container = document.getElementById('image-query-area');
+                // clear all except dropzone (first child)
+                while (container.children.length > 1) {
+                    container.removeChild(container.lastChild);
+                }
+
+                this.state.searchConfig.imageQueries.forEach((q, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'flex-shrink-0 relative w-24 h-24 group';
+                    
+                    let src = '';
+                    if (q.type === 'id') src = `${API_BASE}/api/v1/files/${q.data}/content?size=256`;
+                    else src = q.data; // base64
+
+                    div.innerHTML = `
+                        <img src="${src}" class="w-full h-full object-cover rounded-lg border border-white/20">
+                        <button onclick="app.removeImageQuery(${idx})" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-md opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                        <div class="absolute bottom-0 left-0 right-0 px-2 py-1 bg-black/60 rounded-b-lg backdrop-blur-sm">
+                            <input type="range" min="0" max="2" step="0.1" value="${q.weight}" 
+                                class="w-full h-1 block"
+                                oninput="app.updateWeight(${idx}, this.value)">
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            },
+
+            updateWeight(idx, val) {
+                this.state.searchConfig.imageQueries[idx].weight = parseFloat(val);
+            },
+
+            // --- Autocomplete ---
+
+            handleAutocomplete(inputVal) {
+                const list = document.getElementById('autocomplete-list');
+                if (!inputVal || inputVal.length < 2) {
+                    list.classList.add('hidden');
+                    return;
+                }
+
+                // Get last word
+                const words = inputVal.split(/,\s*/);
+                const currentWord = words[words.length - 1].toLowerCase();
+
+                if (!currentWord) {
+                     list.classList.add('hidden');
+                     return;
+                }
+
+                const matches = this.state.tags
+                    .filter(t => t.toLowerCase().startsWith(currentWord))
+                    .slice(0, 10);
+
+                if (matches.length === 0) {
+                    list.classList.add('hidden');
+                    return;
+                }
+
+                list.innerHTML = '';
+                matches.forEach(tag => {
+                    const div = document.createElement('div');
+                    div.className = 'autocomplete-item text-xs text-gray-300';
+                    div.innerHTML = `<strong>${tag.substr(0, currentWord.length)}</strong>${tag.substr(currentWord.length)}`;
+                    div.onclick = () => {
+                        words[words.length - 1] = tag;
+                        document.getElementById('search-input').value = words.join(', ') + ', ';
+                        this.state.searchConfig.text = document.getElementById('search-input').value;
+                        list.classList.add('hidden');
+                        document.getElementById('search-input').focus();
+                    };
+                    list.appendChild(div);
+                });
+                list.classList.remove('hidden');
+            },
+
+            // --- Event Listeners ---
+
+            setupEventListeners() {
+                // Search Input
+                const searchInput = document.getElementById('search-input');
+                searchInput.addEventListener('input', (e) => {
+                    this.state.searchConfig.text = e.target.value;
+                    this.handleAutocomplete(e.target.value);
+                });
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        document.getElementById('autocomplete-list').classList.add('hidden');
+                        this.executeSearch();
+                    }
+                });
+
+                // Close autocomplete on click outside
+                document.addEventListener('click', (e) => {
+                    if (e.target !== searchInput) {
+                        document.getElementById('autocomplete-list').classList.add('hidden');
+                    }
+                });
+
+                // Search Btn
+                document.getElementById('search-btn').onclick = () => this.executeSearch();
+                
+                // Random Btn
+                document.getElementById('refresh-random-btn').onclick = () => this.searchRandom();
+
+                // Sliders
+                const alphaS = document.getElementById('alpha-slider');
+                const betaS = document.getElementById('beta-slider');
+                alphaS.oninput = (e) => {
+                    this.state.searchConfig.alpha = parseFloat(e.target.value);
+                    document.getElementById('alpha-val').textContent = e.target.value;
+                };
+                betaS.oninput = (e) => {
+                    this.state.searchConfig.beta = parseFloat(e.target.value);
+                    document.getElementById('beta-val').textContent = e.target.value;
+                };
+
+                // Drop Zone
+                const dropZone = document.getElementById('drop-zone');
+                const header = document.querySelector('header');
+
+                // Allow drop anywhere on header for ease of use, but specific logic for the zone
+                header.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('border-blue-500', 'bg-blue-500/10');
+                });
+                header.addEventListener('dragleave', (e) => {
+                    dropZone.classList.remove('border-blue-500', 'bg-blue-500/10');
+                });
+                header.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-blue-500', 'bg-blue-500/10');
+
+                    // 1. Internal D&D
+                    const jsonData = e.dataTransfer.getData('application/json');
+                    if (jsonData) {
+                        try {
+                            const data = JSON.parse(jsonData);
+                            if (data.id) {
+                                this.addImageQuery({ type: 'id', data: data.id, weight: 1.0 });
+                                return;
+                            }
+                        } catch(err) {} // Not JSON or invalid
+                    }
+
+                    // 2. External File D&D
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        const file = e.dataTransfer.files[0];
+                        if (file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onload = (evt) => {
+                                this.addImageQuery({ type: 'base64', data: evt.target.result, weight: 1.0 });
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    }
+                });
+            },
+
+            // --- Utilities ---
+
+            setLoading(bool) {
+                this.state.isLoading = bool;
+                const ind = document.getElementById('loading-indicator');
+                if(bool) ind.classList.remove('hidden');
+                else ind.classList.add('hidden');
+            },
+
+            resetView() {
+                this.state.searchConfig.paths = [];
+                this.state.searchConfig.text = "";
+                this.state.searchConfig.imageQueries = [];
+                document.getElementById('search-input').value = "";
+                this.renderImageQueries();
+                document.querySelectorAll('.dir-item').forEach(el => el.classList.remove('active'));
+                this.searchRandom();
+            },
+
+            toast(msg, type = 'info') {
+                const container = document.getElementById('toast-container');
+                const div = document.createElement('div');
+                div.className = `px-4 py-2 rounded shadow-lg text-white text-xs font-medium backdrop-blur-md border border-white/10 ${type === 'error' ? 'bg-red-500/80' : 'bg-blue-500/80'} transform transition-all duration-300 translate-x-full`;
+                div.textContent = msg;
+                container.appendChild(div);
+                
+                requestAnimationFrame(() => div.classList.remove('translate-x-full'));
+                
+                setTimeout(() => {
+                    div.classList.add('translate-x-full', 'opacity-0');
+                    setTimeout(() => container.removeChild(div), 300);
+                }, 3000);
+            }
+        };
+
+        // Initialize App
+        window.addEventListener('DOMContentLoaded', () => {
+            app.init();
+        });
+
+    </script>
+</body>
+</html>

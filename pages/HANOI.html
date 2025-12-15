@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speed Tower of Hanoi</title>
+    <meta name="description" content="A modern, high-speed Tower of Hanoi game with time attack mode. Supports mouse, keyboard controls, and sound effects.">
+    <meta name="page:icon" content="fas fa-layer-group">
+    <meta name="page:color" content="#38bdf8">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+        }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .disk {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            z-index: 10;
+        }
+        
+        .disk-selected {
+            transform: translateY(-20px) scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            z-index: 20;
+        }
+
+        .rod-container:hover .rod-base { background-color: #e2e8f0; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake-animation { animation: shake 0.3s ease-in-out; }
+
+        .modal-enter { opacity: 0; transform: scale(0.9); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 0.3s, transform 0.3s; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen w-screen flex flex-col overflow-hidden select-none">
+
+    <!-- Header Section -->
+    <header class="flex-none bg-white border-b border-slate-200 px-6 py-4 shadow-sm z-30">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <!-- Title & Logo -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-sky-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-sky-200">
+                    <i class="fas fa-layer-group text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-slate-900">Speed Hanoi</h1>
+                    <p class="text-xs text-slate-500 font-medium">Time Attack Puzzle</p>
+                </div>
+            </div>
+
+            <!-- Stats & Controls -->
+            <div class="flex items-center gap-6 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
+                <div class="text-center">
+                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Time</p>
+                    <p id="timer" class="text-2xl font-mono font-bold text-sky-600 tabular-nums leading-none">00:00.00</p>
+                </div>
+                <div class="w-px h-8 bg-slate-200"></div>
+                <div class="text-center">
+                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Moves</p>
+                    <p id="move-count" class="text-xl font-mono font-bold text-slate-700 leading-none">0</p>
+                </div>
+                <div class="w-px h-8 bg-slate-200"></div>
+                <div class="text-center">
+                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Best</p>
+                    <p id="best-time" class="text-sm font-mono font-semibold text-emerald-500 leading-none">--:--</p>
+                </div>
+            </div>
+
+            <!-- Game Settings -->
+            <div class="flex items-center gap-3">
+                <!-- Sound Toggle -->
+                <button id="sound-toggle" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 p-2.5 rounded-lg transition-all active:scale-95 shadow-sm w-11 flex justify-center items-center" title="Toggle Sound">
+                    <i class="fas fa-volume-high"></i>
+                </button>
+
+                <div class="relative group">
+                    <select id="disk-select" class="appearance-none bg-white border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5 pr-8 cursor-pointer font-medium hover:bg-slate-50 transition-colors shadow-sm">
+                        <option value="3">3 Disks (Easy)</option>
+                        <option value="4">4 Disks (Normal)</option>
+                        <option value="5">5 Disks (Hard)</option>
+                        <option value="6">6 Disks (Expert)</option>
+                        <option value="7">7 Disks (Master)</option>
+                        <option value="8">8 Disks (Insane)</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                        <i class="fas fa-chevron-down text-xs"></i>
+                    </div>
+                </div>
+                <button id="restart-btn" class="bg-slate-900 hover:bg-slate-700 text-white p-2.5 rounded-lg transition-all active:scale-95 shadow-lg shadow-slate-200" title="Restart Game (R)">
+                    <i class="fas fa-rotate-right"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Game Area -->
+    <main class="flex-grow relative flex items-center justify-center bg-slate-50 overflow-hidden">
+        
+        <!-- Game Board -->
+        <div class="w-full max-w-5xl px-4 h-full flex flex-col justify-center">
+            
+            <!-- Rods Container -->
+            <div class="relative w-full h-[60vh] bg-white rounded-3xl shadow-xl border border-slate-100 flex items-end justify-around pb-8 px-4 md:px-12 pt-12 select-none overflow-hidden ring-1 ring-slate-900/5">
+                
+                <!-- Background Decoration -->
+                <div class="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px]"></div>
+
+                <!-- Rod 1 -->
+                <div class="rod-container flex flex-col items-center justify-end w-1/3 h-full cursor-pointer relative group" onclick="handleRodClick(0)">
+                    <div class="absolute -top-8 text-slate-300 font-bold text-4xl group-hover:text-sky-400 transition-colors select-none">1</div>
+                    <div class="absolute inset-0 z-0"></div> 
+                    <div class="w-4 h-[80%] bg-slate-200 rounded-t-full relative z-0 group-hover:bg-slate-300 transition-colors"></div>
+                    <div id="rod-0" class="absolute bottom-0 w-full flex flex-col-reverse items-center mb-0 z-10 pb-[2px]"></div>
+                    <div class="w-32 h-2 bg-slate-300 rounded-full mt-0 opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-0"></div>
+                </div>
+
+                <!-- Rod 2 -->
+                <div class="rod-container flex flex-col items-center justify-end w-1/3 h-full cursor-pointer relative group" onclick="handleRodClick(1)">
+                    <div class="absolute -top-8 text-slate-300 font-bold text-4xl group-hover:text-sky-400 transition-colors select-none">2</div>
+                    <div class="absolute inset-0 z-0"></div>
+                    <div class="w-4 h-[80%] bg-slate-200 rounded-t-full relative z-0 group-hover:bg-slate-300 transition-colors"></div>
+                    <div id="rod-1" class="absolute bottom-0 w-full flex flex-col-reverse items-center mb-0 z-10 pb-[2px]"></div>
+                    <div class="w-32 h-2 bg-slate-300 rounded-full mt-0 opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-0"></div>
+                </div>
+
+                <!-- Rod 3 -->
+                <div class="rod-container flex flex-col items-center justify-end w-1/3 h-full cursor-pointer relative group" onclick="handleRodClick(2)">
+                    <div class="absolute -top-8 text-slate-300 font-bold text-4xl group-hover:text-sky-400 transition-colors select-none">3</div>
+                    <div class="absolute inset-0 z-0"></div>
+                    <div class="w-4 h-[80%] bg-slate-200 rounded-t-full relative z-0 group-hover:bg-slate-300 transition-colors"></div>
+                    <div id="rod-2" class="absolute bottom-0 w-full flex flex-col-reverse items-center mb-0 z-10 pb-[2px]"></div>
+                    <div class="w-32 h-2 bg-slate-300 rounded-full mt-0 opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-0"></div>
+                </div>
+                
+                <!-- Floor -->
+                <div class="absolute bottom-0 left-0 w-full h-8 bg-slate-100 border-t border-slate-200 rounded-b-3xl z-0"></div>
+            </div>
+
+            <!-- Controls Info -->
+            <div class="mt-6 flex flex-wrap justify-center items-center gap-4 text-sm text-slate-400">
+                <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm">
+                    <i class="fas fa-mouse pointer-events-none"></i>
+                    <span>Click Rods</span>
+                </div>
+                <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm">
+                    <span class="flex gap-1">
+                        <kbd class="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-600 font-sans">1</kbd>
+                        <kbd class="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-600 font-sans">2</kbd>
+                        <kbd class="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-600 font-sans">3</kbd>
+                    </span>
+                    <span>Select</span>
+                </div>
+                <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm">
+                    <span class="flex gap-1">
+                        <kbd class="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-600 font-sans">←</kbd>
+                        <kbd class="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-600 font-sans">↓</kbd>
+                        <kbd class="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-600 font-sans">→</kbd>
+                    </span>
+                    <span>Move</span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Victory Modal -->
+    <div id="victory-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center transform scale-90 transition-transform duration-300" id="victory-content">
+            <div class="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-500">
+                <i class="fas fa-trophy text-4xl"></i>
+            </div>
+            <h2 class="text-3xl font-extrabold text-slate-900 mb-2">Complete!</h2>
+            <p class="text-slate-500 mb-6">You solved the puzzle.</p>
+            
+            <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="bg-slate-50 p-4 rounded-xl">
+                    <p class="text-xs text-slate-400 uppercase font-bold">Time</p>
+                    <p id="modal-time" class="text-xl font-bold text-sky-600">00:00.00</p>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl">
+                    <p class="text-xs text-slate-400 uppercase font-bold">Moves</p>
+                    <p id="modal-moves" class="text-xl font-bold text-slate-700">0</p>
+                </div>
+            </div>
+
+            <button onclick="initGame()" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3.5 px-6 rounded-xl transition-all shadow-lg shadow-sky-200 active:scale-95">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        // --- Game Config & State ---
+        let diskCount = 4;
+        let rods = [[], [], []];
+        let selectedRod = null;
+        let moves = 0;
+        let isGameRunning = false;
+        let startTime = 0;
+        let timerInterval = null;
+        let gameFinished = false;
+
+        // --- Audio Context & Synth ---
+        let audioCtx = null;
+        let isMuted = false;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    audioCtx = new AudioContext();
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // Simple Synthesizer Functions
+        function playTone(freq, type, duration, volume = 0.1) {
+            if (isMuted || !audioCtx) return;
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playSelectSound() {
+            // High pitched 'pop'
+            playTone(600, 'sine', 0.1, 0.15);
+        }
+
+        function playMoveSound() {
+            // Mechanical 'thud/click'
+            playTone(200, 'triangle', 0.1, 0.2);
+            setTimeout(() => playTone(100, 'square', 0.05, 0.1), 20);
+        }
+
+        function playErrorSound() {
+            // Buzz/Bonk
+            if (isMuted || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+        }
+
+        function playWinSound() {
+            if (isMuted || !audioCtx) return;
+            // Arpeggio C Major
+            const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+            notes.forEach((freq, i) => {
+                setTimeout(() => {
+                    playTone(freq, 'sine', 0.4, 0.15);
+                }, i * 100);
+            });
+        }
+
+        // --- DOM Elements ---
+        const rodElements = [
+            document.getElementById('rod-0'),
+            document.getElementById('rod-1'),
+            document.getElementById('rod-2')
+        ];
+        const timerDisplay = document.getElementById('timer');
+        const moveDisplay = document.getElementById('move-count');
+        const diskSelect = document.getElementById('disk-select');
+        const restartBtn = document.getElementById('restart-btn');
+        const soundToggleBtn = document.getElementById('sound-toggle');
+        const bestTimeDisplay = document.getElementById('best-time');
+        const victoryModal = document.getElementById('victory-modal');
+        const victoryContent = document.getElementById('victory-content');
+        const modalTime = document.getElementById('modal-time');
+        const modalMoves = document.getElementById('modal-moves');
+
+        // --- Initialization ---
+        function initGame() {
+            // Read settings
+            diskCount = parseInt(diskSelect.value);
+            
+            // Reset state
+            rods = [[], [], []];
+            for (let i = diskCount; i >= 1; i--) {
+                rods[0].push(i);
+            }
+            selectedRod = null;
+            moves = 0;
+            isGameRunning = false;
+            gameFinished = false;
+            stopTimer();
+            timerDisplay.textContent = "00:00.00";
+            moveDisplay.textContent = "0";
+            
+            // Reset UI
+            hideVictoryModal();
+            updateBestTimeDisplay();
+            render();
+        }
+
+        function updateBestTimeDisplay() {
+            const key = `hanoi_best_${diskCount}`;
+            const best = localStorage.getItem(key);
+            if (best) {
+                bestTimeDisplay.textContent = formatTime(parseInt(best));
+            } else {
+                bestTimeDisplay.textContent = "--:--";
+            }
+        }
+
+        // --- Timer Logic ---
+        function startTimer() {
+            if (isGameRunning) return;
+            isGameRunning = true;
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                const now = Date.now();
+                const diff = now - startTime;
+                timerDisplay.textContent = formatTime(diff);
+            }, 30);
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        function formatTime(ms) {
+            const minutes = Math.floor(ms / 60000);
+            const seconds = Math.floor((ms % 60000) / 1000);
+            const centis = Math.floor((ms % 1000) / 10);
+            return `${pad(minutes)}:${pad(seconds)}.${pad(centis)}`;
+        }
+
+        function pad(num) {
+            return num.toString().padStart(2, '0');
+        }
+
+        // --- Core Logic ---
+        function handleRodClick(rodIndex) {
+            initAudio(); // Ensure audio context is ready on interaction
+
+            if (gameFinished) return;
+
+            if (!isGameRunning && !gameFinished) {
+                startTimer();
+            }
+
+            if (selectedRod === null) {
+                // Select Logic
+                if (rods[rodIndex].length > 0) {
+                    selectedRod = rodIndex;
+                    playSelectSound();
+                    render();
+                } else {
+                    shakeRod(rodIndex);
+                    playErrorSound();
+                }
+            } else {
+                // Move Logic
+                if (selectedRod === rodIndex) {
+                    // Deselect
+                    selectedRod = null;
+                    playSelectSound(); // Slight feedback for cancel
+                    render();
+                } else {
+                    attemptMove(selectedRod, rodIndex);
+                }
+            }
+        }
+
+        function attemptMove(from, to) {
+            const sourceDisk = rods[from][rods[from].length - 1];
+            const targetDisk = rods[to].length > 0 ? rods[to][rods[to].length - 1] : Infinity;
+
+            if (sourceDisk < targetDisk) {
+                // Valid Move
+                rods[to].push(rods[from].pop());
+                moves++;
+                moveDisplay.textContent = moves;
+                selectedRod = null;
+                playMoveSound();
+                render();
+                checkWin();
+            } else {
+                // Invalid Move
+                shakeRod(to);
+                playErrorSound();
+            }
+        }
+
+        function shakeRod(index) {
+            const rodEl = rodElements[index].parentElement;
+            rodEl.classList.remove('shake-animation');
+            void rodEl.offsetWidth;
+            rodEl.classList.add('shake-animation');
+        }
+
+        function checkWin() {
+            if (rods[1].length === diskCount || rods[2].length === diskCount) {
+                gameFinished = true;
+                stopTimer();
+                playWinSound();
+                
+                const finalTime = Date.now() - startTime;
+                const key = `hanoi_best_${diskCount}`;
+                const currentBest = localStorage.getItem(key);
+                if (!currentBest || finalTime < parseInt(currentBest)) {
+                    localStorage.setItem(key, finalTime);
+                }
+
+                showVictoryModal(finalTime);
+            }
+        }
+
+        // --- Rendering ---
+        const colors = [
+            'bg-rose-500', 'bg-orange-500', 'bg-amber-400', 'bg-emerald-500', 
+            'bg-sky-500', 'bg-indigo-500', 'bg-purple-500', 'bg-pink-500'
+        ];
+
+        function render() {
+            rodElements.forEach(el => el.innerHTML = '');
+
+            rods.forEach((stack, rodIndex) => {
+                stack.forEach((diskSize, stackIndex) => {
+                    const diskEl = document.createElement('div');
+                    const widthPercent = 25 + (diskSize / diskCount) * 65;
+                    
+                    diskEl.style.width = `${widthPercent}%`;
+                    diskEl.style.height = '28px';
+                    
+                    const colorClass = colors[(diskSize - 1) % colors.length];
+                    diskEl.className = `disk ${colorClass} rounded-lg shadow-sm border border-white/20`;
+
+                    if (selectedRod === rodIndex && stackIndex === stack.length - 1) {
+                        diskEl.classList.add('disk-selected');
+                        diskEl.innerHTML = '<div class="w-full h-full flex items-center justify-center opacity-50"><i class="fas fa-arrows-up-down text-white text-[10px]"></i></div>';
+                    }
+
+                    rodElements[rodIndex].appendChild(diskEl);
+                });
+            });
+        }
+
+        function showVictoryModal(timeMs) {
+            modalTime.textContent = formatTime(timeMs);
+            modalMoves.textContent = moves;
+            victoryModal.classList.remove('hidden');
+            setTimeout(() => {
+                victoryModal.classList.remove('opacity-0');
+                victoryContent.classList.remove('scale-90');
+                victoryContent.classList.add('scale-100');
+            }, 10);
+        }
+
+        function hideVictoryModal() {
+            victoryModal.classList.add('opacity-0');
+            victoryContent.classList.remove('scale-100');
+            victoryContent.classList.add('scale-90');
+            setTimeout(() => {
+                victoryModal.classList.add('hidden');
+            }, 300);
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('keydown', (e) => {
+            if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
+                e.preventDefault();
+            }
+            if (e.key.toLowerCase() === 'r') {
+                initGame();
+                return;
+            }
+            if (e.key === 'Escape') {
+                selectedRod = null;
+                render();
+                return;
+            }
+            
+            let targetRod = -1;
+            if (e.key === '1' || e.code === 'Numpad1' || e.key === 'ArrowLeft' || e.key.toLowerCase() === 'h') targetRod = 0;
+            if (e.key === '2' || e.code === 'Numpad2' || e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key.toLowerCase() === 'j' || e.key.toLowerCase() === 'k') targetRod = 1;
+            if (e.key === '3' || e.code === 'Numpad3' || e.key === 'ArrowRight' || e.key.toLowerCase() === 'l') targetRod = 2;
+
+            if (targetRod !== -1) {
+                handleRodClick(targetRod);
+            }
+        });
+
+        // Toggle Sound Icon
+        soundToggleBtn.addEventListener('click', () => {
+            initAudio(); // Initialize just in case
+            isMuted = !isMuted;
+            const icon = soundToggleBtn.querySelector('i');
+            if (isMuted) {
+                icon.className = 'fas fa-volume-xmark text-slate-400';
+            } else {
+                icon.className = 'fas fa-volume-high text-slate-600';
+                playSelectSound(); // Feedback
+            }
+        });
+
+        diskSelect.addEventListener('change', initGame);
+        restartBtn.addEventListener('click', initGame);
+
+        // Start
+        initGame();
+
+    </script>
+</body>
+</html>

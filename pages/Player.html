@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Modern Flow Player</title>
+    <meta name="description" content="A modern, background-capable local music player PWA for iOS. Upload and play your tracks seamlessly.">
+    <meta name="page:icon" content="fas fa-music">
+    <meta name="page:color" content="#38bdf8">
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="FlowPlayer">
+    <meta name="theme-color" content="#ffffff">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior: none;
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .song-item.active {
+            background-color: #f0f9ff;
+            border-left: 4px solid #38bdf8;
+        }
+        
+        .visualizer-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .disk-spin {
+            animation: spin 10s linear infinite;
+        }
+        
+        .disk-paused {
+            animation-play-state: paused;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .neumorphic-btn {
+            background: #ffffff;
+            box-shadow: 5px 5px 10px #e6e6e6, -5px -5px 10px #ffffff;
+            border: 1px solid #f3f4f6;
+        }
+        
+        .neumorphic-btn:active {
+            box-shadow: inset 5px 5px 10px #e6e6e6, inset -5px -5px 10px #ffffff;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen w-screen overflow-hidden flex flex-col select-none">
+
+    <header class="flex justify-between items-center px-6 pt-12 pb-4 bg-white shadow-sm z-20">
+        <div>
+            <h1 class="text-xl font-bold text-slate-800 tracking-tight">Flow Player</h1>
+            <p class="text-xs text-slate-400">Local Audio Space</p>
+        </div>
+        <button id="uploadBtn" class="neumorphic-btn w-10 h-10 rounded-full text-sky-500 flex items-center justify-center transition-transform active:scale-95">
+            <i class="fas fa-plus"></i>
+        </button>
+        <input type="file" id="fileInput" multiple accept="audio/*" class="hidden">
+    </header>
+
+    <main class="flex-grow flex flex-col relative overflow-hidden">
+        
+        <div class="h-1/3 w-full flex items-center justify-center bg-slate-50 relative p-4">
+            <div class="visualizer-container">
+                <canvas id="visualizerCanvas" class="absolute top-0 left-0 w-full h-full z-0 opacity-30"></canvas>
+                
+                <div class="z-10 w-40 h-40 rounded-full bg-white shadow-xl flex items-center justify-center relative border-4 border-slate-100 overflow-hidden">
+                    <div id="albumArt" class="w-full h-full bg-gradient-to-br from-sky-100 to-indigo-100 flex items-center justify-center disk-spin disk-paused">
+                        <i class="fas fa-music text-4xl text-sky-300"></i>
+                    </div>
+                    <div class="absolute w-8 h-8 bg-white rounded-full shadow-inner z-20"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-grow bg-white rounded-t-3xl shadow-[0_-5px_20px_rgba(0,0,0,0.05)] z-10 flex flex-col overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                <span class="text-sm font-semibold text-slate-500">Queue</span>
+                <span id="trackCount" class="text-xs bg-slate-100 px-2 py-1 rounded-full text-slate-400">0 Tracks</span>
+            </div>
+            
+            <div id="playlist" class="flex-grow overflow-y-auto no-scrollbar p-2 pb-32">
+                <div id="emptyState" class="flex flex-col items-center justify-center h-48 text-slate-300">
+                    <i class="fas fa-cloud-upload-alt text-4xl mb-3"></i>
+                    <p class="text-sm">Tap + to add music</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="fixed bottom-0 left-0 w-full glass-panel pb-safe z-50">
+        <div class="px-6 py-4">
+            
+            <div class="flex flex-col items-center mb-4">
+                <h2 id="currentTitle" class="text-lg font-bold text-slate-800 truncate w-full text-center">Not Playing</h2>
+                <p id="currentArtist" class="text-sm text-slate-400 truncate w-full text-center">Select a track</p>
+            </div>
+
+            <div class="w-full flex items-center gap-3 mb-4">
+                <span id="currentTime" class="text-xs text-slate-400 font-mono w-10 text-right">0:00</span>
+                <div class="relative flex-grow h-2 bg-slate-200 rounded-full group cursor-pointer" id="progressBarContainer">
+                    <div id="progressFill" class="absolute top-0 left-0 h-full bg-sky-400 rounded-full w-0 transition-all duration-100"></div>
+                    <input type="range" id="progressBar" min="0" max="100" value="0" class="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer z-20">
+                    <div id="progressThumb" class="absolute top-1/2 -mt-2 -ml-2 w-4 h-4 bg-white border-2 border-sky-400 rounded-full shadow-md z-10 pointer-events-none transition-all duration-100 left-0"></div>
+                </div>
+                <span id="duration" class="text-xs text-slate-400 font-mono w-10">0:00</span>
+            </div>
+
+            <div class="flex justify-between items-center px-4">
+                <button id="prevBtn" class="text-slate-400 hover:text-sky-500 transition p-2">
+                    <i class="fas fa-backward text-xl"></i>
+                </button>
+                
+                <button id="playBtn" class="w-16 h-16 rounded-full bg-sky-500 text-white shadow-lg shadow-sky-200 flex items-center justify-center text-2xl transition-transform active:scale-95 hover:bg-sky-400">
+                    <i class="fas fa-play pl-1"></i>
+                </button>
+                
+                <button id="nextBtn" class="text-slate-400 hover:text-sky-500 transition p-2">
+                    <i class="fas fa-forward text-xl"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class MusicPlayer {
+            constructor() {
+                this.audio = new Audio();
+                this.playlist = [];
+                this.currentIndex = -1;
+                this.audioContext = null;
+                this.analyser = null;
+                this.source = null;
+                this.isInitialized = false;
+
+                this.ui = {
+                    uploadBtn: document.getElementById('uploadBtn'),
+                    fileInput: document.getElementById('fileInput'),
+                    playlist: document.getElementById('playlist'),
+                    emptyState: document.getElementById('emptyState'),
+                    trackCount: document.getElementById('trackCount'),
+                    playBtn: document.getElementById('playBtn'),
+                    prevBtn: document.getElementById('prevBtn'),
+                    nextBtn: document.getElementById('nextBtn'),
+                    progressBar: document.getElementById('progressBar'),
+                    progressFill: document.getElementById('progressFill'),
+                    progressThumb: document.getElementById('progressThumb'),
+                    currentTime: document.getElementById('currentTime'),
+                    duration: document.getElementById('duration'),
+                    title: document.getElementById('currentTitle'),
+                    artist: document.getElementById('currentArtist'),
+                    albumArt: document.getElementById('albumArt'),
+                    playIcon: '<i class="fas fa-play pl-1"></i>',
+                    pauseIcon: '<i class="fas fa-pause"></i>',
+                    canvas: document.getElementById('visualizerCanvas')
+                };
+
+                this.initEvents();
+                this.initVisualizer();
+            }
+
+            initEvents() {
+                this.ui.uploadBtn.addEventListener('click', () => this.ui.fileInput.click());
+                this.ui.fileInput.addEventListener('change', (e) => this.handleFiles(e));
+                
+                this.ui.playBtn.addEventListener('click', () => {
+                    this.initAudioContext();
+                    this.togglePlay();
+                });
+                
+                this.ui.prevBtn.addEventListener('click', () => this.playPrev());
+                this.ui.nextBtn.addEventListener('click', () => this.playNext());
+                
+                this.audio.addEventListener('timeupdate', () => this.updateProgress());
+                this.audio.addEventListener('loadedmetadata', () => {
+                    this.ui.duration.textContent = this.formatTime(this.audio.duration);
+                    this.ui.progressBar.max = this.audio.duration;
+                });
+                this.audio.addEventListener('ended', () => this.playNext());
+                
+                this.ui.progressBar.addEventListener('input', (e) => {
+                    const time = e.target.value;
+                    this.audio.currentTime = time;
+                    this.updateProgressUI(time, this.audio.duration);
+                });
+
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.setActionHandler('play', () => this.togglePlay());
+                    navigator.mediaSession.setActionHandler('pause', () => this.togglePlay());
+                    navigator.mediaSession.setActionHandler('previoustrack', () => this.playPrev());
+                    navigator.mediaSession.setActionHandler('nexttrack', () => this.playNext());
+                    navigator.mediaSession.setActionHandler('seekto', (details) => {
+                        if (details.seekTime && details.fastSeek === undefined) {
+                            this.audio.currentTime = details.seekTime;
+                        }
+                    });
+                }
+            }
+
+            initAudioContext() {
+                if (!this.audioContext) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.audioContext = new AudioContext();
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 256;
+                    this.source = this.audioContext.createMediaElementSource(this.audio);
+                    this.source.connect(this.analyser);
+                    this.analyser.connect(this.audioContext.destination);
+                    this.drawVisualizer();
+                } else if (this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+            }
+
+            initVisualizer() {
+                const canvas = this.ui.canvas;
+                canvas.width = canvas.parentElement.offsetWidth;
+                canvas.height = canvas.parentElement.offsetHeight;
+                window.addEventListener('resize', () => {
+                    canvas.width = canvas.parentElement.offsetWidth;
+                    canvas.height = canvas.parentElement.offsetHeight;
+                });
+            }
+
+            drawVisualizer() {
+                if (!this.analyser) return;
+
+                const bufferLength = this.analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                const ctx = this.ui.canvas.getContext('2d');
+                const width = this.ui.canvas.width;
+                const height = this.ui.canvas.height;
+
+                const render = () => {
+                    requestAnimationFrame(render);
+                    this.analyser.getByteFrequencyData(dataArray);
+
+                    ctx.clearRect(0, 0, width, height);
+
+                    const cx = width / 2;
+                    const cy = height / 2;
+                    const radius = 80; 
+
+                    ctx.beginPath();
+                    for (let i = 0; i < bufferLength; i++) {
+                        const barHeight = dataArray[i] / 2;
+                        const angle = (i * 2 * Math.PI) / bufferLength; // Complete circle
+                        
+                        const xStart = cx + Math.cos(angle) * radius;
+                        const yStart = cy + Math.sin(angle) * radius;
+                        const xEnd = cx + Math.cos(angle) * (radius + barHeight);
+                        const yEnd = cy + Math.sin(angle) * (radius + barHeight);
+
+                        ctx.moveTo(xStart, yStart);
+                        ctx.lineTo(xEnd, yEnd);
+                    }
+                    
+                    ctx.strokeStyle = '#38bdf8'; 
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                };
+
+                render();
+            }
+
+            handleFiles(e) {
+                const files = Array.from(e.target.files);
+                if (files.length === 0) return;
+
+                files.forEach(file => {
+                    this.playlist.push({
+                        title: file.name.replace(/\.[^/.]+$/, ""),
+                        artist: 'Local File',
+                        src: URL.createObjectURL(file),
+                        file: file
+                    });
+                });
+
+                this.ui.emptyState.style.display = 'none';
+                this.ui.trackCount.textContent = `${this.playlist.length} Tracks`;
+                this.renderPlaylist();
+
+                if (this.currentIndex === -1) {
+                    this.loadTrack(0);
+                }
+            }
+
+            renderPlaylist() {
+                this.ui.playlist.innerHTML = '';
+                this.playlist.forEach((track, index) => {
+                    const div = document.createElement('div');
+                    div.className = `song-item flex items-center p-3 mb-2 rounded-xl transition cursor-pointer hover:bg-slate-50 ${index === this.currentIndex ? 'active' : ''}`;
+                    div.innerHTML = `
+                        <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 mr-3 flex-shrink-0">
+                            <i class="fas fa-music"></i>
+                        </div>
+                        <div class="flex-grow min-w-0">
+                            <h3 class="text-sm font-semibold text-slate-800 truncate">${track.title}</h3>
+                            <p class="text-xs text-slate-500 truncate">${track.artist}</p>
+                        </div>
+                        <div class="text-sky-500 text-sm ${index === this.currentIndex && !this.audio.paused ? 'block' : 'hidden'}">
+                            <i class="fas fa-volume-up"></i>
+                        </div>
+                    `;
+                    div.addEventListener('click', () => {
+                        this.initAudioContext();
+                        this.loadTrack(index);
+                        this.play();
+                    });
+                    this.ui.playlist.appendChild(div);
+                });
+            }
+
+            loadTrack(index) {
+                if (index < 0 || index >= this.playlist.length) return;
+                
+                this.currentIndex = index;
+                const track = this.playlist[index];
+                
+                this.audio.src = track.src;
+                this.audio.load();
+
+                this.ui.title.textContent = track.title;
+                this.ui.artist.textContent = track.artist;
+                
+                // Update UI state
+                this.renderPlaylist();
+
+                // Update Media Session
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: track.title,
+                        artist: track.artist,
+                        album: 'Local Upload',
+                        artwork: [
+                            { src: 'https://via.placeholder.com/512/38bdf8/ffffff?text=Music', sizes: '512x512', type: 'image/png' }
+                        ]
+                    });
+                }
+            }
+
+            togglePlay() {
+                if (this.playlist.length === 0) return;
+                if (this.audio.paused) {
+                    this.play();
+                } else {
+                    this.pause();
+                }
+            }
+
+            play() {
+                const playPromise = this.audio.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        this.ui.playBtn.innerHTML = this.ui.pauseIcon;
+                        this.ui.albumArt.classList.remove('disk-paused');
+                        this.renderPlaylist(); // to show playing icon
+                    }).catch(error => console.error("Playback failed:", error));
+                }
+            }
+
+            pause() {
+                this.audio.pause();
+                this.ui.playBtn.innerHTML = this.ui.playIcon;
+                this.ui.albumArt.classList.add('disk-paused');
+                this.renderPlaylist();
+            }
+
+            playNext() {
+                let nextIndex = this.currentIndex + 1;
+                if (nextIndex >= this.playlist.length) nextIndex = 0; // Loop
+                this.loadTrack(nextIndex);
+                this.play();
+            }
+
+            playPrev() {
+                let prevIndex = this.currentIndex - 1;
+                if (prevIndex < 0) prevIndex = this.playlist.length - 1;
+                this.loadTrack(prevIndex);
+                this.play();
+            }
+
+            updateProgress() {
+                const { currentTime, duration } = this.audio;
+                if (isNaN(duration)) return;
+                
+                this.ui.currentTime.textContent = this.formatTime(currentTime);
+                this.ui.progressBar.value = currentTime;
+                this.updateProgressUI(currentTime, duration);
+            }
+
+            updateProgressUI(current, total) {
+                if (total > 0) {
+                    const percentage = (current / total) * 100;
+                    this.ui.progressFill.style.width = `${percentage}%`;
+                    this.ui.progressThumb.style.left = `${percentage}%`;
+                }
+            }
+
+            formatTime(seconds) {
+                const min = Math.floor(seconds / 60);
+                const sec = Math.floor(seconds % 60);
+                return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const player = new MusicPlayer();
+        });
+    </script>
+</body>
+</html>

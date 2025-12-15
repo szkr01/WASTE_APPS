@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImageL3 Explorer</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            50: '#fafafa',
+                            100: '#f4f4f5',
+                            200: '#e4e4e7',
+                            300: '#d4d4d8',
+                            400: '#a1a1aa',
+                            500: '#71717a',
+                            600: '#52525b',
+                            700: '#3f3f46',
+                            800: '#27272a',
+                            850: '#202023',
+                            900: '#18181b',
+                            950: '#09090b',
+                        },
+                        accent: {
+                            400: '#d4d4d8', 
+                            500: '#e4e4e7', 
+                            600: '#ffffff', 
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.2s ease-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #09090b; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+        .glass {
+            background: rgba(24, 24, 27, 0.9);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1px;
+        }
+        @media (min-width: 640px) { .gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (min-width: 1024px) { .gallery-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+        @media (min-width: 1280px) { .gallery-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+        @media (min-width: 1536px) { .gallery-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+
+        .loader {
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top: 2px solid #ffffff;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .drag-overlay { pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+        body.dragging .drag-overlay { opacity: 1; }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: 100%;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 0 0 0.5rem 0.5rem;
+            z-index: 100;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+        .autocomplete-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #27272a;
+            font-size: 0.8rem;
+            color: #d4d4d8;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover, .autocomplete-item.active { background: #27272a; color: white; }
+        .autocomplete-item .match { color: #ffffff; font-weight: bold; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-300 font-sans h-screen overflow-hidden flex selection:bg-gray-700 selection:text-white">
+
+    <div class="drag-overlay fixed inset-0 z-[100] bg-gray-900/90 backdrop-blur-sm flex items-center justify-center border-4 border-gray-600 border-dashed m-4 rounded-xl">
+        <div class="text-3xl font-bold text-white flex items-center gap-4">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <span>Drop Images to Search</span>
+        </div>
+    </div>
+
+    <aside class="w-64 bg-gray-950 border-r border-gray-800 flex flex-col z-20 shrink-0">
+        <div class="h-14 flex items-center px-5 border-b border-gray-800">
+            <div class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-gray-400"></i>
+                ImageL3
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto py-6 px-3 space-y-1">
+            <button onclick="app.setRoute('search')" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-grid-2 w-5 text-center text-gray-600 group-hover:text-white transition-colors"></i>
+                <span class="ml-3">Gallery</span>
+            </button>
+            <button onclick="app.setRoute('clustering')" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-object-group w-5 text-center text-gray-600 group-hover:text-white transition-colors"></i>
+                <span class="ml-3">Clustering</span>
+            </button>
+            
+            <div class="pt-8 pb-2 px-3 text-[10px] font-bold text-gray-600 uppercase tracking-widest">System</div>
+            <button onclick="app.openSettings()" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-sliders w-5 text-center text-gray-600 group-hover:text-white"></i>
+                <span class="ml-3">Settings</span>
+            </button>
+            <button onclick="app.openMaintenance()" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-screwdriver-wrench w-5 text-center text-gray-600 group-hover:text-white"></i>
+                <span class="ml-3">Maintenance</span>
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-gray-800 bg-gray-900/30">
+            <div class="space-y-3">
+                <div>
+                    <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
+                        <span>GPU</span> <span class="text-white font-mono" id="stat-gpu">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1">
+                        <div id="bar-gpu" class="bg-white h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
+                        <span>VRAM</span> <span class="text-white font-mono" id="stat-vram">0G</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1">
+                        <div id="bar-vram" class="bg-gray-500 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <div class="flex-1 flex flex-col relative min-w-0 bg-gray-950">
+        <header class="h-14 glass flex items-center justify-between px-4 z-30 sticky top-0">
+            <div class="flex-1 max-w-3xl flex items-center gap-2 relative">
+                <div class="relative flex-1 group">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fa-solid fa-magnifying-glass text-gray-600"></i>
+                    </div>
+                    <input type="text" id="searchInput" autocomplete="off"
+                        class="block w-full pl-9 pr-10 py-1.5 bg-gray-900 border border-gray-800 rounded text-sm text-white placeholder-gray-600 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 transition-all outline-none"
+                        placeholder="Search tags, prompts...">
+                    <div id="autocompleteDropdown" class="autocomplete-dropdown"></div>
+                    <div id="searchImageContainer" class="absolute inset-y-0 right-1 flex items-center gap-1"></div>
+                </div>
+                
+                <button onclick="app.toggleFilters()" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white bg-gray-900 border border-gray-800 hover:border-gray-600 rounded transition-colors" title="Filters">
+                    <i class="fa-solid fa-filter text-xs"></i>
+                </button>
+                <button onclick="app.refreshSearch()" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white bg-gray-900 border border-gray-800 hover:border-gray-600 rounded transition-colors" title="Refresh">
+                    <i class="fa-solid fa-rotate text-xs"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center gap-3 ml-4">
+                <button onclick="app.triggerRandomSearch()" class="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-gray-300 text-xs font-medium rounded border border-gray-800 hover:border-gray-600 transition-colors">
+                    Random
+                </button>
+                <span class="text-xs text-gray-500 font-mono w-20 text-right" id="total-count">0 items</span>
+            </div>
+        </header>
+
+        <div id="advancedFilters" class="hidden border-b border-gray-800 bg-gray-900 p-4 absolute top-14 w-full z-20 shadow-xl animate-fade-in">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-5xl mx-auto">
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Date</label>
+                    <div class="flex gap-1">
+                        <input type="date" id="dateStart" class="bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs w-full text-white">
+                        <input type="date" id="dateEnd" class="bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs w-full text-white">
+                    </div>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Path</label>
+                    <input type="text" id="pathFilter" class="bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs w-full text-white placeholder-gray-700" placeholder="/path/to/folder">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Sort</label>
+                    <select id="sortBy" class="bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs w-full text-white">
+                        <option value="score_desc">Relevance</option>
+                        <option value="date_desc">Newest Date</option>
+                        <option value="created_at_desc">Newest Imported</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <main id="mainContainer" class="flex-1 overflow-y-auto p-0 relative bg-black">
+            <div id="loadingIndicator" class="hidden absolute inset-0 bg-black/50 z-20 flex items-center justify-center backdrop-blur-[2px]">
+                <div class="loader"></div>
+            </div>
+
+            <div id="galleryView" class="gallery-grid pb-20"></div>
+            <div id="clusteringView" class="hidden p-6 pb-20 space-y-8"></div>
+
+            <div id="emptyState" class="hidden h-full flex flex-col items-center justify-center text-gray-700">
+                <i class="fa-regular fa-folder-open text-4xl mb-3 opacity-30"></i>
+                <p class="text-xs">No images found</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="imageModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/90 backdrop-blur-sm" onclick="app.closeModal('imageModal')"></div>
+        <div class="relative bg-gray-900 w-full max-w-7xl h-[95vh] rounded-lg overflow-hidden shadow-2xl flex flex-col lg:flex-row border border-gray-800 animate-slide-up">
+            <div class="flex-1 bg-black/50 flex items-center justify-center relative group overflow-hidden pattern-bg">
+                <img id="modalImage" class="relative z-10 max-h-full max-w-full object-contain" src="">
+                <div class="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a id="modalDownloadLink" href="#" download class="p-2 bg-gray-900/80 text-white rounded hover:bg-white hover:text-black transition-colors border border-gray-700"><i class="fa-solid fa-download"></i></a>
+                    <button onclick="app.toggleFullScreen()" class="p-2 bg-gray-900/80 text-white rounded hover:bg-white hover:text-black transition-colors border border-gray-700"><i class="fa-solid fa-expand"></i></button>
+                </div>
+            </div>
+            <div class="w-full lg:w-[380px] bg-gray-900 border-l border-gray-800 flex flex-col">
+                <div class="h-12 px-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0">
+                    <h3 class="font-medium text-gray-300 truncate pr-4 text-xs font-mono" id="modalFileName">file.png</h3>
+                    <button onclick="app.closeModal('imageModal')" class="text-gray-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-5 space-y-6">
+                    <div class="flex gap-2">
+                        <button onclick="app.searchSimilar()" class="flex-1 bg-white hover:bg-gray-200 text-black py-2 rounded text-xs font-bold uppercase tracking-wide transition-colors">Similar Search</button>
+                        <button onclick="app.deleteCurrentFile()" class="px-3 bg-gray-800 hover:bg-red-900/30 text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-900/50 rounded transition-colors"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                    <div>
+                        <h4 class="text-[10px] font-bold text-gray-500 uppercase mb-2">Generation</h4>
+                        <div class="text-xs space-y-2 font-mono text-gray-300" id="modalGenInfo"></div>
+                    </div>
+                    <div>
+                        <h4 class="text-[10px] font-bold text-gray-500 uppercase mb-2">Tags</h4>
+                        <div class="flex flex-wrap gap-1" id="modalTags"></div>
+                    </div>
+                    <div class="pt-4 border-t border-gray-800">
+                         <div class="grid grid-cols-2 gap-y-1 text-[10px] text-gray-400 font-mono">
+                            <span>Size</span> <span class="text-right text-gray-300" id="modalSize">-</span>
+                            <span>Dims</span> <span class="text-right text-gray-300" id="modalDims">-</span>
+                        </div>
+                        <div class="mt-2 text-[10px] text-gray-500 font-mono break-all" id="modalPath">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="app.closeModal('settingsModal')"></div>
+        <div class="relative bg-gray-900 w-full max-w-lg rounded-lg shadow-2xl border border-gray-800 animate-slide-up flex flex-col max-h-[90vh]">
+            <div class="h-14 px-6 border-b border-gray-800 flex justify-between items-center">
+                <h3 class="font-bold text-white">System Settings</h3>
+                <button onclick="app.closeModal('settingsModal')" class="text-gray-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-5 overflow-y-auto">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5">Active Model</label>
+                    <input type="text" id="conf_active_model" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5">Default Tagger</label>
+                    <input type="text" id="conf_tagger_model" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-white outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5">GPU Threshold (0-100)</label>
+                        <input type="number" id="conf_gpu" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5">VRAM Limit (MB)</label>
+                        <input type="number" id="conf_vram" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5">Watch Paths (One per line)</label>
+                    <textarea id="conf_paths" rows="4" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-xs font-mono text-white outline-none" placeholder="/mnt/data/images..."></textarea>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-800 flex justify-end gap-3 bg-gray-900 rounded-b-lg">
+                <button onclick="app.closeModal('settingsModal')" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+                <button onclick="app.saveSettings()" class="px-4 py-2 bg-white text-black text-sm font-bold rounded hover:bg-gray-200">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="maintenanceModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="app.closeModal('maintenanceModal')"></div>
+        <div class="relative bg-gray-900 w-full max-w-md rounded-lg shadow-2xl border border-gray-800 animate-slide-up">
+            <div class="h-14 px-6 border-b border-gray-800 flex justify-between items-center">
+                <h3 class="font-bold text-white">Maintenance Actions</h3>
+                <button onclick="app.closeModal('maintenanceModal')" class="text-gray-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 grid gap-4">
+                <button onclick="app.triggerMaintenance('scan', 'diff')" class="flex items-center gap-4 p-4 bg-gray-950 border border-gray-800 rounded hover:border-white transition-colors text-left group">
+                    <div class="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center group-hover:bg-white group-hover:text-black transition-colors"><i class="fa-solid fa-sync"></i></div>
+                    <div>
+                        <div class="text-sm font-bold text-white">Difference Scan</div>
+                        <div class="text-xs text-gray-500">Scan only new or modified files.</div>
+                    </div>
+                </button>
+                <button onclick="app.triggerMaintenance('scan', 'full')" class="flex items-center gap-4 p-4 bg-gray-950 border border-gray-800 rounded hover:border-white transition-colors text-left group">
+                    <div class="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center group-hover:bg-white group-hover:text-black transition-colors"><i class="fa-solid fa-layer-group"></i></div>
+                    <div>
+                        <div class="text-sm font-bold text-white">Full Scan</div>
+                        <div class="text-xs text-gray-500">Rescan all files.</div>
+                    </div>
+                </button>
+                <div class="h-px bg-gray-800 my-2"></div>
+                 <button onclick="app.triggerMaintenance('clean', null)" class="flex items-center gap-4 p-4 bg-red-950/20 border border-red-900/30 rounded hover:border-red-500 transition-colors text-left group">
+                    <div class="w-10 h-10 rounded-full bg-red-900/20 flex items-center justify-center text-red-500"><i class="fa-solid fa-broom"></i></div>
+                    <div>
+                        <div class="text-sm font-bold text-red-400">Clean Database</div>
+                        <div class="text-xs text-gray-500">Remove orphaned entries.</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="fixed bottom-8 right-8 z-[60] flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:8001';
+
+        // --- Trie Implementation for Fast Autocomplete ---
+        class TrieNode {
+            constructor() {
+                this.children = {};
+                this.isEnd = false;
+                this.word = null;
+            }
+        }
+
+        class Trie {
+            constructor() {
+                this.root = new TrieNode();
+                this.count = 0;
+            }
+
+            insert(word) {
+                if (!word) return;
+                let node = this.root;
+                for (const char of word.toLowerCase()) {
+                    if (!node.children[char]) {
+                        node.children[char] = new TrieNode();
+                    }
+                    node = node.children[char];
+                }
+                node.isEnd = true;
+                node.word = word; // Store original casing
+                this.count++;
+            }
+
+            findWordsWithPrefix(prefix, limit = 10) {
+                if (!prefix) return [];
+                let node = this.root;
+                for (const char of prefix.toLowerCase()) {
+                    if (!node.children[char]) return [];
+                    node = node.children[char];
+                }
+                
+                // DFS to collect words
+                const results = [];
+                const stack = [node];
+                
+                while (stack.length > 0 && results.length < limit) {
+                    const currentNode = stack.pop();
+                    if (currentNode.isEnd) {
+                        results.push(currentNode.word);
+                    }
+                    // Sort keys to maintain predictable order (optional but nice)
+                    // Reverse because stack pops from end
+                    const chars = Object.keys(currentNode.children).sort().reverse(); 
+                    for (const char of chars) {
+                        stack.push(currentNode.children[char]);
+                    }
+                }
+                return results;
+            }
+        }
+
+        // --- Helpers ---
+        const formatBytes = (bytes, decimals = 2) => {
+            if (!+bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
+        };
+
+        const createEl = (tag, classes = '', innerHTML = '') => {
+            const el = document.createElement(tag);
+            if(classes) el.className = classes;
+            if(innerHTML) el.innerHTML = innerHTML;
+            return el;
+        };
+
+        const showToast = (message, type = 'info') => {
+            const container = document.getElementById('toastContainer');
+            const toast = createEl('div', 
+                `toast pointer-events-auto px-4 py-3 rounded border text-xs font-semibold flex items-center gap-3 min-w-[280px] shadow-2xl backdrop-blur-md ${
+                    type === 'error' ? 'bg-red-950/90 border-red-900 text-red-200' : 
+                    type === 'success' ? 'bg-gray-800/90 border-gray-600 text-white' : 
+                    'bg-gray-900/90 border-gray-700 text-gray-300'
+                }`
+            );
+            const icon = type === 'error' ? 'fa-triangle-exclamation' : type === 'success' ? 'fa-check' : 'fa-info';
+            toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        };
+
+        // --- API ---
+        const api = {
+            async request(endpoint, method = 'GET', body = null) {
+                try {
+                    const options = { method, headers: {} };
+                    if (body) {
+                        options.headers['Content-Type'] = 'application/json';
+                        options.body = JSON.stringify(body);
+                    }
+                    const res = await fetch(`${API_BASE}${endpoint}`, options);
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.detail ? JSON.stringify(err.detail) : `API ${res.status}`);
+                    }
+                    if (res.status === 204) return null;
+                    return await res.json();
+                } catch (e) {
+                    showToast(e.message, 'error');
+                    throw e;
+                }
+            },
+            search: (data) => api.request('/api/v1/search/', 'POST', data),
+            random: (limit) => api.request(`/api/v1/search/random?limit=${limit}`),
+            fileInfo: (id) => api.request(`/api/v1/files/${id}/info`),
+            analysis: (id) => api.request(`/api/v1/analysis/${id}`),
+            deleteFile: (id) => api.request(`/api/v1/files/${id}`, 'DELETE'),
+            systemStatus: () => api.request('/api/v1/system/status'),
+            clustering: (ids) => api.request('/api/v1/clustering/group', 'POST', { ids, threshold: 0.65, min_group_size: 2 }),
+            
+            getModels: () => api.request('/api/v1/system/models'),
+            getModelTags: (id) => api.request(`/api/v1/system/models/${id}/tags`),
+            getConfig: () => api.request('/api/v1/system/config'),
+            updateConfig: (data) => api.request('/api/v1/system/config', 'PUT', data),
+            maintenance: (action, scope) => api.request('/api/v1/system/maintenance', 'POST', { action, scope }),
+            
+            // Updated to handle size parameter
+            getImageUrl: (id, size = null) => `${API_BASE}/api/v1/files/${id}/content${size ? `?size=${size}` : ''}`
+        };
+
+        // --- App ---
+        class App {
+            constructor() {
+                this.state = {
+                    items: [],
+                    searchConfig: {
+                        vector: { enabled: true, text: '', images: [], config: { alpha: 0.5, beta: 0.5 } },
+                        meta: { enabled: true, status: "OK", include_deleted: false },
+                        pagination: { limit: 2000, sort_by: "score", sort_order: "desc" }
+                    },
+                    selectedItem: null,
+                    tagTrie: new Trie(), 
+                    currentView: 'search'
+                };
+                
+                this.dom = {
+                    gallery: document.getElementById('galleryView'),
+                    clustering: document.getElementById('clusteringView'),
+                    searchInput: document.getElementById('searchInput'),
+                    dropdown: document.getElementById('autocompleteDropdown')
+                };
+
+                this.init();
+            }
+
+            async init() {
+                this.bindEvents();
+                this.startStatusPolling();
+                this.loadTagsForAutocomplete();
+                await this.triggerSearch();
+            }
+
+            bindEvents() {
+                let timeout;
+                this.dom.searchInput.addEventListener('input', (e) => {
+                    const val = e.target.value;
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => {
+                        this.state.searchConfig.vector.text = val;
+                        this.triggerSearch();
+                    }, 600);
+                    this.handleAutocomplete(e);
+                });
+
+                this.dom.searchInput.addEventListener('keydown', (e) => this.handleAutocompleteKey(e));
+                
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.group')) this.dom.dropdown.style.display = 'none';
+                });
+
+                document.getElementById('sortBy').addEventListener('change', (e) => {
+                    const [by, order] = e.target.value.split('_');
+                    this.state.searchConfig.pagination.sort_by = by;
+                    this.state.searchConfig.pagination.sort_order = order;
+                    this.triggerSearch();
+                });
+
+                this.setupDragDrop();
+            }
+
+            setupDragDrop() {
+                const body = document.body;
+                let dragCounter = 0;
+                ['dragenter','dragover','dragleave','drop'].forEach(e => body.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); }));
+                body.addEventListener('dragenter', () => { dragCounter++; body.classList.add('dragging'); });
+                body.addEventListener('dragleave', () => { dragCounter--; if(!dragCounter) body.classList.remove('dragging'); });
+                body.addEventListener('drop', (e) => {
+                    dragCounter = 0;
+                    body.classList.remove('dragging');
+                    if (e.dataTransfer.files.length) this.addSearchImage(e.dataTransfer.files[0]);
+                });
+            }
+
+            // --- Autocomplete Logic using Trie ---
+            async loadTagsForAutocomplete() {
+                try {
+                    const res = await api.getModels();
+                    // res.models: [ { id, type }, ... ]
+                    let modelList = [];
+                    if (res.models && Array.isArray(res.models)) {
+                        modelList = res.models;
+                    }
+
+                    if (modelList.length === 0) return;
+                    
+                    let targetModel = modelList.find(m => m.type === 'tagger');
+                    if (!targetModel) targetModel = modelList.find(m => m.id.toLowerCase().includes('tag'));
+                    if (!targetModel) targetModel = modelList.find(m => m.id.toLowerCase().includes('wd'));
+                    if (!targetModel) targetModel = modelList[0];
+                    
+                    console.log(`Loading tags from: ${targetModel.id}`);
+                    
+                    const tagRes = await api.getModelTags(targetModel.id);
+                    const tags = tagRes.tags || [];
+                    
+                    // Build Trie
+                    console.time('Build Trie');
+                    tags.forEach(tag => this.state.tagTrie.insert(tag));
+                    console.timeEnd('Build Trie');
+                    console.log(`Indexed ${this.state.tagTrie.count} tags in Trie.`);
+
+                } catch(e) {
+                    console.warn("Tag load failed", e);
+                }
+            }
+
+            handleAutocomplete(e) {
+                const input = e.target;
+                const val = input.value;
+                const cursorPos = input.selectionStart;
+                
+                const textBeforeCursor = val.slice(0, cursorPos);
+                const lastSpaceIndex = textBeforeCursor.lastIndexOf(' ');
+                const currentWord = textBeforeCursor.slice(lastSpaceIndex + 1);
+
+                if (currentWord.length < 2) {
+                    this.dom.dropdown.style.display = 'none';
+                    return;
+                }
+
+                // Search Trie
+                const matches = this.state.tagTrie.findWordsWithPrefix(currentWord, 12);
+
+                if (matches.length === 0) {
+                    this.dom.dropdown.style.display = 'none';
+                    return;
+                }
+
+                this.dom.dropdown.innerHTML = '';
+                matches.forEach((tag, idx) => {
+                    const matchedText = tag.slice(0, currentWord.length);
+                    const restText = tag.slice(currentWord.length);
+                    
+                    const item = createEl('div', `autocomplete-item ${idx===0?'active':''}`);
+                    item.innerHTML = `<span class="match">${matchedText}</span>${restText}`;
+                    item.onclick = () => this.applyAutocomplete(tag, currentWord);
+                    this.dom.dropdown.appendChild(item);
+                });
+                
+                this.dom.dropdown.style.display = 'block';
+                this.dropdownIndex = 0;
+            }
+
+            handleAutocompleteKey(e) {
+                const dd = this.dom.dropdown;
+                if (dd.style.display === 'none') return;
+                const items = dd.children;
+                if (items.length === 0) return;
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    items[this.dropdownIndex].classList.remove('active');
+                    this.dropdownIndex = (this.dropdownIndex + 1) % items.length;
+                    items[this.dropdownIndex].classList.add('active');
+                    items[this.dropdownIndex].scrollIntoView({block: 'nearest'});
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    items[this.dropdownIndex].classList.remove('active');
+                    this.dropdownIndex = (this.dropdownIndex - 1 + items.length) % items.length;
+                    items[this.dropdownIndex].classList.add('active');
+                    items[this.dropdownIndex].scrollIntoView({block: 'nearest'});
+                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    items[this.dropdownIndex].click();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    dd.style.display = 'none';
+                }
+            }
+
+            applyAutocomplete(tag, currentWord) {
+                const input = this.dom.searchInput;
+                const val = input.value;
+                const cursorPos = input.selectionStart;
+                
+                const lastSpaceIndex = val.slice(0, cursorPos).lastIndexOf(' ');
+                const before = val.slice(0, lastSpaceIndex + 1);
+                const after = val.slice(cursorPos);
+                
+                input.value = before + tag + " " + after;
+                this.dom.dropdown.style.display = 'none';
+                
+                const newPos = before.length + tag.length + 1;
+                input.setSelectionRange(newPos, newPos);
+                input.focus();
+                
+                this.state.searchConfig.vector.text = input.value;
+                this.triggerSearch();
+            }
+
+            // --- Core Features ---
+            addSearchImage(file) {
+                if (!file.type.startsWith('image/')) return showToast('Images only', 'error');
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const base64 = e.target.result.split(',')[1];
+                    this.state.searchConfig.vector.images.push({ type: 'base64', data: base64, weight: 1.0 });
+                    this.renderImageChips();
+                    this.triggerSearch();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            renderImageChips() {
+                const c = document.getElementById('searchImageContainer');
+                c.innerHTML = '';
+                this.state.searchConfig.vector.images.forEach((img, i) => {
+                    const div = createEl('div', 'relative w-10 h-8 rounded border border-gray-600 overflow-hidden group ml-1');
+                    // Updated: Request 256px size
+                    const src = img.type === 'base64' ? `data:image/png;base64,${img.data}` : api.getImageUrl(img.data, 256);
+                    div.innerHTML = `<img src="${src}" class="w-full h-full object-cover">`;
+                    const btn = createEl('button', 'absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100', '<i class="fa-solid fa-xmark text-[10px]"></i>');
+                    btn.onclick = (e) => { e.stopPropagation(); this.state.searchConfig.vector.images.splice(i,1); this.renderImageChips(); this.triggerSearch(); };
+                    div.appendChild(btn);
+                    c.appendChild(div);
+                });
+            }
+
+            async triggerSearch() {
+                const loader = document.getElementById('loadingIndicator');
+                loader.classList.remove('hidden');
+                try {
+                    const ds = document.getElementById('dateStart').value;
+                    const de = document.getElementById('dateEnd').value;
+                    if(ds || de) this.state.searchConfig.meta.date_range = { start: ds ? new Date(ds).getTime()/1000 : null, end: de ? new Date(de).getTime()/1000 : null };
+                    const pf = document.getElementById('pathFilter').value;
+                    this.state.searchConfig.meta.paths = pf ? [pf] : null;
+
+                    const res = await api.search(this.state.searchConfig);
+                    this.state.items = res.items;
+                    document.getElementById('total-count').textContent = `${res.total} items`;
+                    this.renderGallery();
+                    if(this.state.currentView === 'clustering') this.setRoute('search');
+                } catch(e) { console.error(e); } 
+                finally { loader.classList.add('hidden'); }
+            }
+
+            async triggerRandomSearch() {
+                const loader = document.getElementById('loadingIndicator');
+                loader.classList.remove('hidden');
+                try {
+                    const res = await api.random(2000);
+                    this.state.items = res.items;
+                    document.getElementById('total-count').textContent = `Random 2000`;
+                    this.renderGallery();
+                    this.setRoute('search');
+                } catch(e) {} finally { loader.classList.add('hidden'); }
+            }
+
+            renderGallery() {
+                const container = this.dom.gallery;
+                container.innerHTML = '';
+                if(this.state.items.length === 0) {
+                    document.getElementById('emptyState').classList.remove('hidden');
+                    return;
+                }
+                document.getElementById('emptyState').classList.add('hidden');
+
+                const obs = new IntersectionObserver(entries => entries.forEach(e => {
+                    if(e.isIntersecting) {
+                        e.target.src = e.target.dataset.src;
+                        e.target.onload = () => e.target.classList.remove('opacity-0');
+                        obs.unobserve(e.target);
+                    }
+                }), {rootMargin:'400px'});
+
+                this.state.items.forEach(item => {
+                    const card = createEl('div', 'relative aspect-square bg-gray-900 group cursor-pointer overflow-hidden border border-transparent hover:border-white transition-colors');
+                    const img = createEl('img', 'w-full h-full object-cover opacity-0 transition-opacity duration-300');
+                    
+                    // Updated: Request 512px size for better grid performance
+                    img.dataset.src = api.getImageUrl(item.id, 512);
+                    
+                    obs.observe(img);
+                    card.appendChild(img);
+
+                    if(item.score) {
+                         const badge = createEl('span', 'absolute top-1 left-1 text-[9px] font-mono bg-black/60 text-white px-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity', item.score.toFixed(3));
+                         card.appendChild(badge);
+                    }
+                    card.onclick = () => this.openImageDetail(item.id);
+                    container.appendChild(card);
+                });
+            }
+
+            async openSettings() {
+                try {
+                    const conf = await api.getConfig();
+                    document.getElementById('conf_active_model').value = conf.active_model || '';
+                    document.getElementById('conf_tagger_model').value = conf.default_tagger_model || '';
+                    document.getElementById('conf_gpu').value = conf.gpu_threshold || '';
+                    document.getElementById('conf_vram').value = conf.gpu_vram_threshold_mb || '';
+                    document.getElementById('conf_paths').value = (conf.watch_paths || []).join('\n');
+                    document.getElementById('settingsModal').classList.remove('hidden');
+                } catch(e) { showToast('Failed to load config', 'error'); }
+            }
+
+            async saveSettings() {
+                const data = {
+                    active_model: document.getElementById('conf_active_model').value || null,
+                    default_tagger_model: document.getElementById('conf_tagger_model').value || null,
+                    gpu_threshold: parseFloat(document.getElementById('conf_gpu').value) || null,
+                    gpu_vram_threshold_mb: parseFloat(document.getElementById('conf_vram').value) || null,
+                    watch_paths: document.getElementById('conf_paths').value.split('\n').filter(p => p.trim() !== '')
+                };
+                try {
+                    await api.updateConfig(data);
+                    showToast('Settings saved successfully', 'success');
+                    this.closeModal('settingsModal');
+                } catch(e) {}
+            }
+
+            openMaintenance() { document.getElementById('maintenanceModal').classList.remove('hidden'); }
+
+            async triggerMaintenance(action, scope) {
+                if(!confirm(`Run ${action} (${scope||'db'})? This might take a while.`)) return;
+                try {
+                    await api.maintenance(action, scope);
+                    showToast('Maintenance task started', 'success');
+                    this.closeModal('maintenanceModal');
+                } catch(e) {}
+            }
+
+            async openImageDetail(id) {
+                this.state.selectedItem = id;
+                const m = document.getElementById('imageModal');
+                const img = document.getElementById('modalImage');
+                // No size param here, we want full resolution
+                img.src = api.getImageUrl(id);
+                document.getElementById('modalDownloadLink').href = img.src;
+                m.classList.remove('hidden');
+
+                document.getElementById('modalGenInfo').innerHTML = '...';
+                document.getElementById('modalTags').innerHTML = '';
+
+                try {
+                    const [info, analysis] = await Promise.all([api.fileInfo(id), api.analysis(id).catch(()=>null)]);
+                    document.getElementById('modalFileName').textContent = info.path.split('/').pop();
+                    document.getElementById('modalPath').textContent = info.path;
+                    document.getElementById('modalSize').textContent = formatBytes(info.size_bytes);
+                    document.getElementById('modalDims').textContent = `${info.width}x${info.height}`;
+
+                    if(analysis) {
+                        if(analysis.generation) {
+                            const g = analysis.generation;
+                            document.getElementById('modalGenInfo').innerHTML = `
+                                <div><span class="text-gray-500">Model:</span> ${g.base_model||'-'}</div>
+                                <div><span class="text-gray-500">Seed:</span> <span class="select-all text-white">${g.seed||'-'}</span></div>
+                                ${g.positive_prompt ? `<div class="mt-2 p-2 bg-gray-800 rounded max-h-24 overflow-auto text-gray-400 select-all">${g.positive_prompt}</div>` : ''}
+                            `;
+                        }
+                        if(analysis.inference && analysis.inference.tags) {
+                            analysis.inference.tags.sort((a,b)=>b.confidence-a.confidence).forEach(t => {
+                                const el = createEl('span', 'px-1.5 py-0.5 bg-gray-800 text-gray-300 text-[10px] rounded border border-gray-700 hover:border-white cursor-pointer', t.name);
+                                el.onclick = () => { this.state.searchConfig.vector.text += ` ${t.name}`; this.dom.searchInput.value = this.state.searchConfig.vector.text; this.closeModal('imageModal'); this.triggerSearch(); };
+                                document.getElementById('modalTags').appendChild(el);
+                            });
+                        }
+                    }
+                } catch(e) {}
+            }
+            
+            async runClustering() {
+                 const loader = document.getElementById('loadingIndicator');
+                 loader.classList.remove('hidden');
+                 try {
+                     const ids = this.state.items.slice(0, 300).map(i=>i.id);
+                     if(ids.length < 2) return;
+                     const res = await api.clustering(ids);
+                     const c = this.dom.clustering;
+                     c.innerHTML = '';
+                     res.groups.forEach(g => {
+                         const sec = createEl('div');
+                         sec.innerHTML = `<h3 class="text-xs font-bold text-gray-400 mb-2 border-b border-gray-800 pb-1">Group ${g.label} <span class="text-gray-600 ml-2">${g.items.length} items</span></h3>`;
+                         const grid = createEl('div', 'grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1');
+                         g.items.forEach(id => {
+                             const img = createEl('img', 'w-full aspect-square object-cover bg-gray-900 cursor-pointer hover:opacity-80');
+                             
+                             // Updated: Request 256px for small thumbnails
+                             img.src = api.getImageUrl(id, 256);
+                             
+                             img.onclick = () => this.openImageDetail(id);
+                             grid.appendChild(img);
+                         });
+                         sec.appendChild(grid);
+                         c.appendChild(sec);
+                     });
+                 } catch(e) { showToast('Clustering Error', 'error'); } 
+                 finally { loader.classList.add('hidden'); }
+            }
+
+            setRoute(r) {
+                this.state.currentView = r;
+                this.dom.gallery.classList.toggle('hidden', r!=='search');
+                this.dom.clustering.classList.toggle('hidden', r!=='clustering');
+                if(r==='clustering') this.runClustering();
+            }
+
+            closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+            toggleFullScreen() { 
+                const el = document.getElementById('modalImage');
+                document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().catch(()=>{}); 
+            }
+            toggleFilters() { document.getElementById('advancedFilters').classList.toggle('hidden'); }
+            refreshSearch() { this.triggerSearch(); }
+            
+            async startStatusPolling() {
+                const poll = async () => {
+                    try {
+                        const s = await api.systemStatus();
+                        document.getElementById('stat-gpu').textContent = Math.round(s.resources.gpu_usage_pct) + '%';
+                        document.getElementById('bar-gpu').style.width = s.resources.gpu_usage_pct + '%';
+                        document.getElementById('stat-vram').textContent = (s.resources.vram_usage_mb/1024).toFixed(1) + 'G';
+                        document.getElementById('bar-vram').style.width = (s.resources.vram_usage_mb/24000)*100 + '%';
+                    } catch(e){}
+                };
+                poll();
+                setInterval(poll, 5000);
+            }
+            
+            async deleteCurrentFile() {
+                if(confirm("Delete file?")) {
+                    await api.deleteFile(this.state.selectedItem);
+                    this.state.items = this.state.items.filter(i=>i.id!==this.state.selectedItem);
+                    this.renderGallery();
+                    this.closeModal('imageModal');
+                }
+            }
+            
+            searchSimilar() {
+                if(!this.state.selectedItem) return;
+                this.state.searchConfig.vector.images = [{type:'id', data:this.state.selectedItem, weight:1}];
+                this.renderImageChips();
+                this.closeModal('imageModal');
+                this.triggerSearch();
+            }
+        }
+
+        const app = new App();
+    </script>
+</body>
+</html>
