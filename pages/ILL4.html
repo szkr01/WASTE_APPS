@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImageL3 Explorer</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            850: '#202023',
+                            900: '#18181b',
+                            950: '#09090b',
+                        },
+                        indigo: {
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.2s ease-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #09090b; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+        .glass {
+            background: rgba(24, 24, 27, 0.9);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1px;
+        }
+        @media (min-width: 640px) { .gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (min-width: 1024px) { .gallery-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+        @media (min-width: 1280px) { .gallery-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+        @media (min-width: 1536px) { .gallery-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+
+        .loader {
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top: 2px solid #ffffff;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Autocomplete Styles */
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: 100%;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 0 0 0.5rem 0.5rem;
+            z-index: 100;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+        .autocomplete-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #27272a;
+            font-size: 0.8rem;
+            color: #d4d4d8;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover, .autocomplete-item.active { background: #27272a; color: white; }
+        .autocomplete-item .match { color: #ffffff; font-weight: bold; }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        /* Main Sliders */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            background: #6366f1; /* Indigo-500 */
+            cursor: pointer;
+            margin-top: -4px; 
+            box-shadow: 0 0 0 2px #18181b; 
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #3f3f46;
+            border-radius: 2px;
+        }
+        
+        /* Tiny Slider for Image Cards */
+        .card-slider::-webkit-slider-thumb {
+            height: 10px;
+            width: 10px;
+            margin-top: -3px;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            border: none;
+        }
+        .card-slider::-webkit-slider-runnable-track {
+            height: 4px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+        }
+
+        /* Drop Zone Active State */
+        #imageQueryContainer.drag-over {
+            background-color: rgba(99, 102, 241, 0.1); /* Indigo tint */
+            border-color: #6366f1;
+        }
+        /* Prevent events on children during drag to stop flickering */
+        #imageQueryContainer.drag-over * {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-300 font-sans h-screen overflow-hidden flex selection:bg-gray-700 selection:text-white">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-gray-950 border-r border-gray-800 flex flex-col z-50 shrink-0">
+        <div class="h-16 flex items-center px-5 border-b border-gray-800">
+            <div class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-gray-400"></i>
+                ImageL3
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto py-6 px-3 space-y-1">
+            <button onclick="app.setRoute('search')" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-grid-2 w-5 text-center text-gray-600 group-hover:text-white transition-colors"></i>
+                <span class="ml-3">Gallery</span>
+            </button>
+            <button onclick="app.setRoute('clustering')" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-object-group w-5 text-center text-gray-600 group-hover:text-white transition-colors"></i>
+                <span class="ml-3">Clustering</span>
+            </button>
+            
+            <div class="pt-8 pb-2 px-3 text-[10px] font-bold text-gray-600 uppercase tracking-widest">System</div>
+            <button onclick="app.openSettings()" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-sliders w-5 text-center text-gray-600 group-hover:text-white"></i>
+                <span class="ml-3">Settings</span>
+            </button>
+            <button onclick="app.openMaintenance()" class="w-full flex items-center px-3 py-2 text-sm font-medium rounded hover:bg-gray-900 text-gray-400 hover:text-white transition-all group">
+                <i class="fa-solid fa-screwdriver-wrench w-5 text-center text-gray-600 group-hover:text-white"></i>
+                <span class="ml-3">Maintenance</span>
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-gray-800 bg-gray-900/30">
+            <div class="space-y-3">
+                <div>
+                    <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
+                        <span>GPU</span> <span class="text-white font-mono" id="stat-gpu">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1">
+                        <div id="bar-gpu" class="bg-white h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
+                        <span>VRAM</span> <span class="text-white font-mono" id="stat-vram">0G</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1">
+                        <div id="bar-vram" class="bg-gray-500 h-1 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col relative min-w-0 bg-gray-950">
+        
+        <!-- HEADER -->
+        <div class="flex flex-col bg-[#18181b] border-b border-gray-800 z-40 sticky top-0 shadow-xl">
+            
+            <!-- Row 1: Main Search Bar -->
+            <div class="flex items-center gap-3 px-4 h-16 border-b border-gray-800/50">
+                <!-- Search Input -->
+                <div class="flex-1 relative group">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fa-solid fa-magnifying-glass text-gray-500"></i>
+                    </div>
+                    <input type="text" id="searchInput" autocomplete="off"
+                        class="block w-full pl-10 pr-4 py-2 bg-[#09090b] border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all outline-none font-medium text-sm"
+                        placeholder="Search tags, prompts, or keywords...">
+                    <div id="autocompleteDropdown" class="autocomplete-dropdown mt-1 rounded border-gray-700 shadow-xl"></div>
+                </div>
+
+                <!-- Buttons -->
+                <button onclick="app.triggerSearch()" class="h-9 px-6 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded transition-colors shadow shadow-indigo-900/20">
+                    Search
+                </button>
+                <button onclick="app.triggerRandomSearch()" class="h-9 w-9 flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded border border-gray-700 transition-colors" title="Random">
+                    <i class="fa-solid fa-shuffle text-xs"></i>
+                </button>
+                <button id="filterToggleBtn" class="h-9 w-9 flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded border border-gray-700 transition-colors" title="Settings">
+                    <i class="fa-solid fa-sliders text-xs"></i>
+                </button>
+            </div>
+
+            <!-- Row 2: Advanced Panel (Split 50:50) -->
+            <div id="advancedPanel" class="hidden h-[340px] flex border-b border-gray-800 bg-[#09090b] transition-all">
+                
+                <!-- LEFT: Image Query (50%) - Entire area is drop zone -->
+                <div id="imageQueryContainer" class="w-1/2 p-4 border-r border-gray-800 relative overflow-y-auto bg-[#101012] transition-colors border-dashed border-2 border-transparent hover:border-gray-700">
+                    
+                    <!-- Placeholder (Shows when empty) -->
+                    <div id="imageQueryPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-gray-600 pointer-events-none">
+                        <i class="fa-solid fa-cloud-arrow-up text-4xl mb-3 text-gray-700"></i>
+                        <span class="text-sm font-medium text-gray-500">Drop Images Here to Search</span>
+                    </div>
+
+                    <!-- Grid for Image Cards -->
+                    <div id="imageQueryGrid" class="grid grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 relative z-10">
+                        <!-- Cards will be injected here -->
+                    </div>
+                </div>
+                <input type="file" id="fileInputHidden" multiple accept="image/*" class="hidden">
+
+                <!-- RIGHT: Settings (50%) -->
+                <div class="w-1/2 p-5 flex flex-col gap-5 bg-[#09090b] overflow-hidden">
+                    
+                    <!-- Section: Refine -->
+                    <div class="space-y-3">
+                        <label class="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-filter"></i> Refine
+                        </label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="text" id="filterPath" placeholder="Path filter (/folder...)" class="col-span-2 w-full bg-[#18181b] border border-gray-700 rounded px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-indigo-500 outline-none">
+                            <input type="date" id="dateStart" class="w-full bg-[#18181b] border border-gray-700 rounded px-2 py-1.5 text-xs text-white outline-none">
+                            <input type="date" id="dateEnd" class="w-full bg-[#18181b] border border-gray-700 rounded px-2 py-1.5 text-xs text-white outline-none">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="checkDeleted" class="w-3.5 h-3.5 rounded border-gray-700 bg-[#18181b] text-indigo-600 focus:ring-indigo-500 accent-indigo-600">
+                            <label for="checkDeleted" class="text-xs text-gray-400 select-none cursor-pointer">Include Deleted / Low Quality</label>
+                        </div>
+                    </div>
+
+                    <!-- Section: Balance & Sort -->
+                    <div class="space-y-4 pt-4 border-t border-gray-800/50">
+                        <div class="flex justify-between items-end">
+                            <label class="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                                <i class="fa-solid fa-scale-balanced"></i> Balance
+                            </label>
+                            <select id="sortBy" class="bg-[#18181b] border-none text-right text-[10px] text-gray-400 focus:text-white outline-none cursor-pointer">
+                                <option value="score_desc">Sort: Relevance</option>
+                                <option value="date_desc">Sort: Date</option>
+                                <option value="created_at_desc">Sort: Imported</option>
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6">
+                            <!-- Alpha -->
+                            <div>
+                                <div class="flex justify-between text-[10px] mb-1.5">
+                                    <span class="text-gray-400">Vector/Meta</span>
+                                    <span id="val-alpha" class="text-indigo-400 font-mono">0.5</span>
+                                </div>
+                                <input type="range" id="sliderAlpha" min="0" max="1" step="0.05" value="0.5" class="w-full">
+                                <div class="flex justify-between text-[9px] text-gray-600 mt-1 font-mono">
+                                    <span>Dense</span><span>Sparse</span>
+                                </div>
+                            </div>
+                            <!-- Threshold -->
+                            <div>
+                                <div class="flex justify-between text-[10px] mb-1.5">
+                                    <span class="text-gray-400">Min Score</span>
+                                    <span id="val-threshold" class="text-indigo-400 font-mono">0.0</span>
+                                </div>
+                                <input type="range" id="sliderThreshold" min="0" max="1" step="0.05" value="0.0" class="w-full">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+             <!-- Stats Bar -->
+             <div class="h-5 bg-[#09090b] border-t border-gray-800 flex items-center justify-end px-4 gap-4">
+                <span class="text-[9px] text-gray-500 font-mono" id="total-count">0 items</span>
+            </div>
+        </div>
+        <!-- END HEADER -->
+
+        <main id="mainContainer" class="flex-1 overflow-y-auto p-0 relative bg-black">
+            <div id="loadingIndicator" class="hidden absolute inset-0 bg-black/50 z-20 flex items-center justify-center backdrop-blur-[2px]">
+                <div class="loader"></div>
+            </div>
+
+            <div id="galleryView" class="gallery-grid pb-20"></div>
+            <div id="clusteringView" class="hidden p-6 pb-20 space-y-8"></div>
+
+            <div id="emptyState" class="hidden h-full flex flex-col items-center justify-center text-gray-700">
+                <i class="fa-regular fa-folder-open text-4xl mb-3 opacity-30"></i>
+                <p class="text-xs">No images found</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="imageModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/90 backdrop-blur-sm" onclick="app.closeModal('imageModal')"></div>
+        <div class="relative bg-gray-900 w-full max-w-7xl h-[95vh] rounded-lg overflow-hidden shadow-2xl flex flex-col lg:flex-row border border-gray-800 animate-slide-up">
+            <div class="flex-1 bg-black/50 flex items-center justify-center relative group overflow-hidden pattern-bg">
+                <img id="modalImage" class="relative z-10 max-h-full max-w-full object-contain" src="">
+                <div class="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a id="modalDownloadLink" href="#" download class="p-2 bg-gray-900/80 text-white rounded hover:bg-white hover:text-black transition-colors border border-gray-700"><i class="fa-solid fa-download"></i></a>
+                    <button onclick="app.toggleFullScreen()" class="p-2 bg-gray-900/80 text-white rounded hover:bg-white hover:text-black transition-colors border border-gray-700"><i class="fa-solid fa-expand"></i></button>
+                </div>
+            </div>
+            <div class="w-full lg:w-[380px] bg-gray-900 border-l border-gray-800 flex flex-col">
+                <div class="h-12 px-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 shrink-0">
+                    <h3 class="font-medium text-gray-300 truncate pr-4 text-xs font-mono" id="modalFileName">file.png</h3>
+                    <button onclick="app.closeModal('imageModal')" class="text-gray-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-5 space-y-6">
+                    <div class="flex gap-2">
+                        <button onclick="app.searchSimilar()" class="flex-1 bg-white hover:bg-gray-200 text-black py-2 rounded text-xs font-bold uppercase tracking-wide transition-colors">Similar Search</button>
+                        <button onclick="app.deleteCurrentFile()" class="px-3 bg-gray-800 hover:bg-red-900/30 text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-900/50 rounded transition-colors"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                    <div>
+                        <h4 class="text-[10px] font-bold text-gray-500 uppercase mb-2">Generation</h4>
+                        <div class="text-xs space-y-2 font-mono text-gray-300" id="modalGenInfo"></div>
+                    </div>
+                    <div>
+                        <h4 class="text-[10px] font-bold text-gray-500 uppercase mb-2">Tags</h4>
+                        <div class="flex flex-wrap gap-1" id="modalTags"></div>
+                    </div>
+                    <div class="pt-4 border-t border-gray-800">
+                         <div class="grid grid-cols-2 gap-y-1 text-[10px] text-gray-400 font-mono">
+                            <span>Size</span> <span class="text-right text-gray-300" id="modalSize">-</span>
+                            <span>Dims</span> <span class="text-right text-gray-300" id="modalDims">-</span>
+                        </div>
+                        <div class="mt-2 text-[10px] text-gray-500 font-mono break-all" id="modalPath">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="app.closeModal('settingsModal')"></div>
+        <div class="relative bg-gray-900 w-full max-w-lg rounded-lg shadow-2xl border border-gray-800 animate-slide-up flex flex-col max-h-[90vh]">
+            <div class="h-14 px-6 border-b border-gray-800 flex justify-between items-center">
+                <h3 class="font-bold text-white">System Settings</h3>
+                <button onclick="app.closeModal('settingsModal')" class="text-gray-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-5 overflow-y-auto">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5">Active Model</label>
+                    <input type="text" id="conf_active_model" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5">Default Tagger</label>
+                    <input type="text" id="conf_tagger_model" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-white outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5">GPU Threshold (0-100)</label>
+                        <input type="number" id="conf_gpu" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5">VRAM Limit (MB)</label>
+                        <input type="number" id="conf_vram" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm text-white outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5">Watch Paths (One per line)</label>
+                    <textarea id="conf_paths" rows="4" class="w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-xs font-mono text-white outline-none" placeholder="/mnt/data/images..."></textarea>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-800 flex justify-end gap-3 bg-gray-900 rounded-b-lg">
+                <button onclick="app.closeModal('settingsModal')" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+                <button onclick="app.saveSettings()" class="px-4 py-2 bg-white text-black text-sm font-bold rounded hover:bg-gray-200">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="maintenanceModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="app.closeModal('maintenanceModal')"></div>
+        <div class="relative bg-gray-900 w-full max-w-md rounded-lg shadow-2xl border border-gray-800 animate-slide-up">
+            <div class="h-14 px-6 border-b border-gray-800 flex justify-between items-center">
+                <h3 class="font-bold text-white">Maintenance Actions</h3>
+                <button onclick="app.closeModal('maintenanceModal')" class="text-gray-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 grid gap-4">
+                <button onclick="app.triggerMaintenance('scan', 'diff')" class="flex items-center gap-4 p-4 bg-gray-950 border border-gray-800 rounded hover:border-white transition-colors text-left group">
+                    <div class="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center group-hover:bg-white group-hover:text-black transition-colors"><i class="fa-solid fa-sync"></i></div>
+                    <div>
+                        <div class="text-sm font-bold text-white">Difference Scan</div>
+                        <div class="text-xs text-gray-500">Scan only new or modified files.</div>
+                    </div>
+                </button>
+                <button onclick="app.triggerMaintenance('scan', 'full')" class="flex items-center gap-4 p-4 bg-gray-950 border border-gray-800 rounded hover:border-white transition-colors text-left group">
+                    <div class="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center group-hover:bg-white group-hover:text-black transition-colors"><i class="fa-solid fa-layer-group"></i></div>
+                    <div>
+                        <div class="text-sm font-bold text-white">Full Scan</div>
+                        <div class="text-xs text-gray-500">Rescan all files.</div>
+                    </div>
+                </button>
+                <div class="h-px bg-gray-800 my-2"></div>
+                 <button onclick="app.triggerMaintenance('clean', null)" class="flex items-center gap-4 p-4 bg-red-950/20 border border-red-900/30 rounded hover:border-red-500 transition-colors text-left group">
+                    <div class="w-10 h-10 rounded-full bg-red-900/20 flex items-center justify-center text-red-500"><i class="fa-solid fa-broom"></i></div>
+                    <div>
+                        <div class="text-sm font-bold text-red-400">Clean Database</div>
+                        <div class="text-xs text-gray-500">Remove orphaned entries.</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toastContainer" class="fixed bottom-8 right-8 z-[60] flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Scripts -->
+    <script>
+        const API_BASE = 'http://localhost:8001';
+
+        // --- Trie Implementation (Fast Autocomplete) ---
+        class TrieNode { constructor() { this.children = {}; this.isEnd = false; this.word = null; } }
+        class Trie {
+            constructor() { this.root = new TrieNode(); this.count = 0; }
+            insert(word) {
+                if (!word) return;
+                let node = this.root;
+                for (const char of word.toLowerCase()) {
+                    if (!node.children[char]) node.children[char] = new TrieNode();
+                    node = node.children[char];
+                }
+                node.isEnd = true; node.word = word; this.count++;
+            }
+            findWordsWithPrefix(prefix, limit = 10) {
+                if (!prefix) return [];
+                let node = this.root;
+                for (const char of prefix.toLowerCase()) {
+                    if (!node.children[char]) return [];
+                    node = node.children[char];
+                }
+                const results = []; const stack = [node];
+                while (stack.length > 0 && results.length < limit) {
+                    const currentNode = stack.pop();
+                    if (currentNode.isEnd) results.push(currentNode.word);
+                    const chars = Object.keys(currentNode.children).sort().reverse(); 
+                    for (const char of chars) stack.push(currentNode.children[char]);
+                }
+                return results;
+            }
+        }
+
+        // --- Helpers ---
+        const formatBytes = (bytes, decimals = 2) => {
+            if (!+bytes) return '0 B';
+            const k = 1024; const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
+        };
+        const createEl = (tag, classes = '', innerHTML = '') => {
+            const el = document.createElement(tag);
+            if(classes) el.className = classes;
+            if(innerHTML) el.innerHTML = innerHTML;
+            return el;
+        };
+        const showToast = (message, type = 'info') => {
+            const container = document.getElementById('toastContainer');
+            const toast = createEl('div', 
+                `toast pointer-events-auto px-4 py-3 rounded border text-xs font-semibold flex items-center gap-3 min-w-[280px] shadow-2xl backdrop-blur-md ${type === 'error' ? 'bg-red-950/90 border-red-900 text-red-200' : 'bg-gray-800/90 border-gray-600 text-white'}`
+            );
+            toast.innerHTML = `<i class="fa-solid ${type === 'error' ? 'fa-triangle-exclamation' : 'fa-info'}"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        };
+
+        // --- API ---
+        const api = {
+            async request(endpoint, method = 'GET', body = null) {
+                try {
+                    const options = { method, headers: {} };
+                    if (body) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
+                    const res = await fetch(`${API_BASE}${endpoint}`, options);
+                    if (!res.ok) throw new Error(`API ${res.status}`);
+                    return res.status === 204 ? null : await res.json();
+                } catch (e) { showToast(e.message, 'error'); throw e; }
+            },
+            search: (data) => api.request('/api/v1/search/', 'POST', data),
+            random: (limit) => api.request(`/api/v1/search/random?limit=${limit}`),
+            fileInfo: (id) => api.request(`/api/v1/files/${id}/info`),
+            analysis: (id) => api.request(`/api/v1/analysis/${id}`),
+            deleteFile: (id) => api.request(`/api/v1/files/${id}`, 'DELETE'),
+            systemStatus: () => api.request('/api/v1/system/status'),
+            clustering: (ids) => api.request('/api/v1/clustering/group', 'POST', { ids, threshold: 0.65, min_group_size: 2 }),
+            getModels: () => api.request('/api/v1/system/models'),
+            getModelTags: (id) => api.request(`/api/v1/system/models/${id}/tags`),
+            getConfig: () => api.request('/api/v1/system/config'),
+            updateConfig: (data) => api.request('/api/v1/system/config', 'PUT', data),
+            maintenance: (action, scope) => api.request('/api/v1/system/maintenance', 'POST', { action, scope }),
+            getImageUrl: (id, size = null) => `${API_BASE}/api/v1/files/${id}/content${size ? `?size=${size}` : ''}`
+        };
+
+        // --- App ---
+        class App {
+            constructor() {
+                this.state = {
+                    items: [],
+                    searchConfig: {
+                        vector: { enabled: true, text: '', images: [], config: { alpha: 0.5 } },
+                        meta: { enabled: true, status: "OK", include_deleted: false },
+                        pagination: { limit: 2000, sort_by: "score", sort_order: "desc" },
+                        min_score: 0
+                    },
+                    selectedItem: null,
+                    tagTrie: new Trie(), 
+                    currentView: 'search'
+                };
+                
+                this.dom = {
+                    gallery: document.getElementById('galleryView'),
+                    clustering: document.getElementById('clusteringView'),
+                    searchInput: document.getElementById('searchInput'),
+                    dropdown: document.getElementById('autocompleteDropdown'),
+                    // References for new UI
+                    panel: document.getElementById('advancedPanel'),
+                    imageContainer: document.getElementById('imageQueryContainer'),
+                    imageGrid: document.getElementById('imageQueryGrid'),
+                    placeholder: document.getElementById('imageQueryPlaceholder'),
+                    fileInput: document.getElementById('fileInputHidden')
+                };
+
+                this.init();
+            }
+
+            async init() {
+                this.bindEvents();
+                this.startStatusPolling();
+                this.loadTagsForAutocomplete();
+                await this.triggerSearch();
+            }
+
+            bindEvents() {
+                // Autocomplete
+                let timeout;
+                this.dom.searchInput.addEventListener('input', (e) => {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => { this.state.searchConfig.vector.text = e.target.value; }, 600);
+                    this.handleAutocomplete(e);
+                });
+                this.dom.searchInput.addEventListener('keydown', (e) => {
+                    this.handleAutocompleteKey(e);
+                    if (e.key === 'Enter') this.triggerSearch();
+                });
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.group')) this.dom.dropdown.style.display = 'none';
+                });
+
+                // Toggle Panel
+                const toggleBtn = document.getElementById('filterToggleBtn');
+                toggleBtn.addEventListener('click', () => {
+                    this.dom.panel.classList.toggle('hidden');
+                    const isActive = !this.dom.panel.classList.contains('hidden');
+                    toggleBtn.classList.toggle('bg-indigo-600', isActive);
+                    toggleBtn.classList.toggle('text-white', isActive);
+                    toggleBtn.classList.toggle('border-indigo-500', isActive);
+                });
+
+                // --- D&D Logic ---
+                const dz = this.dom.imageContainer;
+                
+                // Click to Open File
+                dz.addEventListener('click', (e) => {
+                    // Check if click is on the container or grid background or placeholder, NOT on a card
+                    if(e.target === dz || e.target === this.dom.imageGrid || e.target === this.dom.placeholder) {
+                        this.dom.fileInput.click();
+                    }
+                });
+                this.dom.fileInput.addEventListener('change', (e) => {
+                    if(e.target.files.length) Array.from(e.target.files).forEach(f => this.addImageQuery(f));
+                    e.target.value = '';
+                });
+
+                // Prevent default drag behaviors globally to stop browser from opening file
+                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
+                    document.body.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); });
+                });
+
+                // Drop Zone Handlers
+                dz.addEventListener('dragenter', (e) => {
+                    console.log('DZ: Enter');
+                    e.preventDefault(); e.stopPropagation();
+                    dz.classList.add('drag-over');
+                });
+                dz.addEventListener('dragover', (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    e.dataTransfer.dropEffect = 'copy';
+                    if(!dz.classList.contains('drag-over')) dz.classList.add('drag-over');
+                });
+                dz.addEventListener('dragleave', (e) => {
+                    console.log('DZ: Leave', e.target);
+                    // Only remove if we are leaving the container itself
+                    if (e.target === dz) {
+                        dz.classList.remove('drag-over');
+                    }
+                });
+                
+                // --- FIXED DROP HANDLER for Internal/External Images ---
+                dz.addEventListener('drop', (e) => {
+                    console.log('DZ: Drop Event', e);
+                    e.preventDefault(); 
+                    e.stopPropagation();
+                    dz.classList.remove('drag-over');
+
+                    const files = e.dataTransfer.files;
+                    
+                    // Case 1: Dragging files from OS
+                    if (files && files.length > 0) {
+                        console.log('DZ: Detected Files', files);
+                        Array.from(files).forEach(file => {
+                            if (file.type.startsWith('image/')) this.addImageQuery(file);
+                        });
+                        return;
+                    }
+
+                    // Case 2: Dragging image from Browser/Web
+                    const html = e.dataTransfer.getData('text/html');
+                    const uriList = e.dataTransfer.getData('text/uri-list');
+                    console.log('DZ: HTML content', html);
+                    console.log('DZ: URI content', uriList);
+
+                    if (html) {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const img = doc.querySelector('img');
+                        if (img && img.src) {
+                            console.log('DZ: Extracted Image SRC', img.src);
+                            this.addImageQueryFromUrl(img.src);
+                            return;
+                        }
+                    }
+                    
+                    if (uriList) {
+                        const lines = uriList.split('\n');
+                        const url = lines[0].trim();
+                        if (url.match(/\.(jpeg|jpg|gif|png|webp|bmp)$/i) || url.startsWith('data:image')) {
+                            console.log('DZ: Extracted URI', url);
+                            this.addImageQueryFromUrl(url);
+                        }
+                    }
+                });
+
+                // Slider bindings
+                const bindSlider = (id, target) => {
+                    document.getElementById(id).addEventListener('input', e => document.getElementById(target).textContent = e.target.value);
+                };
+                bindSlider('sliderAlpha', 'val-alpha');
+                bindSlider('sliderThreshold', 'val-threshold');
+
+                // Sort
+                document.getElementById('sortBy').addEventListener('change', (e) => {
+                    const [by, order] = e.target.value.split('_');
+                    this.state.searchConfig.pagination.sort_by = by;
+                    this.state.searchConfig.pagination.sort_order = order;
+                    this.triggerSearch();
+                });
+            }
+
+            // --- Image Query Logic ---
+            addImageQuery(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const base64 = e.target.result.split(',')[1];
+                    this.state.searchConfig.vector.images.push({ 
+                        type: 'base64', data: base64, src: e.target.result, weight: 1.0, id: Date.now() + Math.random()
+                    });
+                    this.renderImageQueries();
+                };
+                reader.readAsDataURL(file);
+            }
+            
+            // --- NEW: Handle Dragged URLs (Internal ID extraction to bypass CORS) ---
+            async addImageQueryFromUrl(url) {
+                // Check if this is an internal image (contains API_BASE)
+                // We use includes() here as the drag data might be absolute URL
+                if (url.includes(API_BASE)) {
+                    // Extract UUID from URL pattern: /files/{uuid}/content
+                    // Regex looks for: /files/ (UUID) /content
+                    const match = url.match(/\/files\/([a-fA-F0-9\-]+)\/content/);
+                    if (match && match[1]) {
+                        console.log('DZ: Detected Internal ID', match[1]);
+                        // Use 'id' type instead of fetching blob (Bypasses CORS)
+                        this.state.searchConfig.vector.images.push({
+                            type: 'id', 
+                            data: match[1], // The UUID
+                            src: url,       // Browser can display this without CORS
+                            weight: 1.0,
+                            id: Date.now() + Math.random()
+                        });
+                        this.renderImageQueries();
+                        return;
+                    }
+                }
+
+                // Fallback: Try to fetch (External images or non-matching internal URLs)
+                try {
+                    console.log('DZ: Fetching external URL', url);
+                    const res = await fetch(url);
+                    const blob = await res.blob();
+                    if(blob.type.startsWith('image/')) {
+                         this.addImageQuery(blob);
+                    } else {
+                         console.warn('URL is not an image', url);
+                    }
+                } catch(e) {
+                    // Fallback for Data URIs
+                    if(url.startsWith('data:image')) {
+                         const base64 = url.split(',')[1];
+                         this.state.searchConfig.vector.images.push({ 
+                            type: 'base64', data: base64, src: url, weight: 1.0, id: Date.now() + Math.random()
+                        });
+                        this.renderImageQueries();
+                    } else {
+                        console.error('Failed to load image from URL', e);
+                        showToast('Cannot access dragged image (CORS blocked)', 'error');
+                    }
+                }
+            }
+
+            renderImageQueries() {
+                const grid = this.dom.imageGrid;
+                grid.innerHTML = '';
+                this.dom.placeholder.style.display = this.state.searchConfig.vector.images.length ? 'none' : 'flex';
+
+                this.state.searchConfig.vector.images.forEach((imgObj, index) => {
+                    // Larger Cards (w-full in grid ~140-160px)
+                    const card = createEl('div', 'relative aspect-square rounded-lg overflow-hidden group border border-gray-600 bg-black animate-fade-in shadow-lg');
+                    
+                    const imgEl = createEl('img', 'absolute inset-0 w-full h-full object-cover');
+                    imgEl.src = imgObj.src || api.getImageUrl(imgObj.data, 256);
+                    
+                    const removeBtn = createEl('button', 'absolute top-1 right-1 w-6 h-6 bg-black/60 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all z-20 cursor-pointer');
+                    removeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                    removeBtn.onclick = (e) => { e.stopPropagation(); this.state.searchConfig.vector.images.splice(index, 1); this.renderImageQueries(); };
+
+                    const controls = createEl('div', 'absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/90 via-black/60 to-transparent flex flex-col justify-end px-2 pb-1.5 z-10');
+                    const valDisplay = createEl('div', 'text-[10px] text-white font-mono text-right mb-0.5 drop-shadow-md', `W: ${imgObj.weight.toFixed(1)}`);
+                    const slider = createEl('input', 'card-slider w-full h-2 mb-0.5 cursor-pointer appearance-none bg-transparent');
+                    slider.type = 'range'; slider.min = '-1.0'; slider.max = '1.0'; slider.step = '0.1'; slider.value = imgObj.weight;
+                    
+                    slider.oninput = (e) => {
+                        e.stopPropagation();
+                        const val = parseFloat(e.target.value);
+                        imgObj.weight = val;
+                        valDisplay.textContent = `W: ${val.toFixed(1)}`;
+                        card.style.borderColor = val < 0 ? '#ef4444' : '#4b5563';
+                    };
+                    slider.onclick = e => e.stopPropagation();
+
+                    controls.append(valDisplay, slider);
+                    card.append(imgEl, removeBtn, controls);
+                    grid.appendChild(card);
+                });
+            }
+
+            // --- Autocomplete ---
+            async loadTagsForAutocomplete() {
+                try {
+                    const res = await api.getModels();
+                    const models = res.models || [];
+                    if(!models.length) return;
+                    let target = models.find(m => m.type === 'tagger') || models[0];
+                    const tagRes = await api.getModelTags(target.id);
+                    (tagRes.tags||[]).forEach(t => this.state.tagTrie.insert(t));
+                } catch(e) {}
+            }
+            handleAutocomplete(e) {
+                const val = e.target.value;
+                const cursorPos = e.target.selectionStart;
+                const textBefore = val.slice(0, cursorPos);
+                const word = textBefore.split(' ').pop();
+
+                if(word.length < 2) { this.dom.dropdown.style.display = 'none'; return; }
+                const matches = this.state.tagTrie.findWordsWithPrefix(word, 10);
+                if(!matches.length) { this.dom.dropdown.style.display = 'none'; return; }
+                
+                this.dom.dropdown.innerHTML = '';
+                matches.forEach((t, i) => {
+                    const d = createEl('div', `autocomplete-item ${i===0?'active':''}`);
+                    d.innerHTML = `<span class="match">${t.slice(0,word.length)}</span>${t.slice(word.length)}`;
+                    d.onclick = () => this.applyAutocomplete(t, word);
+                    this.dom.dropdown.appendChild(d);
+                });
+                this.dom.dropdown.style.display = 'block';
+                this.dropdownIndex = 0;
+            }
+            handleAutocompleteKey(e) {
+                const dd = this.dom.dropdown;
+                if(dd.style.display === 'none') return;
+                const items = dd.children;
+                if(e.key === 'ArrowDown') {
+                    e.preventDefault(); items[this.dropdownIndex].classList.remove('active');
+                    this.dropdownIndex = (this.dropdownIndex + 1) % items.length;
+                    items[this.dropdownIndex].classList.add('active'); items[this.dropdownIndex].scrollIntoView({block:'nearest'});
+                } else if(e.key === 'ArrowUp') {
+                    e.preventDefault(); items[this.dropdownIndex].classList.remove('active');
+                    this.dropdownIndex = (this.dropdownIndex - 1 + items.length) % items.length;
+                    items[this.dropdownIndex].classList.add('active'); items[this.dropdownIndex].scrollIntoView({block:'nearest'});
+                } else if(e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault(); items[this.dropdownIndex].click();
+                } else if(e.key === 'Escape') dd.style.display = 'none';
+            }
+            applyAutocomplete(tag, word) {
+                const input = this.dom.searchInput;
+                const cursorPos = input.selectionStart;
+                const before = input.value.slice(0, cursorPos - word.length);
+                const after = input.value.slice(cursorPos);
+                input.value = before + tag + " " + after;
+                this.dom.dropdown.style.display = 'none';
+                input.focus();
+                this.state.searchConfig.vector.text = input.value;
+            }
+
+            // --- Core Actions ---
+            async triggerSearch() {
+                const loader = document.getElementById('loadingIndicator');
+                loader.classList.remove('hidden');
+                try {
+                    this.state.searchConfig.vector.text = this.dom.searchInput.value;
+                    const path = document.getElementById('filterPath').value;
+                    this.state.searchConfig.meta.paths = path ? [path] : null;
+                    const ds = document.getElementById('dateStart').value;
+                    const de = document.getElementById('dateEnd').value;
+                    this.state.searchConfig.meta.date_range = (ds||de) ? {start: ds?new Date(ds).getTime()/1000:null, end: de?new Date(de).getTime()/1000:null} : null;
+                    this.state.searchConfig.meta.status = document.getElementById('checkDeleted').checked ? null : "OK";
+                    this.state.searchConfig.vector.config.alpha = parseFloat(document.getElementById('sliderAlpha').value);
+                    this.state.searchConfig.min_score = parseFloat(document.getElementById('sliderThreshold').value);
+
+                    const res = await api.search(this.state.searchConfig);
+                    this.state.items = res.items;
+                    document.getElementById('total-count').textContent = `${res.total} items`;
+                    this.renderGallery();
+                    if(this.state.currentView === 'clustering') this.setRoute('search');
+                } catch(e) { console.error(e); } finally { loader.classList.add('hidden'); }
+            }
+
+            async triggerRandomSearch() {
+                const loader = document.getElementById('loadingIndicator');
+                loader.classList.remove('hidden');
+                try {
+                    const res = await api.random(2000);
+                    this.state.items = res.items;
+                    document.getElementById('total-count').textContent = `Random 2000`;
+                    this.renderGallery();
+                    this.setRoute('search');
+                } catch(e) {} finally { loader.classList.add('hidden'); }
+            }
+
+            renderGallery() {
+                const c = this.dom.gallery;
+                c.innerHTML = '';
+                document.getElementById('emptyState').classList.toggle('hidden', this.state.items.length > 0);
+                
+                const obs = new IntersectionObserver(es => es.forEach(e => {
+                    if(e.isIntersecting) { e.target.src = e.target.dataset.src; e.target.onload=()=>e.target.classList.remove('opacity-0'); obs.unobserve(e.target); }
+                }), {rootMargin:'400px'});
+
+                this.state.items.forEach(item => {
+                    const card = createEl('div', 'relative aspect-square bg-gray-900 group cursor-pointer overflow-hidden border border-transparent hover:border-white transition-colors');
+                    const img = createEl('img', 'w-full h-full object-cover opacity-0 transition-opacity duration-300');
+                    img.dataset.src = api.getImageUrl(item.id, 512);
+                    obs.observe(img);
+                    card.appendChild(img);
+                    if(item.score) card.appendChild(createEl('span', 'absolute top-1 left-1 text-[9px] font-mono bg-black/60 text-white px-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity', item.score.toFixed(3)));
+                    card.onclick = () => this.openImageDetail(item.id);
+                    c.appendChild(card);
+                });
+            }
+            
+            // --- Modals & Details ---
+            async openImageDetail(id) {
+                this.state.selectedItem = id;
+                document.getElementById('imageModal').classList.remove('hidden');
+                document.getElementById('modalImage').src = api.getImageUrl(id);
+                document.getElementById('modalDownloadLink').href = api.getImageUrl(id);
+                
+                document.getElementById('modalFileName').textContent = 'Loading...';
+                document.getElementById('modalGenInfo').innerHTML = '...';
+                document.getElementById('modalTags').innerHTML = '';
+                document.getElementById('modalSize').textContent = '-';
+                document.getElementById('modalDims').textContent = '-';
+                document.getElementById('modalPath').textContent = '-';
+
+                try {
+                    const [info, analysis] = await Promise.all([api.fileInfo(id), api.analysis(id).catch(()=>null)]);
+                    document.getElementById('modalFileName').textContent = info.path.split('/').pop();
+                    document.getElementById('modalPath').textContent = info.path;
+                    document.getElementById('modalSize').textContent = formatBytes(info.size_bytes);
+                    document.getElementById('modalDims').textContent = `${info.width}x${info.height}`;
+
+                    if(analysis) {
+                        if(analysis.generation) {
+                            const g = analysis.generation;
+                            document.getElementById('modalGenInfo').innerHTML = `
+                                <div><span class="text-gray-500">Model:</span> ${g.base_model||'-'}</div>
+                                <div><span class="text-gray-500">Seed:</span> <span class="select-all text-white">${g.seed||'-'}</span></div>
+                                ${g.positive_prompt ? `<div class="mt-2 p-2 bg-gray-800 rounded max-h-24 overflow-auto text-gray-400 select-all">${g.positive_prompt}</div>` : ''}
+                            `;
+                        }
+                        if(analysis.inference && analysis.inference.tags) {
+                            const div = document.getElementById('modalTags');
+                            analysis.inference.tags.sort((a,b)=>b.confidence-a.confidence).forEach(t => {
+                                const el = createEl('span', 'px-1.5 py-0.5 bg-gray-800 text-gray-300 text-[10px] rounded border border-gray-700 hover:border-white cursor-pointer', t.name);
+                                el.onclick = () => { this.closeModal('imageModal'); this.dom.searchInput.value += ` ${t.name}`; this.triggerSearch(); };
+                                div.appendChild(el);
+                            });
+                        }
+                    }
+                } catch(e){}
+            }
+
+            searchSimilar() {
+                if(!this.state.selectedItem) return;
+                this.state.searchConfig.vector.images = [{type:'id', data:this.state.selectedItem, weight:1.0}];
+                this.renderImageQueries();
+                this.closeModal('imageModal');
+                this.triggerSearch();
+            }
+            
+            async deleteCurrentFile() {
+                if(confirm("Delete file?")) {
+                    await api.deleteFile(this.state.selectedItem);
+                    this.state.items = this.state.items.filter(i=>i.id!==this.state.selectedItem);
+                    this.renderGallery();
+                    this.closeModal('imageModal');
+                }
+            }
+
+            // --- Settings & Maintenance ---
+            async openSettings() {
+                try {
+                    const conf = await api.getConfig();
+                    document.getElementById('conf_active_model').value = conf.active_model || '';
+                    document.getElementById('conf_tagger_model').value = conf.default_tagger_model || '';
+                    document.getElementById('conf_gpu').value = conf.gpu_threshold || '';
+                    document.getElementById('conf_vram').value = conf.gpu_vram_threshold_mb || '';
+                    document.getElementById('conf_paths').value = (conf.watch_paths || []).join('\n');
+                    document.getElementById('settingsModal').classList.remove('hidden');
+                } catch(e) { showToast('Failed to load config', 'error'); }
+            }
+
+            async saveSettings() {
+                const data = {
+                    active_model: document.getElementById('conf_active_model').value || null,
+                    default_tagger_model: document.getElementById('conf_tagger_model').value || null,
+                    gpu_threshold: parseFloat(document.getElementById('conf_gpu').value) || null,
+                    gpu_vram_threshold_mb: parseFloat(document.getElementById('conf_vram').value) || null,
+                    watch_paths: document.getElementById('conf_paths').value.split('\n').filter(p => p.trim() !== '')
+                };
+                try {
+                    await api.updateConfig(data);
+                    showToast('Settings saved successfully', 'success');
+                    this.closeModal('settingsModal');
+                } catch(e) {}
+            }
+
+            openMaintenance() { document.getElementById('maintenanceModal').classList.remove('hidden'); }
+
+            async triggerMaintenance(action, scope) {
+                if(!confirm(`Run ${action} (${scope||'db'})? This might take a while.`)) return;
+                try {
+                    await api.maintenance(action, scope);
+                    showToast('Maintenance task started', 'success');
+                    this.closeModal('maintenanceModal');
+                } catch(e) {}
+            }
+
+            // --- Clustering ---
+            async runClustering() {
+                 const loader = document.getElementById('loadingIndicator');
+                 loader.classList.remove('hidden');
+                 try {
+                     const ids = this.state.items.slice(0, 300).map(i=>i.id);
+                     if(ids.length < 2) return;
+                     const res = await api.clustering(ids);
+                     const c = this.dom.clustering;
+                     c.innerHTML = '';
+                     res.groups.forEach(g => {
+                         const sec = createEl('div');
+                         sec.innerHTML = `<h3 class="text-xs font-bold text-gray-400 mb-2 border-b border-gray-800 pb-1">Group ${g.label} <span class="text-gray-600 ml-2">${g.items.length} items</span></h3>`;
+                         const grid = createEl('div', 'grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1');
+                         g.items.forEach(id => {
+                             const img = createEl('img', 'w-full aspect-square object-cover bg-gray-900 cursor-pointer hover:opacity-80');
+                             img.src = api.getImageUrl(id, 256);
+                             img.onclick = () => this.openImageDetail(id);
+                             grid.appendChild(img);
+                         });
+                         sec.appendChild(grid);
+                         c.appendChild(sec);
+                     });
+                 } catch(e) { showToast('Clustering Error', 'error'); } 
+                 finally { loader.classList.add('hidden'); }
+            }
+
+            // --- System ---
+            setRoute(r) { 
+                this.state.currentView=r; 
+                this.dom.gallery.classList.toggle('hidden', r!=='search'); 
+                this.dom.clustering.classList.toggle('hidden', r!=='clustering'); 
+                if(r==='clustering') this.runClustering(); 
+            }
+            closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+            toggleFullScreen() { const el = document.getElementById('modalImage'); document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().catch(()=>{}); }
+            
+            async startStatusPolling() {
+                const poll = async () => { try {
+                    const s = await api.systemStatus();
+                    document.getElementById('stat-gpu').textContent = Math.round(s.resources.gpu_usage_pct) + '%';
+                    document.getElementById('bar-gpu').style.width = s.resources.gpu_usage_pct + '%';
+                    document.getElementById('stat-vram').textContent = (s.resources.vram_usage_mb/1024).toFixed(1) + 'G';
+                    document.getElementById('bar-vram').style.width = (s.resources.vram_usage_mb/24000)*100 + '%';
+                } catch(e){} };
+                setInterval(poll, 5000); poll();
+            }
+        }
+        
+        // Instantiate
+        const app = new App();
+    </script>
+</body>
+</html>
