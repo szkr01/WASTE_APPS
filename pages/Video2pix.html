@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- REQUIRED META DATA -->
+    <title>PixelStream Pro - Median Filter Supported</title>
+    <meta name="description" content="Convert video to pixel art using Median filtering for artistic effects.">
+    <meta name="page:icon" content="fa-solid fa-paintbrush">
+    <meta name="page:color" content="#4f46e5">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Custom Config for Tailwind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            850: '#1f2937',
+                            900: '#111827',
+                            950: '#0b0f19',
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['"Courier New"', 'Courier', 'monospace'],
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111827; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151; 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563; 
+        }
+
+        /* Canvas Background */
+        .canvas-bg {
+            background-color: #0b0f19;
+            background-image: 
+                linear-gradient(45deg, #1f2937 25%, transparent 25%), 
+                linear-gradient(-45deg, #1f2937 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #1f2937 75%), 
+                linear-gradient(-45deg, transparent 75%, #1f2937 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        #sourceVideo { display: none; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200 h-screen w-screen overflow-hidden flex font-sans selection:bg-indigo-500 selection:text-white">
+
+    <!-- SIDEBAR -->
+    <aside class="w-80 bg-gray-900 border-r border-gray-800 flex flex-col shadow-2xl z-20">
+        <!-- Header -->
+        <div class="p-5 border-b border-gray-800 bg-gray-900">
+            <h1 class="text-xl font-bold text-white tracking-wide flex items-center gap-3">
+                <div class="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                    <i class="fa-solid fa-paintbrush text-white text-sm"></i>
+                </div>
+                PixelStream <span class="text-indigo-500">Pro</span>
+            </h1>
+        </div>
+
+        <!-- Scrollable Controls -->
+        <div class="flex-1 overflow-y-auto p-5 space-y-8">
+            
+            <!-- Upload -->
+            <div class="space-y-3">
+                <label class="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-file-video"></i> Input Source
+                </label>
+                <div class="relative group">
+                    <input type="file" id="videoInput" accept="video/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                    <div class="border border-dashed border-gray-700 bg-gray-800/50 rounded-xl p-6 text-center transition-all group-hover:border-indigo-500 group-hover:bg-gray-800 group-hover:shadow-lg group-hover:shadow-indigo-500/10">
+                        <i class="fa-solid fa-cloud-arrow-up text-2xl text-gray-400 mb-2 group-hover:text-indigo-400 transition-colors"></i>
+                        <p class="text-sm font-medium text-gray-300">Select Video File</p>
+                        <p class="text-[10px] text-gray-500 mt-1">MP4, WebM, MOV</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parameters -->
+            <div class="space-y-5">
+                <label class="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-sliders"></i> Parameters
+                </label>
+                
+                <!-- Pixel Size -->
+                <div class="bg-gray-800/50 p-3 rounded-lg border border-gray-700/50">
+                    <div class="flex justify-between mb-2">
+                        <span class="text-xs text-gray-400">Pixel Size</span>
+                        <span id="pixelSizeValue" class="text-xs font-mono text-indigo-400 bg-indigo-400/10 px-2 py-0.5 rounded">8px</span>
+                    </div>
+                    <input type="range" id="pixelSizeRange" min="2" max="64" value="8" step="1" 
+                        class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400">
+                </div>
+
+                <!-- Algorithm -->
+                <div class="space-y-2">
+                    <span class="text-xs text-gray-400 block">Processing Method</span>
+                    <div class="relative">
+                        <select id="algorithmSelect" class="w-full bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 appearance-none cursor-pointer">
+                            <option value="nearest">Nearest Neighbor (Fast/Crisp)</option>
+                            <option value="median">Median Filter (Artistic/Clean)</option>
+                            <option value="bilinear">Bilinear (Smooth/Blurry)</option>
+                            <option value="scanline">CRT Scanlines (Retro)</option>
+                            <option value="monochrome">Gameboy (4-Color)</option>
+                        </select>
+                        <div class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-500">
+                            <i class="fa-solid fa-chevron-down text-xs"></i>
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-gray-600 px-1 leading-tight">
+                        <i class="fa-solid fa-circle-info mr-1"></i>
+                        "Median" calculates the middle color of each block. High CPU usage.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Playback -->
+            <div class="space-y-3">
+                <label class="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-play-circle"></i> Playback
+                </label>
+                <div class="flex gap-2">
+                    <button id="btnPlayPause" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-all shadow-lg shadow-indigo-900/50 flex justify-center items-center gap-2 active:scale-95">
+                        <i class="fa-solid fa-play"></i> Play
+                    </button>
+                    <button id="btnResetCamera" class="px-3 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors border border-gray-700" title="Reset View">
+                        <i class="fa-solid fa-crosshairs"></i>
+                    </button>
+                </div>
+            </div>
+
+             <!-- Hints -->
+             <div class="p-3 bg-indigo-900/20 rounded-lg border border-indigo-500/20">
+                <div class="flex items-center gap-2 mb-2">
+                    <i class="fa-solid fa-mouse text-indigo-400 text-xs"></i>
+                    <span class="text-[10px] font-bold uppercase text-indigo-300">Navigation</span>
+                </div>
+                <ul class="text-[10px] text-indigo-200/70 space-y-1 pl-1">
+                    <li>• <strong>Scroll:</strong> Zoom canvas</li>
+                    <li>• <strong>Drag:</strong> Pan camera</li>
+                    <li>• <strong>Params:</strong> Update in real-time</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="p-3 text-center border-t border-gray-800 bg-gray-900">
+            <p class="text-[10px] text-gray-600 font-mono">PixelStream v2.1</p>
+        </div>
+    </aside>
+
+    <!-- MAIN VIEWPORT -->
+    <main class="flex-1 relative overflow-hidden canvas-bg cursor-move" id="canvasContainer">
+        <!-- Floating HUD -->
+        <div id="statusOverlay" class="absolute top-6 left-6 pointer-events-none transition-all duration-500 opacity-0 translate-y-[-10px] bg-gray-900/80 backdrop-blur-md text-white px-4 py-2 rounded-lg text-xs font-mono border border-gray-700 shadow-2xl flex items-center gap-3 z-10">
+            <div class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </div>
+            <span id="statusText">Ready</span>
+        </div>
+        
+        <!-- Canvas -->
+        <canvas id="mainCanvas" class="block outline-none"></canvas>
+    </main>
+
+    <!-- HIDDEN ELEMENTS -->
+    <video id="sourceVideo" loop playsinline muted crossorigin="anonymous"></video>
+
+    <!-- LOGIC -->
+    <script>
+        /**
+         * System Configuration
+         */
+        const CONFIG = {
+            minZoom: 0.1,
+            maxZoom: 20,
+            zoomSpeed: 0.001,
+        };
+
+        /**
+         * Pixelation Strategies
+         */
+        const RESIZE_STRATEGIES = {
+            // 1. NEAREST NEIGHBOR (Standard)
+            nearest: (ctx, video, w, h, tempC, tempCtx, state) => {
+                tempC.width = w;
+                tempC.height = h;
+                tempCtx.imageSmoothingEnabled = false;
+                tempCtx.drawImage(video, 0, 0, w, h);
+                return tempC;
+            },
+
+            // 2. BILINEAR (Blurry)
+            bilinear: (ctx, video, w, h, tempC, tempCtx, state) => {
+                tempC.width = w;
+                tempC.height = h;
+                tempCtx.imageSmoothingEnabled = true; // Enable smoothing
+                tempCtx.drawImage(video, 0, 0, w, h);
+                return tempC;
+            },
+
+            // 3. MEDIAN FILTER (New: Artistic/Denoise)
+            // Calculates the median color for each block
+            median: (ctx, video, w, h, tempC, tempCtx, state) => {
+                // Ensure we have a canvas to read source pixels from
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                
+                // Reuse source canvas to avoid allocation churn
+                if (!state.offscreenCanvas) {
+                    state.offscreenCanvas = document.createElement('canvas');
+                    state.offscreenCtx = state.offscreenCanvas.getContext('2d', { willReadFrequently: true });
+                }
+                
+                // Resize offscreen only if needed
+                if (state.offscreenCanvas.width !== vw || state.offscreenCanvas.height !== vh) {
+                    state.offscreenCanvas.width = vw;
+                    state.offscreenCanvas.height = vh;
+                }
+
+                // Draw current video frame to offscreen canvas
+                state.offscreenCtx.drawImage(video, 0, 0);
+
+                // Get all pixel data (Heavy operation for 4K, fine for 1080p usually)
+                const srcImageData = state.offscreenCtx.getImageData(0, 0, vw, vh);
+                const srcData = srcImageData.data;
+
+                // Prepare output
+                tempC.width = w;
+                tempC.height = h;
+                const destImageData = tempCtx.createImageData(w, h);
+                const destData = destImageData.data;
+
+                // Determine block size (approximate)
+                const blockSizeX = vw / w;
+                const blockSizeY = vh / h;
+
+                // Process each target pixel
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        
+                        // Calculate bounds in source image
+                        const startX = Math.floor(x * blockSizeX);
+                        const startY = Math.floor(y * blockSizeY);
+                        const endX = Math.min(Math.floor((x + 1) * blockSizeX), vw);
+                        const endY = Math.min(Math.floor((y + 1) * blockSizeY), vh);
+
+                        // Collect pixels in this block
+                        const pixels = [];
+                        
+                        // Optimization: Step can be increased for massive blocks to save CPU
+                        const step = (blockSizeX > 20) ? 2 : 1;
+
+                        for (let sy = startY; sy < endY; sy += step) {
+                            for (let sx = startX; sx < endX; sx += step) {
+                                const idx = (sy * vw + sx) * 4;
+                                const r = srcData[idx];
+                                const g = srcData[idx + 1];
+                                const b = srcData[idx + 2];
+                                // Calculate Luma for sorting (Perceived brightness)
+                                const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                                pixels.push({ r, g, b, luma });
+                            }
+                        }
+
+                        if (pixels.length === 0) continue;
+
+                        // Sort by Luma to find the median pixel
+                        pixels.sort((a, b) => a.luma - b.luma);
+                        
+                        // Pick the middle one
+                        const medianPixel = pixels[Math.floor(pixels.length / 2)];
+                        
+                        // Write to destination
+                        const destIdx = (y * w + x) * 4;
+                        destData[destIdx] = medianPixel.r;
+                        destData[destIdx + 1] = medianPixel.g;
+                        destData[destIdx + 2] = medianPixel.b;
+                        destData[destIdx + 3] = 255; // Alpha
+                    }
+                }
+
+                tempCtx.putImageData(destImageData, 0, 0);
+                return tempC;
+            },
+
+            // 4. SCANLINE (Effect)
+            scanline: (ctx, video, w, h, tempC, tempCtx, state) => {
+                tempC.width = w;
+                tempC.height = h;
+                tempCtx.imageSmoothingEnabled = false;
+                tempCtx.drawImage(video, 0, 0, w, h);
+                
+                // Draw lines
+                tempCtx.fillStyle = "rgba(0, 0, 0, 0.4)";
+                for (let y = 0; y < h; y += 2) {
+                    tempCtx.fillRect(0, y, w, 1);
+                }
+                return tempC;
+            },
+
+            // 5. MONOCHROME (Gameboy)
+            monochrome: (ctx, video, w, h, tempC, tempCtx, state) => {
+                tempC.width = w;
+                tempC.height = h;
+                tempCtx.imageSmoothingEnabled = false;
+                tempCtx.drawImage(video, 0, 0, w, h);
+
+                const imageData = tempCtx.getImageData(0, 0, w, h);
+                const data = imageData.data;
+                const palette = [
+                    [15, 56, 15], [48, 98, 48], [139, 172, 15], [155, 188, 15]
+                ];
+
+                for (let i = 0; i < data.length; i += 4) {
+                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    const col = avg > 192 ? palette[3] : avg > 128 ? palette[2] : avg > 64 ? palette[1] : palette[0];
+                    data[i] = col[0]; data[i+1] = col[1]; data[i+2] = col[2];
+                }
+                tempCtx.putImageData(imageData, 0, 0);
+                return tempC;
+            }
+        };
+
+        /**
+         * App State
+         */
+        const state = {
+            video: document.getElementById('sourceVideo'),
+            canvas: document.getElementById('mainCanvas'),
+            ctx: null,
+            tempCanvas: document.createElement('canvas'), // Small canvas
+            tempCtx: null,
+            offscreenCanvas: null, // For heavy reads (Median)
+            offscreenCtx: null,
+            
+            camera: { x: 0, y: 0, scale: 1, isDragging: false, startX: 0, startY: 0 },
+            isPlaying: false,
+            pixelSize: 8,
+            algorithm: 'nearest',
+            width: 0, height: 0,
+            animationId: null
+        };
+
+        function init() {
+            state.ctx = state.canvas.getContext('2d', { alpha: false });
+            state.tempCtx = state.tempCanvas.getContext('2d', { willReadFrequently: true });
+            
+            resizeCanvas();
+            setupEvents();
+            centerCamera();
+            startLoop();
+        }
+
+        function setupEvents() {
+            const container = document.getElementById('canvasContainer');
+            
+            // Resize
+            window.addEventListener('resize', resizeCanvas);
+            
+            // File
+            document.getElementById('videoInput').addEventListener('change', handleUpload);
+            
+            // Inputs
+            document.getElementById('pixelSizeRange').addEventListener('input', (e) => {
+                state.pixelSize = parseInt(e.target.value);
+                document.getElementById('pixelSizeValue').innerText = `${state.pixelSize}px`;
+            });
+            document.getElementById('algorithmSelect').addEventListener('change', (e) => {
+                state.algorithm = e.target.value;
+            });
+
+            // Buttons
+            document.getElementById('btnPlayPause').addEventListener('click', togglePlay);
+            document.getElementById('btnResetCamera').addEventListener('click', centerCamera);
+
+            // Camera Controls
+            container.addEventListener('mousedown', (e) => {
+                state.camera.isDragging = true;
+                state.camera.startX = e.clientX - state.camera.x;
+                state.camera.startY = e.clientY - state.camera.y;
+                container.style.cursor = 'grabbing';
+            });
+            window.addEventListener('mouseup', () => {
+                state.camera.isDragging = false;
+                container.style.cursor = 'move';
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!state.camera.isDragging) return;
+                state.camera.x = e.clientX - state.camera.startX;
+                state.camera.y = e.clientY - state.camera.startY;
+            });
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const direction = e.deltaY < 0 ? 1 : -1;
+                const factor = Math.exp(direction * 0.1);
+                const rect = container.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                
+                const newScale = Math.max(CONFIG.minZoom, Math.min(CONFIG.maxZoom, state.camera.scale * factor));
+                state.camera.x -= (mx - state.camera.x) * (newScale / state.camera.scale - 1);
+                state.camera.y -= (my - state.camera.y) * (newScale / state.camera.scale - 1);
+                state.camera.scale = newScale;
+            }, { passive: false });
+        }
+
+        function resizeCanvas() {
+            const container = document.getElementById('canvasContainer');
+            state.width = container.clientWidth;
+            state.height = container.clientHeight;
+            state.canvas.width = state.width;
+            state.canvas.height = state.height;
+            state.ctx.imageSmoothingEnabled = false;
+        }
+
+        function handleUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const url = URL.createObjectURL(file);
+            state.video.src = url;
+            
+            showStatus('Loading Video...', true);
+
+            state.video.onloadedmetadata = () => {
+                showStatus(`${state.video.videoWidth}x${state.video.videoHeight} Loaded`);
+                centerCamera();
+                state.video.play().then(() => {
+                    state.isPlaying = true;
+                    updateUI();
+                }).catch(() => {
+                    state.isPlaying = false;
+                    updateUI();
+                });
+            };
+        }
+
+        function togglePlay() {
+            if (state.video.paused) {
+                state.video.play();
+                state.isPlaying = true;
+            } else {
+                state.video.pause();
+                state.isPlaying = false;
+            }
+            updateUI();
+        }
+
+        function updateUI() {
+            const btn = document.getElementById('btnPlayPause');
+            if (state.isPlaying) {
+                btn.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
+                btn.classList.add('bg-red-600', 'hover:bg-red-500');
+                btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+            } else {
+                btn.innerHTML = '<i class="fa-solid fa-play"></i> Play';
+                btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+                btn.classList.remove('bg-red-600', 'hover:bg-red-500');
+            }
+        }
+
+        function centerCamera() {
+            if (!state.video.videoWidth) {
+                state.camera.x = state.width/2;
+                state.camera.y = state.height/2;
+                return;
+            }
+            const padding = 60;
+            const scale = Math.min(
+                (state.width - padding) / state.video.videoWidth,
+                (state.height - padding) / state.video.videoHeight,
+                2 // Max initial zoom
+            );
+            state.camera.scale = scale;
+            state.camera.x = (state.width - state.video.videoWidth * scale) / 2;
+            state.camera.y = (state.height - state.video.videoHeight * scale) / 2;
+        }
+
+        function showStatus(msg, persist = false) {
+            const el = document.getElementById('statusOverlay');
+            const txt = document.getElementById('statusText');
+            txt.innerText = msg;
+            el.style.opacity = '1';
+            el.style.transform = 'translateY(0)';
+            if (!persist) {
+                setTimeout(() => {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(-10px)';
+                }, 2000);
+            }
+        }
+
+        function startLoop() {
+            const loop = () => {
+                render();
+                state.animationId = requestAnimationFrame(loop);
+            };
+            loop();
+        }
+
+        function render() {
+            const { ctx, canvas, video, camera, pixelSize, algorithm } = state;
+
+            // Clear Background
+            ctx.fillStyle = "#0b0f19";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(camera.x, camera.y);
+            ctx.scale(camera.scale, camera.scale);
+
+            if (video.readyState >= 2) {
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                const w = Math.max(1, Math.floor(vw / pixelSize));
+                const h = Math.max(1, Math.floor(vh / pixelSize));
+
+                // Execute Strategy
+                const strategy = RESIZE_STRATEGIES[algorithm] || RESIZE_STRATEGIES.nearest;
+                const processed = strategy(ctx, video, w, h, state.tempCanvas, state.tempCtx, state);
+
+                // Draw Final Result
+                ctx.imageSmoothingEnabled = false; // Always keep sharp pixels for zoom
+                
+                // Draw drop shadow
+                ctx.shadowColor = "black";
+                ctx.shadowBlur = 20;
+                ctx.shadowOffsetX = 10;
+                ctx.shadowOffsetY = 10;
+                
+                ctx.drawImage(processed, 0, 0, w, h, 0, 0, vw, vh);
+
+                // Reset shadow for border
+                ctx.shadowColor = "transparent";
+                
+                // Draw Border
+                ctx.strokeStyle = '#6366f1';
+                ctx.lineWidth = 1 / camera.scale;
+                ctx.strokeRect(0, 0, vw, vh);
+
+            } else {
+                // Placeholder
+                ctx.fillStyle = "#1f2937";
+                ctx.fillRect(-160, -90, 320, 180);
+                ctx.fillStyle = "#4b5563";
+                ctx.font = "20px monospace";
+                ctx.textAlign = "center";
+                ctx.fillText("WAITING FOR VIDEO...", 0, 10);
+            }
+
+            ctx.restore();
+        }
+
+        // Boot
+        window.onload = init;
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- META DATA -->
+    <title>Double Pendulum Phase Explorer</title>
+    <meta name="description" content="GPU-accelerated Double Pendulum Phase Space Fractal Viewer with adjustable parameters.">
+    <meta name="page:icon" content="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <meta name="page:color" content="#0f172a">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* Glassmorphism utilities */
+        .glass {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #a855f7;
+            cursor: pointer;
+            margin-top: -5px; 
+            box-shadow: 0 0 5px rgba(168, 85, 247, 0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        
+        /* Scrollbar for settings */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1); 
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2); 
+            border-radius: 3px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.3); 
+        }
+    </style>
+</head>
+<body class="text-white font-sans antialiased">
+
+    <!-- WebGL Canvas -->
+    <canvas id="glcanvas"></canvas>
+
+    <!-- Overlay Container -->
+    <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 sm:p-6 overflow-hidden">
+        
+        <!-- Header -->
+        <header class="pointer-events-auto flex justify-between items-start z-10">
+            <div class="glass rounded-xl p-4 shadow-2xl transition-opacity duration-300 group max-w-xs">
+                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">
+                    <i class="fa-solid fa-shapes mr-2 text-white text-sm"></i>Phase Space
+                </h1>
+                <p class="text-[10px] text-slate-300 mt-1 leading-relaxed">
+                    2重振り子の初期角 $(\theta_1, \theta_2)$ マッピング。<br>
+                    色は「第2振り子が回転するまでの時間」を表します。
+                </p>
+            </div>
+
+            <button id="toggle-settings" class="glass w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 transition text-slate-300 hover:text-white pointer-events-auto">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+        </header>
+
+        <!-- Settings Panel (Hidden by default, toggled via JS) -->
+        <div id="settings-panel" class="absolute right-4 top-20 bottom-20 w-72 glass rounded-xl pointer-events-auto transform transition-transform duration-300 translate-x-[120%] flex flex-col z-20">
+            <div class="p-4 border-b border-white/10 flex justify-between items-center">
+                <h2 class="font-bold text-sm text-slate-200">Parameters</h2>
+                <button id="close-settings" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-6">
+                
+                <!-- Resolution -->
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Resolution (Quality)</span>
+                        <span id="val-res">1.0x</span>
+                    </div>
+                    <input type="range" id="input-res" min="0.25" max="2.0" step="0.25" value="1.0">
+                </div>
+
+                <hr class="border-white/10">
+
+                <!-- Physics Params -->
+                <div class="space-y-4">
+                    <h3 class="text-xs font-bold text-purple-400 uppercase tracking-wider">Physics</h3>
+                    
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Mass 1 ($m_1$)</span>
+                            <span id="val-m1">1.0</span>
+                        </div>
+                        <input type="range" id="input-m1" min="0.1" max="5.0" step="0.1" value="1.0">
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Mass 2 ($m_2$)</span>
+                            <span id="val-m2">1.0</span>
+                        </div>
+                        <input type="range" id="input-m2" min="0.1" max="5.0" step="0.1" value="1.0">
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Gravity ($g$)</span>
+                            <span id="val-g">9.81</span>
+                        </div>
+                        <input type="range" id="input-g" min="0.0" max="20.0" step="0.1" value="9.81">
+                    </div>
+                </div>
+
+                <hr class="border-white/10">
+
+                <!-- Simulation Params -->
+                <div class="space-y-4">
+                    <h3 class="text-xs font-bold text-pink-400 uppercase tracking-wider">Simulation</h3>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Time Step ($\Delta t$)</span>
+                            <span id="val-dt">0.05</span>
+                        </div>
+                        <input type="range" id="input-dt" min="0.01" max="0.2" step="0.01" value="0.05">
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Max Iterations</span>
+                            <span id="val-iter">400</span>
+                        </div>
+                        <input type="range" id="input-iter" min="100" max="800" step="50" value="400">
+                        <p class="text-[9px] text-slate-500 pt-1">Higher iterations = more detail but slower.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-white/10 bg-black/20">
+                <button id="btn-reset-params" class="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold transition">
+                    Reset Parameters
+                </button>
+            </div>
+        </div>
+
+        <!-- Footer / Controls -->
+        <footer class="pointer-events-auto flex justify-between items-end">
+            <div class="glass rounded-lg px-3 py-2 flex flex-col gap-1 text-[10px] font-mono text-cyan-300 shadow-lg">
+                <div id="debug-coords">Center: 3.14, 3.14</div>
+                <div id="debug-zoom">Zoom: 1.00x</div>
+            </div>
+            
+            <div class="flex gap-2">
+                <button id="btn-home" class="glass w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 transition text-slate-300" title="Reset View">
+                    <i class="fa-solid fa-compress"></i>
+                </button>
+                <button id="btn-dl" class="glass w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 transition text-slate-300" title="Save Image">
+                    <i class="fa-solid fa-camera"></i>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- SHADERS -->
+    <script id="vs" type="x-shader/x-vertex">
+        attribute vec4 position;
+        void main() {
+            gl_Position = position;
+        }
+    </script>
+
+    <script id="fs" type="x-shader/x-fragment">
+        precision highp float;
+
+        uniform vec2 u_resolution;
+        uniform vec2 u_offset;
+        uniform float u_zoom;
+        
+        // Physics Uniforms
+        uniform float u_m1;
+        uniform float u_m2;
+        uniform float u_g;
+        uniform float u_dt;
+        uniform float u_max_steps;
+
+        // Constants
+        #define PI 3.14159265359
+        #define L1 1.0
+        #define L2 1.0
+
+        // Spectral Color Palette
+        vec3 palette( in float t, in vec3 a, in vec3 b, in vec3 c, in vec3 d ) {
+            return a + b*cos( 6.28318*(c*t+d) );
+        }
+
+        void main() {
+            // Coordinate mapping
+            vec2 st = gl_FragCoord.xy / u_resolution.xy;
+            st = (st - 0.5) * 2.0;
+            st.x *= u_resolution.x / u_resolution.y; 
+            
+            // Camera
+            vec2 angles = st * (10.0 / u_zoom) + u_offset;
+
+            // Physics State
+            float th1 = angles.x;
+            float th2 = angles.y;
+            float v1 = 0.0;
+            float v2 = 0.0;
+            
+            // Re-calc mass term
+            float totalMass = u_m1 + u_m2;
+
+            float flipTime = 0.0;
+            bool flipped = false;
+
+            // Integration Loop
+            // Using a large hardcoded limit for unrolling, but breaking early via uniform
+            for(int i = 0; i < 1000; i++) {
+                if(float(i) > u_max_steps) break;
+
+                // Physics Equations (optimized)
+                float d = th1 - th2;
+                float cosD = cos(d);
+                float sinD = sin(d);
+                float den = 2.0 * u_m1 + u_m2 - u_m2 * cos(2.0 * th1 - 2.0 * th2);
+                
+                // Acceleration 1
+                float num1 = -u_g * (2.0 * u_m1 + u_m2) * sin(th1);
+                float num2 = -u_m2 * u_g * sin(th1 - 2.0 * th2);
+                float num3 = -2.0 * sinD * u_m2 * (v2 * v2 * L2 + v1 * v1 * L1 * cosD);
+                float a1 = (num1 + num2 + num3) / (L1 * den);
+
+                // Acceleration 2
+                float num4 = 2.0 * sinD;
+                float num5 = (v1 * v1 * L1 * totalMass);
+                float num6 = u_g * totalMass * cos(th1);
+                float num7 = v2 * v2 * L2 * u_m2 * cosD;
+                float a2 = (num4 * (num5 + num6 + num7)) / (L2 * den);
+
+                // Symplectic Euler
+                v1 += a1 * u_dt;
+                v2 += a2 * u_dt;
+                th1 += v1 * u_dt;
+                th2 += v2 * u_dt;
+
+                // Flip Condition: Has 2nd pendulum crossed the top?
+                // Checking if angle deviates from initial by > PI is a decent chaos metric for this view
+                if(abs(th2 - angles.y) > PI) {
+                    flipTime = float(i);
+                    flipped = true;
+                    break;
+                }
+            }
+
+            vec3 color = vec3(0.0);
+
+            if (flipped) {
+                // Color by iteration count
+                float t = flipTime / u_max_steps;
+                
+                // Custom palette
+                vec3 a = vec3(0.5, 0.5, 0.5);
+                vec3 b = vec3(0.5, 0.5, 0.5);
+                vec3 c = vec3(1.0, 1.0, 1.0);
+                vec3 d = vec3(0.00, 0.33, 0.67);
+                
+                // Enhance contrast
+                float val = pow(t, 0.5); 
+                color = palette(val * 2.5, a, b, c, d);
+                
+                // Slight shadow for depth based on speed
+                color *= smoothstep(0.0, 0.2, t);
+            } else {
+                // Background (Stable/No-flip)
+                // Just use energy to create a subtle texture, NO GRID
+                float energy = 0.5 * (v1*v1 + v2*v2);
+                // Deep blue/purple abyss
+                color = vec3(0.02, 0.02, 0.05) + vec3(0.05, 0.02, 0.1) * sin(energy * 0.5);
+            }
+
+            gl_FragColor = vec4(color, 1.0);
+        }
+    </script>
+
+    <!-- Main Logic -->
+    <script>
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl');
+        
+        // --- WebGL Boilerplate ---
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error("Shader Error:", gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        const program = gl.createProgram();
+        const vs = createShader(gl, gl.VERTEX_SHADER, document.getElementById('vs').text);
+        const fs = createShader(gl, gl.FRAGMENT_SHADER, document.getElementById('fs').text);
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+        const posLoc = gl.getAttribLocation(program, "position");
+        gl.enableVertexAttribArray(posLoc);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.useProgram(program);
+
+        // --- Uniform Locations ---
+        const locs = {
+            res: gl.getUniformLocation(program, "u_resolution"),
+            off: gl.getUniformLocation(program, "u_offset"),
+            zoom: gl.getUniformLocation(program, "u_zoom"),
+            m1: gl.getUniformLocation(program, "u_m1"),
+            m2: gl.getUniformLocation(program, "u_m2"),
+            g: gl.getUniformLocation(program, "u_g"),
+            dt: gl.getUniformLocation(program, "u_dt"),
+            maxSteps: gl.getUniformLocation(program, "u_max_steps")
+        };
+
+        // --- Application State ---
+        let view = {
+            x: 3.14,
+            y: 3.14,
+            zoom: 1.0,
+            dragging: false,
+            lx: 0, ly: 0
+        };
+
+        let params = {
+            resScale: 1.0,
+            m1: 1.0,
+            m2: 1.0,
+            g: 9.81,
+            dt: 0.05,
+            steps: 400
+        };
+
+        // --- UI & Controls ---
+        const ui = {
+            panel: document.getElementById('settings-panel'),
+            toggle: document.getElementById('toggle-settings'),
+            close: document.getElementById('close-settings'),
+            resetView: document.getElementById('btn-home'),
+            resetParams: document.getElementById('btn-reset-params'),
+            screenshot: document.getElementById('btn-dl'),
+            inputs: {
+                res: document.getElementById('input-res'),
+                m1: document.getElementById('input-m1'),
+                m2: document.getElementById('input-m2'),
+                g: document.getElementById('input-g'),
+                dt: document.getElementById('input-dt'),
+                iter: document.getElementById('input-iter')
+            },
+            labels: {
+                res: document.getElementById('val-res'),
+                m1: document.getElementById('val-m1'),
+                m2: document.getElementById('val-m2'),
+                g: document.getElementById('val-g'),
+                dt: document.getElementById('val-dt'),
+                iter: document.getElementById('val-iter')
+            },
+            debug: {
+                coords: document.getElementById('debug-coords'),
+                zoom: document.getElementById('debug-zoom')
+            }
+        };
+
+        // Panel Toggle
+        ui.toggle.addEventListener('click', () => {
+            ui.panel.classList.remove('translate-x-[120%]');
+        });
+        ui.close.addEventListener('click', () => {
+            ui.panel.classList.add('translate-x-[120%]');
+        });
+
+        // Parameter Logic
+        function updateParam(key, value) {
+            params[key] = parseFloat(value);
+            // Update UI label
+            if (key === 'resScale') ui.labels.res.innerText = params.resScale + 'x';
+            if (key === 'm1') ui.labels.m1.innerText = params.m1;
+            if (key === 'm2') ui.labels.m2.innerText = params.m2;
+            if (key === 'g') ui.labels.g.innerText = params.g;
+            if (key === 'dt') ui.labels.dt.innerText = params.dt;
+            if (key === 'steps') ui.labels.iter.innerText = params.steps;
+
+            if (key === 'resScale') resize();
+            else requestAnimationFrame(render);
+        }
+
+        // Bind Inputs
+        ui.inputs.res.addEventListener('input', e => updateParam('resScale', e.target.value));
+        ui.inputs.m1.addEventListener('input', e => updateParam('m1', e.target.value));
+        ui.inputs.m2.addEventListener('input', e => updateParam('m2', e.target.value));
+        ui.inputs.g.addEventListener('input', e => updateParam('g', e.target.value));
+        ui.inputs.dt.addEventListener('input', e => updateParam('dt', e.target.value));
+        ui.inputs.iter.addEventListener('input', e => updateParam('steps', e.target.value));
+
+        // Reset Buttons
+        ui.resetView.addEventListener('click', () => {
+            view.x = 3.14; view.y = 3.14; view.zoom = 1.0;
+            updateDebug();
+            requestAnimationFrame(render);
+        });
+
+        ui.resetParams.addEventListener('click', () => {
+            ui.inputs.m1.value = 1.0; updateParam('m1', 1.0);
+            ui.inputs.m2.value = 1.0; updateParam('m2', 1.0);
+            ui.inputs.g.value = 9.81; updateParam('g', 9.81);
+            ui.inputs.dt.value = 0.05; updateParam('dt', 0.05);
+            ui.inputs.iter.value = 400; updateParam('steps', 400);
+            ui.inputs.res.value = 1.0; updateParam('resScale', 1.0);
+        });
+
+        ui.screenshot.addEventListener('click', () => {
+            render();
+            const a = document.createElement('a');
+            a.download = `chaos_m1-${params.m1}_m2-${params.m2}.png`;
+            a.href = canvas.toDataURL();
+            a.click();
+        });
+
+        // --- Mouse Interaction ---
+        canvas.addEventListener('mousedown', e => {
+            view.dragging = true;
+            view.lx = e.clientX;
+            view.ly = e.clientY;
+            canvas.style.cursor = 'grabbing';
+        });
+        window.addEventListener('mouseup', () => {
+            view.dragging = false;
+            canvas.style.cursor = 'default';
+        });
+        window.addEventListener('mousemove', e => {
+            if(!view.dragging) return;
+            const dx = e.clientX - view.lx;
+            const dy = e.clientY - view.ly;
+            view.lx = e.clientX;
+            view.ly = e.clientY;
+
+            // Pan sensitivity
+            const s = (10.0 / view.zoom) / Math.min(canvas.width, canvas.height);
+            view.x -= dx * s * 2.0; 
+            view.y += dy * s * 2.0;
+            
+            updateDebug();
+            requestAnimationFrame(render);
+        });
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const delta = -e.deltaY * 0.001;
+            view.zoom = Math.max(0.1, view.zoom * (1 + delta));
+            updateDebug();
+            requestAnimationFrame(render);
+        }, {passive: false});
+
+        function updateDebug() {
+            ui.debug.coords.innerText = `Center: ${view.x.toFixed(2)}, ${view.y.toFixed(2)}`;
+            ui.debug.zoom.innerText = `Zoom: ${view.zoom.toFixed(2)}x`;
+        }
+
+        // --- Rendering Core ---
+        function resize() {
+            // devicePixelRatio logic combined with custom user scale
+            const dpr = window.devicePixelRatio || 1;
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            
+            canvas.width = w * dpr * params.resScale;
+            canvas.height = h * dpr * params.resScale;
+            
+            // Visual size
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            requestAnimationFrame(render);
+        }
+
+        function render() {
+            gl.uniform2f(locs.res, canvas.width, canvas.height);
+            gl.uniform2f(locs.off, view.x, view.y);
+            gl.uniform1f(locs.zoom, view.zoom);
+
+            gl.uniform1f(locs.m1, params.m1);
+            gl.uniform1f(locs.m2, params.m2);
+            gl.uniform1f(locs.g, params.g);
+            gl.uniform1f(locs.dt, params.dt);
+            gl.uniform1f(locs.maxSteps, params.steps);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        window.addEventListener('resize', resize);
+        
+        // Init
+        updateDebug();
+        resize();
+
+    </script>
+</body>
+</html>
