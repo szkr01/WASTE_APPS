@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Required Meta Data -->
+    <title>LineRefine AI | Pro V2</title>
+    <meta name="description" content="AI線画補正ツール。入り抜き補正強化版。線の強弱、太さ、シャープネスを自在にコントロール。">
+    <meta name="page:icon" content="https://cdnjs.cloudflare.com/ajax/libs/phosphor-icons/1.4.2/png/pen-nib-bold.png">
+    <meta name="page:color" content="#ffffff">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #ffffff;
+            color: #18181b;
+            overscroll-behavior: none;
+        }
+        
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type=range]:focus { outline: none; }
+        
+        /* Thumb */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #18181b; 
+            margin-top: -5px;
+            box-shadow: 0 0 0 2px #ffffff, 0 1px 3px rgba(0,0,0,0.2);
+            transition: transform 0.1s, background-color 0.2s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+        
+        /* Track */
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e4e4e7;
+            border-radius: 2px;
+        }
+
+        /* Disabled State for Range */
+        input[type=range]:disabled {
+            cursor: not-allowed;
+        }
+        input[type=range]:disabled::-webkit-slider-thumb {
+            background: #d4d4d8;
+            box-shadow: none;
+        }
+        input[type=range]:disabled::-webkit-slider-runnable-track {
+            background: #f4f4f5;
+        }
+        
+        /* Minimal Grid Background */
+        .grid-bg {
+            background-color: #fcfcfc;
+            background-image: 
+                linear-gradient(#e5e7eb 1px, transparent 1px),
+                linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
+            background-size: 40px 40px;
+            background-position: center top;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 2px; }
+
+        /* Canvas Cursor States */
+        .cursor-grab { cursor: grab; }
+        .cursor-grabbing { cursor: grabbing; }
+
+        /* Toggle Switch Style */
+        .toggle-checkbox:checked { right: 0; border-color: #18181b; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #18181b; }
+        .toggle-checkbox:checked ~ .dot { transform: translateX(100%); }
+        
+        /* Control Group Disabled Visuals */
+        .control-group.disabled { 
+            opacity: 0.5; 
+            filter: grayscale(100%); 
+        }
+        /* 親に pointer-events: none をかけないことでトグル操作を可能にする */
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col md:flex-row overflow-hidden text-zinc-800">
+
+    <!-- Sidebar / Controls -->
+    <aside class="w-full md:w-80 flex-shrink-0 bg-white border-r border-zinc-100 flex flex-col h-full z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+        <!-- Header -->
+        <div class="px-6 py-5 border-b border-zinc-100">
+            <div class="flex items-center gap-2 mb-1">
+                <i class="ph-fill ph-pen-nib text-xl text-zinc-900"></i>
+                <h1 class="text-base font-bold tracking-tight text-zinc-900">LineRefine AI</h1>
+            </div>
+            <p class="text-[10px] text-zinc-400 font-medium">Parameters & Settings</p>
+        </div>
+
+        <!-- Controls Container -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-8">
+            
+            <!-- Upload Section -->
+            <div class="relative group">
+                <input type="file" id="fileInput" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                <div class="border border-zinc-200 group-hover:border-zinc-400 rounded-lg p-6 text-center transition-all bg-zinc-50 group-hover:bg-zinc-100">
+                    <div class="w-8 h-8 bg-white rounded-full shadow-sm border border-zinc-100 flex items-center justify-center mx-auto mb-2">
+                        <i class="ph ph-image text-lg text-zinc-400 group-hover:text-zinc-700"></i>
+                    </div>
+                    <p class="text-xs text-zinc-600 font-medium">画像を開く</p>
+                </div>
+            </div>
+
+            <!-- Parameters -->
+            <div class="space-y-6">
+                
+                <!-- 1. Line Weight -->
+                <div class="control-group transition-opacity duration-200" id="group-weight">
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="flex items-center gap-3">
+                            <!-- Toggle -->
+                            <label class="flex items-center cursor-pointer relative w-8 h-4">
+                                <input type="checkbox" id="toggle-weight" class="sr-only toggle-checkbox" checked>
+                                <div class="toggle-label block bg-zinc-200 w-8 h-4 rounded-full transition-colors duration-200"></div>
+                                <div class="dot absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform duration-200 ease-in-out shadow-sm"></div>
+                            </label>
+                            <label class="text-[11px] font-bold text-zinc-600 uppercase tracking-wider cursor-pointer select-none" for="toggle-weight">線の太さ</label>
+                        </div>
+                        <span id="val-weight" class="val-display text-[10px] font-mono text-zinc-500 border border-zinc-200 px-1.5 py-0.5 rounded bg-white min-w-[32px] text-center">1.5</span>
+                    </div>
+                    <input type="range" id="param-weight" min="0" max="5" step="0.1" value="1.5">
+                    
+                    <!-- Sub Param: Taper (Irinuki) -->
+                    <div class="mt-4 pl-3 border-l-2 border-zinc-100">
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                                <i class="ph-bold ph-bezier-curve"></i> 入り抜き補正
+                            </label>
+                            <span id="val-taper" class="text-[10px] font-mono text-zinc-400">0.50</span>
+                        </div>
+                        <input type="range" id="param-taper" min="0" max="1" step="0.01" value="0.5">
+                        <p class="text-[9px] text-zinc-300 mt-1">値を上げると薄い線は細いまま維持されます</p>
+                    </div>
+                </div>
+
+                <!-- 2. Sharpen -->
+                <div class="control-group transition-opacity duration-200" id="group-sharpen">
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="flex items-center gap-3">
+                            <label class="flex items-center cursor-pointer relative w-8 h-4">
+                                <input type="checkbox" id="toggle-sharpen" class="sr-only toggle-checkbox" checked>
+                                <div class="toggle-label block bg-zinc-200 w-8 h-4 rounded-full transition-colors duration-200"></div>
+                                <div class="dot absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform duration-200 ease-in-out shadow-sm"></div>
+                            </label>
+                            <label class="text-[11px] font-bold text-zinc-600 uppercase tracking-wider cursor-pointer select-none" for="toggle-sharpen">シャープネス</label>
+                        </div>
+                        <span id="val-sharpen" class="val-display text-[10px] font-mono text-zinc-500 border border-zinc-200 px-1.5 py-0.5 rounded bg-white min-w-[32px] text-center">2.0</span>
+                    </div>
+                    <input type="range" id="param-sharpen" min="0" max="10" step="0.1" value="2.0">
+                </div>
+
+                <!-- 3. Threshold -->
+                <div class="control-group transition-opacity duration-200" id="group-threshold">
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="flex items-center gap-3">
+                            <label class="flex items-center cursor-pointer relative w-8 h-4">
+                                <input type="checkbox" id="toggle-threshold" class="sr-only toggle-checkbox" checked>
+                                <div class="toggle-label block bg-zinc-200 w-8 h-4 rounded-full transition-colors duration-200"></div>
+                                <div class="dot absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform duration-200 ease-in-out shadow-sm"></div>
+                            </label>
+                            <label class="text-[11px] font-bold text-zinc-600 uppercase tracking-wider cursor-pointer select-none" for="toggle-threshold">濃度・閾値</label>
+                        </div>
+                        <span id="val-threshold" class="val-display text-[10px] font-mono text-zinc-500 border border-zinc-200 px-1.5 py-0.5 rounded bg-white min-w-[32px] text-center">0.50</span>
+                    </div>
+                    <input type="range" id="param-threshold" min="0" max="1" step="0.01" value="0.5">
+                </div>
+
+                <!-- 4. Denoise -->
+                <div class="control-group transition-opacity duration-200" id="group-denoise">
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="flex items-center gap-3">
+                            <label class="flex items-center cursor-pointer relative w-8 h-4">
+                                <input type="checkbox" id="toggle-denoise" class="sr-only toggle-checkbox" checked>
+                                <div class="toggle-label block bg-zinc-200 w-8 h-4 rounded-full transition-colors duration-200"></div>
+                                <div class="dot absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform duration-200 ease-in-out shadow-sm"></div>
+                            </label>
+                            <label class="text-[11px] font-bold text-zinc-600 uppercase tracking-wider cursor-pointer select-none" for="toggle-denoise">ノイズ除去</label>
+                        </div>
+                        <span id="val-denoise" class="val-display text-[10px] font-mono text-zinc-500 border border-zinc-200 px-1.5 py-0.5 rounded bg-white min-w-[32px] text-center">0.20</span>
+                    </div>
+                    <input type="range" id="param-denoise" min="0" max="1" step="0.01" value="0.2">
+                </div>
+
+                 <!-- 5. Grayscale -->
+                 <div class="flex items-center justify-between pt-4 border-t border-zinc-100 mt-4">
+                    <span class="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">モノクロ出力</span>
+                    <label class="flex items-center cursor-pointer relative w-8 h-4">
+                        <input type="checkbox" id="toggle-grayscale" class="sr-only toggle-checkbox">
+                        <div class="toggle-label block bg-zinc-200 w-8 h-4 rounded-full transition-colors duration-200"></div>
+                        <div class="dot absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform duration-200 ease-in-out shadow-sm"></div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="pt-6 mt-auto">
+                <button id="downloadBtn" class="w-full bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold py-3 px-4 rounded shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="ph-bold ph-download-simple"></i>
+                    PNG保存
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex flex-col relative overflow-hidden">
+        
+        <!-- Toolbar -->
+        <div class="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
+            <!-- View Controls -->
+            <div class="pointer-events-auto bg-white shadow-[0_2px_10px_rgba(0,0,0,0.05)] border border-zinc-100 rounded px-2 py-1.5 flex items-center gap-2">
+                <button id="btn-fit" class="p-1.5 hover:bg-zinc-50 rounded text-zinc-500 hover:text-zinc-800 transition-colors" title="全体表示">
+                    <i class="ph-bold ph-arrows-out"></i>
+                </button>
+                <div class="h-3 w-px bg-zinc-200"></div>
+                <button id="btn-zoom-out" class="p-1.5 hover:bg-zinc-50 rounded text-zinc-500 hover:text-zinc-800 transition-colors">
+                    <i class="ph-bold ph-minus"></i>
+                </button>
+                <span id="zoom-level" class="text-[10px] font-mono w-10 text-center text-zinc-400">100%</span>
+                <button id="btn-zoom-in" class="p-1.5 hover:bg-zinc-50 rounded text-zinc-500 hover:text-zinc-800 transition-colors">
+                    <i class="ph-bold ph-plus"></i>
+                </button>
+            </div>
+
+            <!-- Image Info -->
+            <div class="pointer-events-auto bg-white shadow-[0_2px_10px_rgba(0,0,0,0.05)] border border-zinc-100 rounded px-3 py-2 flex items-center gap-2">
+                 <span id="image-dims" class="text-[10px] font-mono text-zinc-400">No Image</span>
+            </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div id="canvasContainer" class="flex-1 relative w-full h-full overflow-hidden grid-bg cursor-grab">
+            <canvas id="displayCanvas" class="block touch-none w-full h-full"></canvas>
+            
+            <!-- Empty State -->
+            <div id="emptyState" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="text-center opacity-40">
+                    <i class="ph-duotone ph-pencil-simple-slash text-4xl text-zinc-300 mb-3"></i>
+                    <p class="text-zinc-400 text-xs tracking-wider">DROP IMAGE HERE</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Hidden Process Elements -->
+    <img id="sourceImage" class="hidden">
+    <canvas id="processCanvas" class="hidden"></canvas>
+
+
+    <!-- Shader Scripts -->
+    <script id="vs" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        varying vec2 v_texCoord;
+        void main() {
+            gl_Position = vec4(a_position, 0, 1);
+            v_texCoord = a_texCoord;
+        }
+    </script>
+
+    <script id="fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D u_image;
+        uniform vec2 u_resolution;
+        
+        // Params
+        uniform float u_weight;    
+        uniform float u_taper;     
+        uniform float u_sharpen;   
+        uniform float u_threshold; 
+        uniform float u_denoise; 
+        
+        // Toggles
+        uniform bool u_use_weight;
+        uniform bool u_use_sharpen;
+        uniform bool u_use_threshold;
+        uniform bool u_use_denoise;
+        uniform bool u_use_grayscale;
+
+        varying vec2 v_texCoord;
+
+        float luminance(vec3 color) {
+            return dot(color, vec3(0.299, 0.587, 0.114));
+        }
+
+        void main() {
+            vec2 onePixel = vec2(1.0) / u_resolution;
+            vec4 originalColor = texture2D(u_image, v_texCoord);
+
+            // 1. Denoise
+            vec4 baseColor = originalColor;
+            if (u_use_denoise && u_denoise > 0.0) {
+                vec4 blurred = vec4(0.0);
+                float totalWeight = 0.0;
+                for(int x = -1; x <= 1; x++) {
+                    for(int y = -1; y <= 1; y++) {
+                        vec2 offset = vec2(float(x), float(y)) * onePixel;
+                        vec4 sample = texture2D(u_image, v_texCoord + offset);
+                        float w = 1.0 - (length(vec2(x, y)) * 0.5 * u_denoise);
+                        blurred += sample * w;
+                        totalWeight += w;
+                    }
+                }
+                baseColor = blurred / totalWeight;
+            }
+
+            // 2. Line Weight with Tapering Logic (Fixed)
+            if (u_use_weight && u_weight > 0.0) {
+                float minLum = 1.0;
+                vec3 darkColor = baseColor.rgb;
+                
+                // Find darkest pixel
+                for(int x = -2; x <= 2; x++) {
+                    for(int y = -2; y <= 2; y++) {
+                        if (length(vec2(float(x), float(y))) > u_weight + 0.5) continue;
+                        vec2 offset = vec2(float(x), float(y)) * onePixel;
+                        vec4 sample = texture2D(u_image, v_texCoord + offset);
+                        float lum = luminance(sample.rgb);
+                        if (lum < minLum) {
+                            minLum = lum;
+                            darkColor = sample.rgb;
+                        }
+                    }
+                }
+
+                // Tapering Logic V2
+                // neighborDarkness: 拾ってきた近傍の色の濃さ (0=白, 1=黒)
+                float neighborDarkness = 1.0 - minLum;
+                
+                // 強度係数
+                float intensity = 1.0;
+                if (u_taper > 0.0) {
+                    // 近傍色が薄い場合、指数関数的に太らせ効果を減衰させる
+                    // u_taper=1.0の時、neighborDarknessが1.0に近くないと反応しない
+                    intensity = pow(neighborDarkness, u_taper * 4.0); 
+                }
+
+                baseColor.rgb = mix(baseColor.rgb, darkColor, clamp(u_weight * intensity, 0.0, 1.0));
+            }
+
+            // 3. Sharpening
+            if (u_use_sharpen && u_sharpen > 0.0) {
+                vec4 n = texture2D(u_image, v_texCoord + vec2(0, 1) * onePixel);
+                vec4 s = texture2D(u_image, v_texCoord + vec2(0, -1) * onePixel);
+                vec4 e = texture2D(u_image, v_texCoord + vec2(1, 0) * onePixel);
+                vec4 w = texture2D(u_image, v_texCoord + vec2(-1, 0) * onePixel);
+                vec4 edges = baseColor - ((n + s + e + w) * 0.25);
+                baseColor = baseColor + edges * u_sharpen;
+            }
+
+            // 4. Threshold
+            vec3 finalRGB = baseColor.rgb;
+            if (u_use_threshold) {
+                float lum = luminance(finalRGB);
+                float contrastPower = 0.5 + (u_threshold * 2.5); 
+                float adjustedLum = pow(lum, contrastPower);
+                if (lum > 0.0) {
+                    finalRGB = finalRGB * (adjustedLum / lum);
+                }
+            }
+
+            // 5. Grayscale
+            if (u_use_grayscale) {
+                finalRGB = vec3(luminance(finalRGB));
+            }
+
+            gl_FragColor = vec4(clamp(finalRGB, 0.0, 1.0), originalColor.a);
+        }
+    </script>
+
+    <!-- Application Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const processCanvas = document.getElementById('processCanvas');
+            const displayCanvas = document.getElementById('displayCanvas');
+            const canvasContainer = document.getElementById('canvasContainer');
+            const sourceImage = document.getElementById('sourceImage');
+            const emptyState = document.getElementById('emptyState');
+            
+            const fileInput = document.getElementById('fileInput');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const dimDisplay = document.getElementById('image-dims');
+            const zoomLabel = document.getElementById('zoom-level');
+
+            let isImageLoaded = false;
+            let isComparing = false; 
+
+            // View State
+            let viewState = {
+                scale: 1,
+                offsetX: 0,
+                offsetY: 0,
+                isDragging: false,
+                lastX: 0,
+                lastY: 0
+            };
+
+            // --- WebGL Setup ---
+            const gl = processCanvas.getContext('webgl', { preserveDrawingBuffer: true });
+            if (!gl) { alert("WebGL not supported"); return; }
+
+            let program, positionBuffer, texCoordBuffer, texture;
+            const locs = {};
+
+            function createShader(gl, type, source) {
+                const s = gl.createShader(type);
+                gl.shaderSource(s, source);
+                gl.compileShader(s);
+                if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                    console.error(gl.getShaderInfoLog(s));
+                    gl.deleteShader(s); return null;
+                }
+                return s;
+            }
+            const vs = createShader(gl, gl.VERTEX_SHADER, document.getElementById('vs').text);
+            const fs = createShader(gl, gl.FRAGMENT_SHADER, document.getElementById('fs').text);
+            program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            
+            positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+            
+            texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1, 0,1, 1,0, 1,1]), gl.STATIC_DRAW);
+
+            const positionLocation = gl.getAttribLocation(program, "a_position");
+            const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+            
+            // Get Uniforms
+            [
+             'u_resolution', 
+             'u_weight', 'u_taper', 'u_sharpen', 'u_threshold', 'u_denoise', 
+             'u_use_weight', 'u_use_sharpen', 'u_use_threshold', 'u_use_denoise', 'u_use_grayscale'
+            ].forEach(name => {
+                locs[name] = gl.getUniformLocation(program, name);
+            });
+
+            texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+            // --- Processing Logic ---
+
+            function processImage() {
+                if (!isImageLoaded) return;
+
+                if (processCanvas.width !== sourceImage.naturalWidth || processCanvas.height !== sourceImage.naturalHeight) {
+                    processCanvas.width = sourceImage.naturalWidth;
+                    processCanvas.height = sourceImage.naturalHeight;
+                    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                }
+
+                gl.useProgram(program);
+                
+                gl.enableVertexAttribArray(positionLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+                
+                gl.enableVertexAttribArray(texCoordLocation);
+                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+                // Resolution
+                gl.uniform2f(locs.u_resolution, processCanvas.width, processCanvas.height);
+
+                // Values
+                gl.uniform1f(locs.u_weight, parseFloat(document.getElementById('param-weight').value));
+                gl.uniform1f(locs.u_taper, parseFloat(document.getElementById('param-taper').value));
+                gl.uniform1f(locs.u_sharpen, parseFloat(document.getElementById('param-sharpen').value));
+                gl.uniform1f(locs.u_threshold, parseFloat(document.getElementById('param-threshold').value));
+                gl.uniform1f(locs.u_denoise, parseFloat(document.getElementById('param-denoise').value));
+
+                // Toggles
+                gl.uniform1i(locs.u_use_weight, document.getElementById('toggle-weight').checked ? 1 : 0);
+                gl.uniform1i(locs.u_use_sharpen, document.getElementById('toggle-sharpen').checked ? 1 : 0);
+                gl.uniform1i(locs.u_use_threshold, document.getElementById('toggle-threshold').checked ? 1 : 0);
+                gl.uniform1i(locs.u_use_denoise, document.getElementById('toggle-denoise').checked ? 1 : 0);
+                gl.uniform1i(locs.u_use_grayscale, document.getElementById('toggle-grayscale').checked ? 1 : 0);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                requestAnimationFrame(drawDisplay);
+            }
+
+            // --- Display Logic ---
+
+            function resizeDisplayCanvas() {
+                const rect = canvasContainer.getBoundingClientRect();
+                displayCanvas.width = rect.width;
+                displayCanvas.height = rect.height;
+                drawDisplay();
+            }
+            window.addEventListener('resize', resizeDisplayCanvas);
+
+            function drawDisplay() {
+                const ctx = displayCanvas.getContext('2d');
+                ctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+
+                if (!isImageLoaded) return;
+                
+                ctx.save();
+                
+                const centerX = displayCanvas.width / 2;
+                const centerY = displayCanvas.height / 2;
+
+                ctx.translate(centerX + viewState.offsetX, centerY + viewState.offsetY);
+                ctx.scale(viewState.scale, viewState.scale);
+                
+                const imgW = sourceImage.naturalWidth;
+                const imgH = sourceImage.naturalHeight;
+                const source = isComparing ? sourceImage : processCanvas;
+                
+                ctx.imageSmoothingEnabled = viewState.scale < 1;
+                ctx.imageSmoothingQuality = "high";
+
+                ctx.shadowColor = "rgba(0,0,0,0.1)";
+                ctx.shadowBlur = 20 / viewState.scale;
+                ctx.shadowOffsetY = 10 / viewState.scale;
+
+                ctx.drawImage(source, -imgW / 2, -imgH / 2);
+                
+                ctx.restore();
+
+                zoomLabel.textContent = Math.round(viewState.scale * 100) + '%';
+            }
+
+            // --- Interactions ---
+
+            function fitImage() {
+                if (!isImageLoaded) return;
+                const cw = canvasContainer.clientWidth;
+                const ch = canvasContainer.clientHeight;
+                const iw = sourceImage.naturalWidth;
+                const ih = sourceImage.naturalHeight;
+                const scaleW = (cw - 60) / iw;
+                const scaleH = (ch - 60) / ih;
+                const newScale = Math.min(scaleW, scaleH, 0.95);
+                viewState.scale = newScale;
+                viewState.offsetX = 0;
+                viewState.offsetY = 0;
+                drawDisplay();
+            }
+
+            canvasContainer.addEventListener('wheel', (e) => {
+                if (!isImageLoaded) return;
+                e.preventDefault();
+                const sensitivity = 0.001;
+                const delta = -e.deltaY * sensitivity;
+                const oldScale = viewState.scale;
+                let newScale = oldScale * (1 + delta * 5);
+                newScale = Math.max(0.1, Math.min(newScale, 20.0));
+                const rect = canvasContainer.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left - rect.width / 2;
+                const mouseY = e.clientY - rect.top - rect.height / 2;
+                viewState.offsetX = mouseX - (mouseX - viewState.offsetX) * (newScale / oldScale);
+                viewState.offsetY = mouseY - (mouseY - viewState.offsetY) * (newScale / oldScale);
+                viewState.scale = newScale;
+                drawDisplay();
+            }, { passive: false });
+
+            canvasContainer.addEventListener('mousedown', (e) => {
+                if (!isImageLoaded) return;
+                viewState.isDragging = true;
+                viewState.lastX = e.clientX;
+                viewState.lastY = e.clientY;
+                canvasContainer.classList.add('cursor-grabbing');
+                canvasContainer.classList.remove('cursor-grab');
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!viewState.isDragging) return;
+                e.preventDefault();
+                const dx = e.clientX - viewState.lastX;
+                const dy = e.clientY - viewState.lastY;
+                viewState.offsetX += dx;
+                viewState.offsetY += dy;
+                viewState.lastX = e.clientX;
+                viewState.lastY = e.clientY;
+                drawDisplay();
+            });
+            const stopDrag = () => {
+                viewState.isDragging = false;
+                canvasContainer.classList.remove('cursor-grabbing');
+                canvasContainer.classList.add('cursor-grab');
+            };
+            window.addEventListener('mouseup', stopDrag);
+            window.addEventListener('mouseleave', stopDrag);
+
+            const toggleCompare = (active) => {
+                if (isComparing === active) return;
+                isComparing = active;
+                drawDisplay();
+            };
+            document.addEventListener('keydown', (e) => { if (e.code === 'Space') toggleCompare(true); });
+            document.addEventListener('keyup', (e) => { if (e.code === 'Space') toggleCompare(false); });
+
+            function handleFile(file) {
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => sourceImage.src = e.target.result;
+                reader.readAsDataURL(file);
+            }
+            sourceImage.onload = () => {
+                isImageLoaded = true;
+                emptyState.classList.add('hidden');
+                downloadBtn.disabled = false;
+                dimDisplay.textContent = `${sourceImage.naturalWidth} x ${sourceImage.naturalHeight} px`;
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceImage);
+                processImage();
+                resizeDisplayCanvas();
+                fitImage();
+            };
+            fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+            canvasContainer.addEventListener('dragover', (e) => e.preventDefault());
+            canvasContainer.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+            });
+
+            // UI Handling
+            const params = ['weight', 'taper', 'sharpen', 'threshold', 'denoise'];
+            params.forEach(p => {
+                const el = document.getElementById(`param-${p}`);
+                const valEl = document.getElementById(`val-${p}`);
+                if (el) {
+                    el.addEventListener('input', () => {
+                        const v = parseFloat(el.value);
+                        if(valEl) valEl.textContent = Number.isInteger(v) ? v + ".0" : v;
+                        processImage();
+                    });
+                }
+            });
+
+            // Toggle Handling
+            ['weight', 'sharpen', 'threshold', 'denoise', 'grayscale'].forEach(p => {
+                const toggle = document.getElementById(`toggle-${p}`);
+                const group = document.getElementById(`group-${p}`);
+                
+                if (toggle) {
+                    toggle.addEventListener('change', () => {
+                        if (group) {
+                            if (toggle.checked) {
+                                group.classList.remove('disabled');
+                                // Enable inputs
+                                group.querySelectorAll('input:not(.toggle-checkbox)').forEach(i => i.disabled = false);
+                            } else {
+                                group.classList.add('disabled');
+                                // Disable inputs
+                                group.querySelectorAll('input:not(.toggle-checkbox)').forEach(i => i.disabled = true);
+                            }
+                        }
+                        processImage();
+                    });
+                }
+            });
+
+            document.getElementById('btn-zoom-in').addEventListener('click', () => { if(isImageLoaded){ viewState.scale *= 1.2; drawDisplay(); } });
+            document.getElementById('btn-zoom-out').addEventListener('click', () => { if(isImageLoaded){ viewState.scale /= 1.2; drawDisplay(); } });
+            document.getElementById('btn-fit').addEventListener('click', fitImage);
+
+            downloadBtn.addEventListener('click', () => {
+                if (!isImageLoaded) return;
+                processImage();
+                const link = document.createElement('a');
+                link.download = `refined_${Date.now()}.png`;
+                link.href = processCanvas.toDataURL('image/png');
+                link.click();
+            });
+
+            resizeDisplayCanvas();
+            downloadBtn.disabled = true;
+        });
+    </script>
+</body>
+</html>
