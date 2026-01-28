@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- Meta Data -->
+    <title>Organic Soft Body Architect</title>
+    <meta name="description" content="Advanced soft body editor with custom UV mesh generation and fluid physics">
+    <meta name="page:icon" content="🧬">
+    <meta name="page:color" content="#18181b">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        zinc: {
+                            850: '#202023',
+                            900: '#18181b',
+                            950: '#09090b',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Pixi.js v8 & Earcut (for triangulation) & Delaunator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.1.0/pixi.min.js"></script>
+    <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+    <script src="https://unpkg.com/delaunator@5.0.0/delaunator.min.js"></script>
+    
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            touch-action: none;
+            background-color: #09090b;
+            color: #e4e4e7;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #18181b; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+        canvas {
+            display: block;
+            outline: none;
+        }
+
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: flex;
+        }
+        
+        /* Grid Background pattern */
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="flex h-dvh w-full">
+
+    <!-- Sidebar -->
+    <aside class="w-80 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col z-30">
+        <!-- Header -->
+        <div class="h-14 flex items-center px-4 border-b border-zinc-800 bg-zinc-950">
+            <i data-lucide="dna" class="size-5 text-indigo-500 mr-3"></i>
+            <span class="font-semibold text-sm tracking-wide text-zinc-200">Organ Architect</span>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex p-2 gap-1 bg-zinc-900 border-b border-zinc-800">
+            <button id="tab-model" class="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded bg-indigo-600 text-white shadow-sm transition-all" onclick="App.switchTab('model')">
+                <i data-lucide="pen-tool" class="size-3.5"></i> Modeling
+            </button>
+            <button id="tab-sim" class="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded hover:bg-zinc-800 text-zinc-400 transition-all" onclick="App.switchTab('sim')">
+                <i data-lucide="flask-conical" class="size-3.5"></i> Simulation
+            </button>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar">
+            
+            <!-- MODELING TOOLS -->
+            <div id="panel-model" class="p-4 space-y-6">
+                <!-- Texture Section -->
+                <div class="space-y-3">
+                    <label class="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Texture Asset</label>
+                    <div class="relative group w-full aspect-video bg-zinc-800 rounded-lg border border-zinc-700 overflow-hidden flex items-center justify-center cursor-pointer hover:border-indigo-500/50 transition-colors" onclick="document.getElementById('file-upload').click()">
+                        <img id="preview-img" class="w-full h-full object-contain opacity-50 group-hover:opacity-70 transition-opacity" src="https://placehold.co/600x400/18181b/3f3f46.png?text=No+Texture" />
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <i data-lucide="image-plus" class="size-6 text-zinc-400 mb-1"></i>
+                            <span class="text-[10px] text-zinc-500">Click to Upload</span>
+                        </div>
+                    </div>
+                    <input type="file" id="file-upload" class="hidden" accept="image/*">
+                </div>
+
+                <div class="h-px bg-zinc-800"></div>
+
+                <!-- Image Opacity -->
+                <div class="space-y-3">
+                    <label class="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Image Opacity</label>
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-zinc-400">Transparency</span>
+                            <span id="val-opacity" class="font-mono text-indigo-400">50%</span>
+                        </div>
+                        <input type="range" id="opacity-slider" min="0" max="100" step="1" value="50" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="App.editor.setOpacity(this.value)">
+                    </div>
+                </div>
+
+                <div class="h-px bg-zinc-800"></div>
+
+                <!-- Mesh Tools -->
+                <div class="space-y-3">
+                    <label class="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Mesh Topology</label>
+                    
+                    <div class="text-xs text-zinc-400 leading-relaxed mb-2">
+                        <ul class="list-disc pl-4 space-y-1">
+                            <li>キャンバスをクリックして頂点を追加</li>
+                            <li>始点をクリックしてループを閉じる</li>
+                            <li><kbd class="px-1 py-0.5 bg-zinc-700 rounded text-[10px]">Del</kbd> で最後の頂点を削除</li>
+                            <li><kbd class="px-1 py-0.5 bg-zinc-700 rounded text-[10px]">Shift+Click</kbd> で頂点を固定</li>
+                        </ul>
+                    </div>
+
+                    <div class="space-y-1 mb-3">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-zinc-400">Mesh Density (密度)</span>
+                            <span id="val-mesh-density" class="font-mono text-indigo-400">35</span>
+                        </div>
+                        <input type="range" id="mesh-density-slider" min="15" max="80" step="5" value="35" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        <p class="text-[10px] text-zinc-500">値が小さいほど細かいメッシュ</p>
+                    </div>
+
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-xs text-zinc-400">エッジ強化 (Extra Edges)</label>
+                        <input type="checkbox" id="extra-edges-toggle" class="w-4 h-4 accent-indigo-500" onchange="App.editor.toggleExtraEdgesUI(this.checked)">
+                    </div>
+
+                    <div id="extra-edges-params" class="space-y-2 ml-4 mb-3 hidden">
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-[11px]">
+                                <span class="text-zinc-500">最大距離</span>
+                                <span id="val-extra-dist" class="font-mono text-emerald-400">80</span>
+                            </div>
+                            <input type="range" id="extra-dist-slider" min="40" max="150" step="10" value="80" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                        </div>
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-[11px]">
+                                <span class="text-zinc-500">強度係数</span>
+                                <span id="val-extra-strength" class="font-mono text-emerald-400">0.3</span>
+                            </div>
+                            <input type="range" id="extra-strength-slider" min="0.1" max="0.8" step="0.1" value="0.3" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                        </div>
+                        <p class="text-[10px] text-zinc-600 italic">緑色で表示されます</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="App.editor.clearPoints()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded text-xs text-zinc-300 border border-zinc-700 transition-colors">
+                            Clear Points
+                        </button>
+                        <button onclick="App.editor.generateMesh()" class="px-3 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded text-xs transition-colors flex items-center justify-center gap-1">
+                            <i data-lucide="triangle" class="size-3"></i> Generate
+                        </button>
+                    </div>
+
+                    <div class="bg-zinc-800/50 p-3 rounded border border-zinc-800">
+                        <div class="flex justify-between items-center text-xs text-zinc-400 mb-1">
+                            <span>Vertices</span>
+                            <span id="stat-verts" class="font-mono text-zinc-200">0</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs text-zinc-400 mb-1">
+                            <span>Triangles</span>
+                            <span id="stat-tris" class="font-mono text-zinc-200">0</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs text-zinc-400 mb-1">
+                            <span>Edges (基本)</span>
+                            <span id="stat-edges" class="font-mono text-blue-400">0</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs text-zinc-400">
+                            <span>Edges (追加)</span>
+                            <span id="stat-extra-edges" class="font-mono text-emerald-400">0</span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1 mt-3">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-zinc-400">Mesh Opacity</span>
+                            <span id="val-mesh-opacity" class="font-mono text-indigo-400">80%</span>
+                        </div>
+                        <input type="range" id="mesh-opacity-slider" min="0" max="100" step="1" value="80" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="App.physics.setMeshOpacity(this.value)">
+                    </div>
+
+                    <div class="flex items-center justify-between mt-3">
+                        <label class="text-xs text-zinc-400">ワイヤーフレーム</label>
+                        <input type="checkbox" id="wireframe-toggle" checked class="w-4 h-4 accent-indigo-500" onchange="App.physics.toggleWireframe(this.checked)">
+                    </div>
+
+                    <div class="flex items-center justify-between mt-2">
+                        <label class="text-xs text-zinc-400">頂点を表示</label>
+                        <input type="checkbox" id="points-toggle" checked class="w-4 h-4 accent-indigo-500" onchange="App.physics.togglePoints(this.checked)">
+                    </div>
+                </div>
+            </div>
+
+            <!-- SIMULATION TOOLS -->
+            <div id="panel-sim" class="p-4 space-y-6 hidden">
+                <div class="space-y-4">
+                    <label class="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Physics Material</label>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-zinc-400">Stiffness (剛性)</span>
+                            <span id="val-stiffness" class="font-mono text-indigo-400">0.80</span>
+                        </div>
+                        <input type="range" min="0.0" max="1.0" step="0.001" value="0.8" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="App.physics.setParam('stiffness', this.value)">
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-zinc-400">Damping (減衰)</span>
+                            <span id="val-damping" class="font-mono text-indigo-400">0.98</span>
+                        </div>
+                        <input type="range" min="0.9" max="0.99999" step="0.00001" value="0.98" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="App.physics.setParam('friction', this.value)">
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-zinc-400">Gravity (重力)</span>
+                            <span id="val-gravity" class="font-mono text-indigo-400">0.5</span>
+                        </div>
+                        <input type="range" min="0" max="2.0" step="0.1" value="0.5" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="App.physics.setParam('gravity', this.value)">
+                    </div>
+                </div>
+
+                <div class="h-px bg-zinc-800"></div>
+
+                <!-- Simulation Controls -->
+                <div class="space-y-3">
+                    <label class="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Simulation</label>
+                    
+                    <button onclick="App.physics.resetSimulation()" class="w-full px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded text-xs transition-colors flex items-center justify-center gap-2">
+                        <i data-lucide="rotate-ccw" class="size-3"></i> Reset to Initial State
+                    </button>
+                </div>
+
+                <div class="h-px bg-zinc-800"></div>
+
+                <!-- Mesh Display Settings -->
+                <div class="space-y-4">
+                    <label class="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Mesh Display</label>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-zinc-400">Mesh Opacity</span>
+                            <span id="val-sim-mesh-opacity" class="font-mono text-indigo-400">80%</span>
+                        </div>
+                        <input type="range" id="sim-mesh-opacity-slider" min="0" max="100" step="1" value="80" class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="App.physics.setMeshOpacity(this.value)">
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs text-zinc-400">ワイヤーフレーム</label>
+                        <input type="checkbox" id="sim-wireframe-toggle" checked class="w-4 h-4 accent-indigo-500" onchange="App.physics.toggleWireframe(this.checked)">
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs text-zinc-400">頂点を表示</label>
+                        <input type="checkbox" id="sim-points-toggle" checked class="w-4 h-4 accent-indigo-500" onchange="App.physics.togglePoints(this.checked)">
+                    </div>
+                </div>
+
+                <div class="h-px bg-zinc-800"></div>
+
+                <div class="p-3 rounded bg-blue-500/10 border border-blue-500/20">
+                    <h4 class="text-xs font-semibold text-blue-400 mb-1 flex items-center gap-1">
+                        <i data-lucide="info" class="size-3"></i> Controls
+                    </h4>
+                    <p class="text-[10px] text-blue-300/80 leading-relaxed">
+                        <b>Left Drag:</b> Interact with tissue<br>
+                        <b>Space + Drag:</b> Move Camera<br>
+                        <b>Scroll:</b> Zoom In/Out
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-3 border-t border-zinc-800 text-[10px] text-zinc-600 text-center bg-zinc-950">
+            Soft Body Engine v2.0 • WebGL 2
+        </div>
+    </aside>
+
+    <!-- Canvas Area -->
+    <main class="flex-1 relative bg-grid overflow-hidden bg-zinc-950 cursor-crosshair">
+        <div id="canvas-container" class="absolute inset-0"></div>
+        
+        <!-- Camera UI Overlay -->
+        <div class="absolute bottom-4 right-4 flex gap-2">
+            <button onclick="App.camera.reset()" class="size-8 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-white flex items-center justify-center shadow-lg transition-all" title="Reset Camera">
+                <i data-lucide="crosshair" class="size-4"></i>
+            </button>
+        </div>
+
+        <!-- Mode Indicator -->
+        <div class="absolute top-4 left-4 pointer-events-none">
+            <div id="mode-badge" class="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-mono font-medium backdrop-blur-sm">
+                MODE: MODELING
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- UTILS ---
+        const cn = (...classes) => classes.filter(Boolean).join(' ');
+
+        // UI Updates
+        document.addEventListener('DOMContentLoaded', () => {
+            const densitySlider = document.getElementById('mesh-density-slider');
+            if (densitySlider) {
+                densitySlider.addEventListener('input', (e) => {
+                    document.getElementById('val-mesh-density').innerText = e.target.value;
+                });
+            }
+            
+            const extraDistSlider = document.getElementById('extra-dist-slider');
+            if (extraDistSlider) {
+                extraDistSlider.addEventListener('input', (e) => {
+                    document.getElementById('val-extra-dist').innerText = e.target.value;
+                });
+            }
+            
+            const extraStrengthSlider = document.getElementById('extra-strength-slider');
+            if (extraStrengthSlider) {
+                extraStrengthSlider.addEventListener('input', (e) => {
+                    document.getElementById('val-extra-strength').innerText = e.target.value;
+                });
+            }
+        });
+
+        // --- MATH & PHYSICS CLASSES ---
+        class Vector {
+            constructor(x, y) { this.x = x; this.y = y; }
+        }
+
+        class Point {
+            constructor(x, y, u, v, pinned = false) {
+                this.x = x; this.y = y;
+                this.oldx = x; this.oldy = y;
+                this.u = u; this.v = v;
+                this.pinned = pinned;
+                this.origX = x; this.origY = y;
+                this.mass = 1.0;
+                this.selected = false; // 選択状態
+            }
+            
+            update(friction, gravity, dt) {
+                if (this.pinned) return;
+                const vx = (this.x - this.oldx) * friction;
+                const vy = (this.y - this.oldy) * friction;
+                this.oldx = this.x;
+                this.oldy = this.y;
+                this.x += vx;
+                this.y += vy + gravity * dt; // Simple Euler/Verlet mix
+            }
+        }
+
+        class Stick {
+            constructor(p1, p2, length, stiffness) {
+                this.p1 = p1;
+                this.p2 = p2;
+                this.length = length;
+                this.stiffness = stiffness;
+            }
+            
+            resolve() {
+                const dx = this.p1.x - this.p2.x;
+                const dy = this.p1.y - this.p2.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist === 0) return;
+                
+                const diff = (this.length - dist) / dist;
+                const offset = diff * this.stiffness * 0.5;
+                const offsetX = dx * offset;
+                const offsetY = dy * offset;
+
+                if (!this.p1.pinned) {
+                    this.p1.x += offsetX;
+                    this.p1.y += offsetY;
+                }
+                if (!this.p2.pinned) {
+                    this.p2.x -= offsetX;
+                    this.p2.y -= offsetY;
+                }
+            }
+        }
+
+        // --- CAMERA SYSTEM ---
+        class Camera {
+            constructor(container, app) {
+                this.container = container;
+                this.app = app;
+                this.zoom = 1;
+                this.x = app.screen.width / 2;
+                this.y = app.screen.height / 2;
+                this.isDragging = false;
+                this.lastPos = { x: 0, y: 0 };
+
+                // Initial center
+                this.container.position.set(this.x, this.y);
+                
+                this.addListeners();
+            }
+
+            addListeners() {
+                const canvas = this.app.canvas;
+                
+                canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const zoomFactor = 1.1;
+                    const direction = e.deltaY > 0 ? 1/zoomFactor : zoomFactor;
+                    
+                    // Simple zoom towards center (can be improved to mouse pos)
+                    this.zoom *= direction;
+                    this.zoom = Math.max(0.1, Math.min(this.zoom, 5.0));
+                    
+                    this.container.scale.set(this.zoom);
+                }, { passive: false });
+
+                window.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') canvas.style.cursor = 'grab';
+                });
+                
+                window.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') canvas.style.cursor = 'crosshair';
+                });
+            }
+
+            // Convert Screen (Mouse) to World (Container Local)
+            screenToWorld(x, y) {
+                return this.container.toLocal({ x, y });
+            }
+
+            reset() {
+                this.zoom = 1;
+                this.container.position.set(this.app.screen.width/2, this.app.screen.height/2);
+                this.container.scale.set(1);
+            }
+
+            pan(dx, dy) {
+                this.container.position.x += dx;
+                this.container.position.y += dy;
+            }
+        }
+
+        // --- EDITOR MODULE (Modeling) ---
+        class Editor {
+            constructor(app, container, visualGraphics) {
+                this.app = app;
+                this.container = container; // Should be main container
+                this.graphics = visualGraphics;
+                this.boundaryPoints = []; // User clicks {x, y}
+                this.texture = null;
+                this.sprite = null; // Background reference sprite
+                this.isClosed = false;
+            }
+
+            loadTexture(texture) {
+                if (this.sprite) {
+                    this.container.removeChild(this.sprite);
+                    this.sprite.destroy();
+                }
+                this.texture = texture;
+                this.sprite = new PIXI.Sprite(texture);
+                this.sprite.anchor.set(0.5);
+                this.sprite.alpha = 0.5; // Initial transparency
+                this.sprite.eventMode = 'none';
+                
+                // Add to container but put it behind everything
+                this.container.addChildAt(this.sprite, 0);
+                
+                // Reset points when new texture loads? Maybe optional.
+                // this.clearPoints();
+            }
+
+            setOpacity(value) {
+                const opacity = parseFloat(value) / 100;
+                if (this.sprite) {
+                    this.sprite.alpha = opacity;
+                }
+                document.getElementById('val-opacity').innerText = value + '%';
+            }
+
+            addPoint(worldX, worldY, pinned = false) {
+                if (this.isClosed) return;
+
+                // Close loop check
+                if (this.boundaryPoints.length > 2) {
+                    const start = this.boundaryPoints[0];
+                    const dist = Math.hypot(start.x - worldX, start.y - worldY);
+                    if (dist < 20 / App.camera.zoom) { // Tolerance
+                        this.isClosed = true;
+                        this.generateMesh();
+                        return;
+                    }
+                }
+
+                this.boundaryPoints.push({ x: worldX, y: worldY, pinned: pinned });
+                this.drawUI();
+            }
+
+            clearPoints() {
+                console.log('Clearing all editor points and physics');
+                this.boundaryPoints = [];
+                this.isClosed = false;
+                this.drawUI();
+                App.physics.clear();
+                // Reset stats
+                document.getElementById('stat-verts').innerText = '0';
+                document.getElementById('stat-tris').innerText = '0';
+                document.getElementById('stat-edges').innerText = '0';
+                document.getElementById('stat-extra-edges').innerText = '0';
+                console.log('Clear complete');
+            }
+
+            drawUI() {
+                // Always clear graphics first to prevent residual drawing
+                this.graphics.clear();
+                
+                // Only draw in model mode
+                if (App.activeTab !== 'model') {
+                    console.log('Not in model mode, graphics cleared');
+                    return;
+                }
+
+                // Draw Boundary only when mesh is not closed (editing mode)
+                // When mesh is closed, physics handles the display
+                if (this.boundaryPoints.length > 0 && !this.isClosed) {
+                    this.graphics.moveTo(this.boundaryPoints[0].x, this.boundaryPoints[0].y);
+                    for (let i = 1; i < this.boundaryPoints.length; i++) {
+                        this.graphics.lineTo(this.boundaryPoints[i].x, this.boundaryPoints[i].y);
+                    }
+                    this.graphics.stroke({ width: 2, color: 0xe4e4e7 });
+
+                    // Draw Points
+                    this.boundaryPoints.forEach((p, i) => {
+                        this.graphics.circle(p.x, p.y, 5 / App.camera.zoom);
+                        if (p.pinned) {
+                            this.graphics.fill(0xf59e0b); // Pinned point - Amber
+                        } else if (i === 0) {
+                            this.graphics.fill(0x10b981); // Start point Green
+                        } else {
+                            this.graphics.fill(0xffffff);
+                        }
+                    });
+                }
+            }
+
+            // 頂点を固定/解除
+            togglePinPoint(worldX, worldY) {
+                const threshold = 20 / App.camera.zoom;
+                console.log('Editor togglePinPoint:', worldX, worldY, 'threshold:', threshold);
+                console.log('Boundary points:', this.boundaryPoints.length, 'isClosed:', this.isClosed);
+                console.log('Current mode:', App.activeTab);
+                console.log('Physics points:', App.physics.points.length);
+                
+                // In modeling mode with generated mesh, delegate to physics
+                if (App.activeTab === 'model' && this.isClosed && App.physics.points.length > 0) {
+                    console.log('Modeling mode with mesh generated, delegating to physics');
+                    return App.physics.togglePinPoint(worldX, worldY);
+                }
+                
+                // In edit mode (before mesh generation), toggle boundary points
+                if (App.activeTab === 'model' && !this.isClosed) {
+                    for (let i = 0; i < this.boundaryPoints.length; i++) {
+                        const point = this.boundaryPoints[i];
+                        const dist = Math.hypot(point.x - worldX, point.y - worldY);
+                        console.log(`Boundary point ${i} distance:`, dist);
+                        if (dist < threshold) {
+                            point.pinned = !point.pinned;
+                            console.log(`Boundary point ${i} pinned:`, point.pinned);
+                            this.drawUI();
+                            return true;
+                        }
+                    }
+                }
+                
+                console.log('No point found within threshold or wrong mode');
+                return false;
+            }
+
+            // Point-in-polygon test (Ray casting algorithm)
+            isPointInPolygon(x, y, polygon) {
+                let inside = false;
+                for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                    const xi = polygon[i].x, yi = polygon[i].y;
+                    const xj = polygon[j].x, yj = polygon[j].y;
+                    
+                    const intersect = ((yi > y) !== (yj > y))
+                        && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                return inside;
+            }
+
+            // Poisson Disk Sampling for uniform point distribution
+            poissonDiskSampling(minX, minY, maxX, maxY, radius, maxAttempts = 30) {
+                const cellSize = radius / Math.sqrt(2);
+                const gridWidth = Math.ceil((maxX - minX) / cellSize);
+                const gridHeight = Math.ceil((maxY - minY) / cellSize);
+                const grid = new Array(gridWidth * gridHeight).fill(null);
+                const activeList = [];
+                const points = [];
+
+                // Helper to convert point to grid index
+                const pointToGrid = (x, y) => {
+                    const col = Math.floor((x - minX) / cellSize);
+                    const row = Math.floor((y - minY) / cellSize);
+                    return row * gridWidth + col;
+                };
+
+                // Helper to check if point is valid
+                const isValidPoint = (x, y) => {
+                    if (!this.isPointInPolygon(x, y, this.boundaryPoints)) return false;
+                    
+                    const col = Math.floor((x - minX) / cellSize);
+                    const row = Math.floor((y - minY) / cellSize);
+                    
+                    // Check neighboring cells
+                    for (let r = Math.max(0, row - 2); r <= Math.min(gridHeight - 1, row + 2); r++) {
+                        for (let c = Math.max(0, col - 2); c <= Math.min(gridWidth - 1, col + 2); c++) {
+                            const idx = r * gridWidth + c;
+                            const neighbor = grid[idx];
+                            if (neighbor) {
+                                const dx = neighbor.x - x;
+                                const dy = neighbor.y - y;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                if (dist < radius) return false;
+                            }
+                        }
+                    }
+                    return true;
+                };
+
+                // Start with a random point inside polygon
+                let startPoint = null;
+                for (let attempt = 0; attempt < 1000; attempt++) {
+                    const x = minX + Math.random() * (maxX - minX);
+                    const y = minY + Math.random() * (maxY - minY);
+                    if (this.isPointInPolygon(x, y, this.boundaryPoints)) {
+                        startPoint = { x, y };
+                        break;
+                    }
+                }
+
+                if (!startPoint) return points;
+
+                const idx = pointToGrid(startPoint.x, startPoint.y);
+                grid[idx] = startPoint;
+                activeList.push(startPoint);
+                points.push(startPoint);
+
+                // Generate points
+                while (activeList.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * activeList.length);
+                    const point = activeList[randomIndex];
+                    let found = false;
+
+                    for (let i = 0; i < maxAttempts; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const r = radius + Math.random() * radius;
+                        const newX = point.x + Math.cos(angle) * r;
+                        const newY = point.y + Math.sin(angle) * r;
+
+                        if (newX >= minX && newX < maxX && newY >= minY && newY < maxY) {
+                            if (isValidPoint(newX, newY)) {
+                                const newPoint = { x: newX, y: newY };
+                                const gridIdx = pointToGrid(newX, newY);
+                                grid[gridIdx] = newPoint;
+                                activeList.push(newPoint);
+                                points.push(newPoint);
+                                found = true;
+                            }
+                        }
+                    }
+
+                    if (!found) {
+                        activeList.splice(randomIndex, 1);
+                    }
+                }
+
+                return points;
+            }
+
+            generateMesh() {
+                console.log('generateMesh called');
+                console.log('boundaryPoints:', this.boundaryPoints.length);
+                console.log('isClosed:', this.isClosed);
+                
+                if (this.boundaryPoints.length < 3) return;
+                if (!this.isClosed) {
+                    alert('閉曲線を完成させてください（始点をクリック）');
+                    return;
+                }
+                
+                // Clear existing physics objects before generating new mesh
+                console.log('Clearing old physics objects before mesh generation');
+                App.physics.clear();
+                
+                // 1. Calculate bounding box
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                this.boundaryPoints.forEach(p => {
+                    minX = Math.min(minX, p.x);
+                    minY = Math.min(minY, p.y);
+                    maxX = Math.max(maxX, p.x);
+                    maxY = Math.max(maxY, p.y);
+                });
+                console.log('Bounding box:', {minX, minY, maxX, maxY});
+
+                // 2. Generate uniform internal points using Poisson Disk Sampling
+                const densitySlider = document.getElementById('mesh-density-slider');
+                const pointSpacing = densitySlider ? parseFloat(densitySlider.value) : 35;
+                const internalPoints = this.poissonDiskSampling(minX, minY, maxX, maxY, pointSpacing);
+                console.log('Poisson disk points generated:', internalPoints.length, 'with spacing:', pointSpacing);
+                
+                // Combine boundary and internal points
+                const allPoints = [...this.boundaryPoints, ...internalPoints];
+                console.log('Total points (boundary + internal):', allPoints.length);
+
+                // 3. Use Delaunator for Delaunay triangulation
+                try {
+                    const delaunay = Delaunator.from(allPoints, p => p.x, p => p.y);
+                    console.log('Delaunay triangles generated:', delaunay.triangles.length / 3);
+
+                    // 4. Filter triangles - only keep those inside the boundary
+                    // Fix winding order to prevent inside-out mesh
+                    const triangles = [];
+                    for (let i = 0; i < delaunay.triangles.length; i += 3) {
+                        const idx0 = delaunay.triangles[i];
+                        const idx1 = delaunay.triangles[i + 1];
+                        const idx2 = delaunay.triangles[i + 2];
+                        
+                        const p1 = allPoints[idx0];
+                        const p2 = allPoints[idx1];
+                        const p3 = allPoints[idx2];
+                        
+                        // Check if triangle centroid is inside boundary
+                        const cx = (p1.x + p2.x + p3.x) / 3;
+                        const cy = (p1.y + p2.y + p3.y) / 3;
+                        
+                        if (this.isPointInPolygon(cx, cy, this.boundaryPoints)) {
+                            // Calculate cross product to determine winding order
+                            const v1x = p2.x - p1.x;
+                            const v1y = p2.y - p1.y;
+                            const v2x = p3.x - p1.x;
+                            const v2y = p3.y - p1.y;
+                            const cross = v1x * v2y - v1y * v2x;
+                            
+                            // Ensure counter-clockwise winding (positive cross product)
+                            if (cross > 0) {
+                                triangles.push(idx0, idx1, idx2);
+                            } else {
+                                triangles.push(idx0, idx2, idx1); // Reverse winding
+                            }
+                        }
+                    }
+                    console.log('Filtered triangles:', triangles.length / 3);
+
+                    // 5. Check if extra edges option is enabled
+                    const extraEdges = document.getElementById('extra-edges-toggle')?.checked || false;
+
+                    // 6. Create Physics Object (pass boundary points for validation)
+                    App.physics.buildSoftBody(allPoints, new Uint16Array(triangles), this.texture, this.sprite, extraEdges, this.boundaryPoints);
+
+                    // Update UI Stats
+                    document.getElementById('stat-verts').innerText = allPoints.length;
+                    document.getElementById('stat-tris').innerText = triangles.length / 3;
+                    
+                    console.log('Mesh generation complete');
+                } catch (error) {
+                    console.error('Error generating mesh:', error);
+                    alert('メッシュ生成エラー: ' + error.message);
+                }
+            }
+            
+            toggleExtraEdgesUI(enabled) {
+                const paramsDiv = document.getElementById('extra-edges-params');
+                if (paramsDiv) {
+                    if (enabled) {
+                        paramsDiv.classList.remove('hidden');
+                    } else {
+                        paramsDiv.classList.add('hidden');
+                    }
+                }
+            }
+        }
+
+        // --- PHYSICS MODULE (Simulation) ---
+        class Physics {
+            constructor(app, container) {
+                this.points = [];
+                this.sticks = [];
+                this.mesh = null; // PIXI.Mesh
+                this.app = app;
+                this.container = container;
+                
+                this.params = {
+                    gravity: 0.0,
+                    friction: 0.98,
+                    stiffness: 0.8,
+                    iterations: 4
+                };
+
+                this.dragPoint = null;
+                this.showWireframe = true;
+                this.showPoints = true;
+                this.showExtraEdges = true;
+                this.pointsGraphics = null; // 頂点を描画するためのGraphics
+                this.extraEdgesGraphics = null; // 追加エッジを描画するためのGraphics
+                this.primaryEdgeCount = 0;
+                this.extraEdgeCount = 0;
+                this.isSimulationActive = false; // シミュレーション状態フラグ
+            }
+            
+            // Reset simulation to initial positions
+            resetSimulation() {
+                console.log('Resetting simulation to initial positions');
+                this.points.forEach(p => {
+                    p.x = p.origX;
+                    p.y = p.origY;
+                    p.oldx = p.origX;
+                    p.oldy = p.origY;
+                });
+                this.dragPoint = null;
+                this.isSimulationActive = false;
+                this.updateMeshGeometry();
+                console.log('Simulation reset complete');
+            }
+            
+            // Start simulation (called when entering sim mode)
+            startSimulation() {
+                console.log('Starting simulation');
+                this.isSimulationActive = true;
+                // Reset to original positions before starting
+                this.resetSimulation();
+                this.isSimulationActive = true;
+            }
+            
+            // Stop simulation (called when exiting sim mode)
+            stopSimulation() {
+                console.log('Stopping simulation');
+                this.isSimulationActive = false;
+                this.dragPoint = null;
+                // Reset to original positions
+                this.resetSimulation();
+                // Clear wireframe and extra edges graphics to prevent residual drawing
+                if (this.wireframe) {
+                    this.wireframe.clear();
+                    console.log('Wireframe cleared');
+                }
+                if (this.extraEdgesGraphics) {
+                    this.extraEdgesGraphics.clear();
+                    console.log('Extra edges graphics cleared');
+                }
+                if (this.pointsGraphics) {
+                    this.pointsGraphics.clear();
+                    console.log('Points graphics cleared');
+                }
+            }
+            
+            // Update mesh geometry from physics points
+            updateMeshGeometry() {
+                if (this.mesh && this.mesh.geometry) {
+                    const positions = this.mesh.geometry.getBuffer('aPosition');
+                    if (positions && positions.data) {
+                        for (let i = 0; i < this.points.length; i++) {
+                            positions.data[i*2] = this.points[i].x;
+                            positions.data[i*2+1] = this.points[i].y;
+                        }
+                        positions.update();
+                    }
+                }
+            }
+
+            setParam(key, value) {
+                this.params[key] = parseFloat(value);
+                document.getElementById(`val-${key === 'friction' ? 'damping' : key}`).innerText = this.params[key];
+            }
+
+            setMeshOpacity(value) {
+                const opacity = parseFloat(value) / 100;
+                if (this.mesh) {
+                    this.mesh.alpha = opacity;
+                }
+                document.getElementById('val-mesh-opacity').innerText = value + '%';
+                // Simulationパネルの値も同期
+                const simOpacity = document.getElementById('val-sim-mesh-opacity');
+                if (simOpacity) {
+                    simOpacity.innerText = value + '%';
+                }
+            }
+
+            toggleWireframe(show) {
+                this.showWireframe = show;
+                this.showExtraEdges = show;
+                if (this.wireframe) {
+                    this.wireframe.visible = show;
+                }
+                if (this.extraEdgesGraphics) {
+                    this.extraEdgesGraphics.visible = show;
+                }
+            }
+
+            togglePoints(show) {
+                this.showPoints = show;
+                if (this.pointsGraphics) {
+                    this.pointsGraphics.visible = show;
+                }
+            }
+
+            togglePinPoint(worldX, worldY) {
+                const threshold = 20 / App.camera.zoom;
+                console.log('Physics togglePinPoint:', worldX, worldY, 'threshold:', threshold);
+                console.log('Physics points:', this.points.length);
+                
+                for (let i = 0; i < this.points.length; i++) {
+                    const point = this.points[i];
+                    const dist = Math.hypot(point.x - worldX, point.y - worldY);
+                    if (dist < threshold) {
+                        point.pinned = !point.pinned;
+                        console.log(`Physics point ${i} pinned:`, point.pinned);
+                        // Reset velocity when pinning
+                        if (point.pinned) {
+                            point.oldx = point.x;
+                            point.oldy = point.y;
+                        }
+                        this.updatePointsVisual();
+                        return true;
+                    }
+                }
+                console.log('No physics point found within threshold');
+                return false;
+            }
+
+            clear() {
+                console.log('Clearing physics objects...');
+                this.points = [];
+                this.sticks = [];
+                
+                // Safely remove and destroy mesh
+                if (this.mesh) {
+                    if (this.container && this.container.children.includes(this.mesh)) {
+                        this.container.removeChild(this.mesh);
+                    }
+                    this.mesh.destroy({ children: true, texture: false, baseTexture: false });
+                    this.mesh = null;
+                    console.log('Mesh destroyed');
+                }
+                
+                // Safely remove and destroy wireframe
+                if (this.wireframe) {
+                    if (this.container && this.container.children.includes(this.wireframe)) {
+                        this.container.removeChild(this.wireframe);
+                    }
+                    this.wireframe.destroy();
+                    this.wireframe = null;
+                    console.log('Wireframe destroyed');
+                }
+                
+                // Safely remove and destroy extra edges graphics
+                if (this.extraEdgesGraphics) {
+                    if (this.container && this.container.children.includes(this.extraEdgesGraphics)) {
+                        this.container.removeChild(this.extraEdgesGraphics);
+                    }
+                    this.extraEdgesGraphics.destroy();
+                    this.extraEdgesGraphics = null;
+                    console.log('Extra edges graphics destroyed');
+                }
+                
+                // Safely remove and destroy points graphics
+                if (this.pointsGraphics) {
+                    if (this.container && this.container.children.includes(this.pointsGraphics)) {
+                        this.container.removeChild(this.pointsGraphics);
+                    }
+                    this.pointsGraphics.destroy();
+                    this.pointsGraphics = null;
+                    console.log('Points graphics destroyed');
+                }
+                
+                this.primaryEdgeCount = 0;
+                this.extraEdgeCount = 0;
+                this.dragPoint = null;
+                this.isSimulationActive = false;
+                console.log('Physics clear complete');
+            }
+
+            // Create Physics structures from Boundary and Triangulation
+            buildSoftBody(allPoints, indices, texture, bgSprite, extraEdges = false, boundaryPoints = null) {
+                this.clear();
+                console.log('buildSoftBody called with', allPoints.length, 'points and', indices.length / 3, 'triangles');
+                console.log('Extra edges enabled:', extraEdges);
+                
+                // Store indices for later wireframe updates
+                this.indices = indices;
+                
+                // Store boundary points for edge validation
+                if (boundaryPoints && boundaryPoints.length > 0) {
+                    this.boundaryPolygon = boundaryPoints;
+                } else {
+                    // Fallback: use all points (not ideal but safe)
+                    this.boundaryPolygon = allPoints;
+                }
+                console.log('Boundary polygon points:', this.boundaryPolygon.length);
+
+                // Calculate Bounding Box for UV mapping
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                allPoints.forEach(p => {
+                    minX = Math.min(minX, p.x);
+                    minY = Math.min(minY, p.y);
+                    maxX = Math.max(maxX, p.x);
+                    maxY = Math.max(maxY, p.y);
+                });
+                const width = maxX - minX;
+                const height = maxY - minY;
+
+                // Create Physics Points from ALL points (boundary + internal)
+                allPoints.forEach(p => {
+                    let u, v;
+                    if (bgSprite) {
+                        const localX = p.x - bgSprite.x;
+                        const localY = p.y - bgSprite.y;
+                        u = (localX / bgSprite.width) + 0.5;
+                        v = (localY / bgSprite.height) + 0.5;
+                    } else {
+                         u = (p.x - minX) / width;
+                         v = (p.y - minY) / height;
+                    }
+
+                    // 境界点のピン情報を引き継ぐ
+                    const pinned = p.pinned || false;
+                    this.points.push(new Point(p.x, p.y, u, v, pinned));
+                });
+
+                console.log('Created', this.points.length, 'physics points');
+
+                // Create Sticks (Constraints) from Triangles
+                const stickMap = new Set();
+                const primaryEdges = []; // 基本エッジを記録
+                const extraEdgesList = []; // 追加エッジを記録
+                
+                for (let i = 0; i < indices.length; i += 3) {
+                    const idx1 = indices[i];
+                    const idx2 = indices[i+1];
+                    const idx3 = indices[i+2];
+
+                    const addStick = (a, b) => {
+                        const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+                        if (!stickMap.has(key)) {
+                            const p1 = this.points[a];
+                            const p2 = this.points[b];
+                            if (p1 && p2) {
+                                const len = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                                this.sticks.push(new Stick(p1, p2, len, this.params.stiffness));
+                                stickMap.add(key);
+                                primaryEdges.push([a, b]);
+                            }
+                        }
+                    };
+
+                    // Primary edges (triangle sides)
+                    addStick(idx1, idx2);
+                    addStick(idx2, idx3);
+                    addStick(idx3, idx1);
+                }
+
+                this.primaryEdgeCount = primaryEdges.length;
+                this.extraEdgeCount = 0;
+
+                // Add extra diagonal edges for increased rigidity
+                if (extraEdges) {
+                    console.log('Adding extra diagonal edges...');
+                    
+                    // Get parameters from UI
+                    const maxDistSlider = document.getElementById('extra-dist-slider');
+                    const strengthSlider = document.getElementById('extra-strength-slider');
+                    const maxDistance = maxDistSlider ? parseFloat(maxDistSlider.value) : 80;
+                    const strengthFactor = strengthSlider ? parseFloat(strengthSlider.value) : 0.3;
+                    
+                    console.log('Extra edges params: maxDist=' + maxDistance + ', strength=' + strengthFactor);
+                    
+                    // Helper function to check if edge is inside boundary
+                    const isEdgeInsideBoundary = (p1, p2) => {
+                        // Sample points along the edge and check if all are inside
+                        const samples = 5; // Number of sample points
+                        for (let s = 0; s <= samples; s++) {
+                            const t = s / samples;
+                            const px = p1.x + (p2.x - p1.x) * t;
+                            const py = p1.y + (p2.y - p1.y) * t;
+                            
+                            // Point-in-polygon test
+                            let inside = false;
+                            const polygon = this.boundaryPolygon;
+                            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                                const xi = polygon[i].x, yi = polygon[i].y;
+                                const xj = polygon[j].x, yj = polygon[j].y;
+                                
+                                const intersect = ((yi > py) !== (yj > py))
+                                    && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+                                if (intersect) inside = !inside;
+                            }
+                            
+                            if (!inside) return false;
+                        }
+                        return true;
+                    };
+                    
+                    // For each point, connect to nearby points
+                    let rejectedCount = 0;
+                    for (let i = 0; i < this.points.length; i++) {
+                        for (let j = i + 1; j < this.points.length; j++) {
+                            const p1 = this.points[i];
+                            const p2 = this.points[j];
+                            const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                            
+                            if (dist < maxDistance) {
+                                const key = i < j ? `${i}_${j}` : `${j}_${i}`;
+                                if (!stickMap.has(key)) {
+                                    // Check if edge stays inside boundary
+                                    if (isEdgeInsideBoundary(p1, p2)) {
+                                        this.sticks.push(new Stick(p1, p2, dist, this.params.stiffness * strengthFactor));
+                                        stickMap.add(key);
+                                        extraEdgesList.push([i, j]);
+                                        this.extraEdgeCount++;
+                                    } else {
+                                        rejectedCount++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    console.log('Added', this.extraEdgeCount, 'extra edges (rejected', rejectedCount, 'out-of-bounds edges)');
+                }
+
+                console.log('Created', this.sticks.length, 'total constraints');
+                console.log('Primary edges:', this.primaryEdgeCount, 'Extra edges:', this.extraEdgeCount);
+                
+                // Update stats UI
+                document.getElementById('stat-edges').innerText = this.primaryEdgeCount;
+                document.getElementById('stat-extra-edges').innerText = this.extraEdgeCount;
+
+                // Create Pixi Mesh
+                if (!texture) texture = PIXI.Texture.WHITE;
+
+                // Pixi v8 uses MeshGeometry for simplicity
+                const posBuffer = new Float32Array(this.points.length * 2);
+                const uvBuffer = new Float32Array(this.points.length * 2);
+                
+                this.points.forEach((p, i) => {
+                    posBuffer[i*2] = p.x;
+                    posBuffer[i*2+1] = p.y;
+                    uvBuffer[i*2] = p.u;
+                    uvBuffer[i*2+1] = p.v;
+                });
+
+                const geometry = new PIXI.MeshGeometry({
+                    positions: posBuffer,
+                    uvs: uvBuffer,
+                    indices: new Uint16Array(indices)
+                });
+
+                this.mesh = new PIXI.Mesh({
+                    geometry: geometry,
+                    texture: texture
+                });
+                
+                // Make mesh semi-transparent and visible
+                this.mesh.alpha = 0.8;
+                this.mesh.visible = true;
+                this.mesh.tint = 0xFFFFFF;
+
+                console.log('Mesh created:', this.mesh);
+                console.log('Mesh texture:', texture);
+                console.log('Mesh position:', this.mesh.position);
+                console.log('Mesh scale:', this.mesh.scale);
+                console.log('Mesh geometry:', geometry);
+                console.log('Positions buffer:', geometry.getBuffer('aPosition'));
+                console.log('Indices:', geometry.getIndex());
+                
+                // Add mesh AFTER sprite so it appears on top
+                this.container.addChild(this.mesh);
+                
+                // Create wireframe (primary edges)
+                this.wireframe = new PIXI.Graphics();
+                this.updateWireframe(indices);
+                this.wireframe.visible = this.showWireframe;
+                this.container.addChild(this.wireframe);
+                
+                // Create extra edges graphics (if any)
+                if (this.extraEdgesGraphics) {
+                    this.container.removeChild(this.extraEdgesGraphics);
+                    this.extraEdgesGraphics.destroy();
+                }
+                if (this.extraEdgeCount > 0) {
+                    this.extraEdgesGraphics = new PIXI.Graphics();
+                    this.updateExtraEdgesVisual();
+                    this.extraEdgesGraphics.visible = this.showExtraEdges;
+                    this.container.addChild(this.extraEdgesGraphics);
+                    console.log('Extra edges graphics created');
+                }
+                
+                // Create points graphics
+                this.pointsGraphics = new PIXI.Graphics();
+                this.updatePointsVisual();
+                this.pointsGraphics.visible = this.showPoints;
+                this.container.addChild(this.pointsGraphics);
+                
+                console.log('Wireframe added with', indices.length / 3, 'triangles');
+                
+                // Keep background sprite visible in modeling mode, hide in sim mode
+                if (bgSprite) {
+                    bgSprite.visible = (App.activeTab === 'model');
+                }
+                
+                console.log('Mesh added to container at index:', this.container.children.indexOf(this.mesh));
+                console.log('Container children count:', this.container.children.length);
+                console.log('Mesh added to container, visible:', this.mesh.visible);
+            }
+
+            updateWireframe(indices) {
+                if (!this.wireframe) return;
+                this.wireframe.clear();
+                
+                for (let i = 0; i < indices.length; i += 3) {
+                    const idx1 = indices[i];
+                    const idx2 = indices[i + 1];
+                    const idx3 = indices[i + 2];
+                    
+                    const p1 = this.points[idx1];
+                    const p2 = this.points[idx2];
+                    const p3 = this.points[idx3];
+                    
+                    if (p1 && p2 && p3) {
+                        this.wireframe.moveTo(p1.x, p1.y);
+                        this.wireframe.lineTo(p2.x, p2.y);
+                        this.wireframe.lineTo(p3.x, p3.y);
+                        this.wireframe.lineTo(p1.x, p1.y);
+                    }
+                }
+                this.wireframe.stroke({ width: 0.5, color: 0x3b82f6, alpha: 0.3 });
+            }
+            
+            updateExtraEdgesVisual() {
+                if (!this.extraEdgesGraphics || !this.mesh || !this.mesh.geometry) return;
+                this.extraEdgesGraphics.clear();
+                
+                // Find all extra edges (edges not in triangles)
+                const triangleEdges = new Set();
+                
+                // Mark all triangle edges
+                if (this.mesh && this.mesh.geometry) {
+                    const indices = this.mesh.geometry.getIndex().data;
+                    for (let i = 0; i < indices.length; i += 3) {
+                        const addEdge = (a, b) => {
+                            const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+                            triangleEdges.add(key);
+                        };
+                        addEdge(indices[i], indices[i + 1]);
+                        addEdge(indices[i + 1], indices[i + 2]);
+                        addEdge(indices[i + 2], indices[i]);
+                    }
+                }
+                
+                // Draw all sticks that are not triangle edges (these are extra edges)
+                this.sticks.forEach((stick, idx) => {
+                    const i = this.points.indexOf(stick.p1);
+                    const j = this.points.indexOf(stick.p2);
+                    const key = i < j ? `${i}_${j}` : `${j}_${i}`;
+                    
+                    if (!triangleEdges.has(key)) {
+                        this.extraEdgesGraphics.moveTo(stick.p1.x, stick.p1.y);
+                        this.extraEdgesGraphics.lineTo(stick.p2.x, stick.p2.y);
+                    }
+                });
+                
+                this.extraEdgesGraphics.stroke({ width: 0.7, color: 0x10b981, alpha: 0.4 });
+            }
+
+            updatePointsVisual() {
+                if (!this.pointsGraphics) return;
+                this.pointsGraphics.clear();
+                
+                this.points.forEach(p => {
+                    const size = 4 / App.camera.zoom;
+                    this.pointsGraphics.circle(p.x, p.y, size);
+                    if (p.pinned) {
+                        this.pointsGraphics.fill({ color: 0xf59e0b, alpha: 1.0 }); // Amber for pinned
+                    } else if (p.selected) {
+                        this.pointsGraphics.fill({ color: 0x06b6d4, alpha: 0.8 }); // Cyan for selected
+                    } else {
+                        this.pointsGraphics.fill({ color: 0x6366f1, alpha: 0.6 }); // Indigo for normal
+                    }
+                });
+            }
+
+            update(dt) {
+                // Only run physics simulation when in sim mode AND simulation is active
+                if (App.activeTab !== 'sim' || !this.isSimulationActive) return;
+                if (!this.points || this.points.length === 0) return;
+
+                // Physics Loop
+                this.points.forEach(p => p.update(this.params.friction, this.params.gravity, dt));
+
+                // Constraints
+                for(let stick of this.sticks) stick.stiffness = this.params.stiffness;
+                
+                const iter = this.params.iterations;
+                for(let i=0; i<iter; i++) {
+                    this.sticks.forEach(s => s.resolve());
+                    
+                    // Mouse Interaction Constraint - only in sim mode
+                    if (this.dragPoint && App.isMouseDown && App.activeTab === 'sim') {
+                        // Pull towards mouse world pos
+                        const mp = App.mouseWorld;
+                        const dx = mp.x - this.dragPoint.x;
+                        const dy = mp.y - this.dragPoint.y;
+                        // Loose spring
+                        this.dragPoint.x += dx * 0.2;
+                        this.dragPoint.y += dy * 0.2;
+                    }
+                }
+
+                // Update Mesh Geometry
+                this.updateMeshGeometry();
+                
+                // Update wireframe position
+                if (this.wireframe && this.showWireframe && this.mesh && this.mesh.geometry) {
+                    const indices = this.mesh.geometry.getIndex().data;
+                    this.updateWireframe(indices);
+                }
+                
+                // Update extra edges visual
+                if (this.extraEdgesGraphics && this.showExtraEdges) {
+                    this.updateExtraEdgesVisual();
+                }
+                
+                // Update points visual
+                if (this.pointsGraphics && this.showPoints) {
+                    this.updatePointsVisual();
+                }
+            }
+
+            findNearest(x, y) {
+                let nearest = null;
+                let minDst = 50; // Interaction radius
+                this.points.forEach(p => {
+                    const d = Math.hypot(p.x - x, p.y - y);
+                    if (d < minDst) {
+                        minDst = d;
+                        nearest = p;
+                    }
+                });
+                return nearest;
+            }
+        }
+
+        // --- MAIN APPLICATION CLASS ---
+        const App = {
+            activeTab: 'model',
+            app: null,
+            container: null, // World Container
+            uiGraphics: null,
+            camera: null,
+            editor: null,
+            physics: null,
+            isMouseDown: false,
+            mouseWorld: { x: 0, y: 0 },
+            isSpacePressed: false,
+
+            async init() {
+                // Initialize Pixi
+                this.app = new PIXI.Application();
+                await this.app.init({
+                    resizeTo: document.getElementById('canvas-container'),
+                    backgroundColor: 0x09090b, // Match zinc-950
+                    antialias: true,
+                    resolution: window.devicePixelRatio || 1,
+                    autoDensity: true
+                });
+                document.getElementById('canvas-container').appendChild(this.app.canvas);
+
+                // Layers
+                this.container = new PIXI.Container(); // Holds world objects
+                this.app.stage.addChild(this.container);
+                
+                this.uiGraphics = new PIXI.Graphics(); // Holds UI overlays (lines, points) inside world space? 
+                // Ideally UI is screenspace, but for editing points that zoom with world, it should be in world container.
+                this.container.addChild(this.uiGraphics);
+
+                // Systems
+                this.camera = new Camera(this.container, this.app);
+                this.editor = new Editor(this.app, this.container, this.uiGraphics);
+                this.physics = new Physics(this.app, this.container);
+
+                // Load Lucide icons
+                lucide.createIcons();
+
+                // Events
+                this.bindEvents();
+                
+                // Ticker
+                this.app.ticker.add((ticker) => {
+                    if (this.activeTab === 'sim') {
+                        // Delta time in seconds (approx)
+                        this.physics.update(1); // Verlet works better with fixed steps or simple 1
+                    } else {
+                        // In edit mode, ensure UI is redrawn if camera moves
+                        // Or if points change. 
+                        // Just redraw for simplicity or optimizing inside Editor.
+                    }
+                });
+            },
+
+            bindEvents() {
+                const canvas = this.app.canvas;
+
+                // Keyboard
+                window.addEventListener('keydown', e => {
+                    if(e.code === 'Space') this.isSpacePressed = true;
+                    if(e.code === 'Delete') {
+                        if(this.activeTab === 'model' && !this.editor.isClosed) {
+                            this.editor.boundaryPoints.pop();
+                            this.editor.drawUI();
+                        }
+                    }
+                });
+                window.addEventListener('keyup', e => {
+                    if(e.code === 'Space') this.isSpacePressed = false;
+                });
+
+                // Mouse
+                canvas.addEventListener('pointerdown', e => {
+                    this.isMouseDown = true;
+                    const worldPos = this.camera.screenToWorld(e.offsetX, e.offsetY);
+                    console.log('Pointer down - World pos:', worldPos, 'Shift:', e.shiftKey, 'Mode:', this.activeTab);
+                    
+                    if (this.isSpacePressed || e.button === 1) {
+                        // Pan Start
+                        this.camera.isDragging = true;
+                        this.camera.lastPos = { x: e.clientX, y: e.clientY };
+                        return;
+                    }
+
+                    if (this.activeTab === 'model') {
+                        // Shift + Click で頂点を固定/解除
+                        if (e.shiftKey) {
+                            console.log('Calling editor.togglePinPoint');
+                            const result = this.editor.togglePinPoint(worldPos.x, worldPos.y);
+                            console.log('togglePinPoint result:', result);
+                        } else if (e.button === 0) {
+                            // Add Point
+                            this.editor.addPoint(worldPos.x, worldPos.y);
+                        }
+                    } else {
+                        // Shift + Click で物理シミュレーション中の頂点を固定/解除
+                        if (e.shiftKey) {
+                            console.log('Calling physics.togglePinPoint');
+                            const result = this.physics.togglePinPoint(worldPos.x, worldPos.y);
+                            console.log('togglePinPoint result:', result);
+                        } else {
+                            // Sim Interaction
+                            this.physics.dragPoint = this.physics.findNearest(worldPos.x, worldPos.y);
+                        }
+                    }
+                });
+
+                canvas.addEventListener('pointermove', e => {
+                    const worldPos = this.camera.screenToWorld(e.offsetX, e.offsetY);
+                    this.mouseWorld = worldPos;
+
+                    if (this.camera.isDragging) {
+                        const dx = e.clientX - this.camera.lastPos.x;
+                        const dy = e.clientY - this.camera.lastPos.y;
+                        this.camera.pan(dx, dy);
+                        this.camera.lastPos = { x: e.clientX, y: e.clientY };
+                    }
+                });
+
+                canvas.addEventListener('pointerup', () => {
+                    this.isMouseDown = false;
+                    this.camera.isDragging = false;
+                    if (this.physics.dragPoint) {
+                        this.physics.dragPoint = null;
+                        console.log('Drag point cleared');
+                    }
+                });
+
+                // File Upload
+                document.getElementById('file-upload').addEventListener('change', async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    const reader = new FileReader();
+                    reader.onload = async (evt) => {
+                        const src = evt.target.result;
+                        document.getElementById('preview-img').src = src;
+                        document.getElementById('preview-img').classList.remove('opacity-50');
+                        document.getElementById('preview-img').classList.add('opacity-100');
+                        
+                        const texture = await PIXI.Assets.load(src);
+                        this.editor.loadTexture(texture);
+                        // Reset Physics when new texture loads
+                        this.physics.clear();
+                    };
+                    reader.readAsDataURL(file);
+                });
+            },
+
+            switchTab(tab) {
+                console.log('Switching tab from', this.activeTab, 'to', tab);
+                this.activeTab = tab;
+                
+                // UI Toggle
+                document.getElementById('panel-model').classList.toggle('hidden', tab !== 'model');
+                document.getElementById('panel-sim').classList.toggle('hidden', tab !== 'sim');
+                
+                // Button Styles
+                const btnModel = document.getElementById('tab-model');
+                const btnSim = document.getElementById('tab-sim');
+                
+                // Clear drag state when switching modes
+                this.isMouseDown = false;
+                if (this.physics.dragPoint) {
+                    this.physics.dragPoint = null;
+                }
+                
+                if (tab === 'model') {
+                    btnModel.className = "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded bg-indigo-600 text-white shadow-sm transition-all";
+                    btnSim.className = "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded hover:bg-zinc-800 text-zinc-400 transition-all";
+                    document.getElementById('mode-badge').innerText = "MODE: MODELING";
+                    document.getElementById('mode-badge').className = "px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-mono font-medium backdrop-blur-sm";
+                    
+                    // Stop simulation and reset to original positions
+                    this.physics.stopSimulation();
+                    
+                    // Show Sprite and UI graphics in modeling mode
+                    if (this.editor.sprite) {
+                        this.editor.sprite.visible = true;
+                        console.log('Editor sprite set visible');
+                    }
+                    if (this.uiGraphics) {
+                        this.uiGraphics.visible = true;
+                        console.log('UI graphics set visible');
+                    }
+                    
+                    // Show or hide physics mesh based on whether it exists
+                    if (this.physics.mesh) {
+                        this.physics.mesh.visible = true;
+                        console.log('Physics mesh set visible');
+                    }
+                    // Redraw wireframe and graphics after stopping simulation
+                    if (this.physics.wireframe) {
+                        this.physics.wireframe.visible = this.physics.showWireframe;
+                        if (this.physics.showWireframe && this.physics.indices) {
+                            this.physics.updateWireframe(this.physics.indices);
+                        }
+                        console.log('Wireframe visibility:', this.physics.showWireframe);
+                    }
+                    if (this.physics.extraEdgesGraphics) {
+                        this.physics.extraEdgesGraphics.visible = this.physics.showExtraEdges && this.physics.showWireframe;
+                        if (this.physics.showExtraEdges && this.physics.showWireframe) {
+                            this.physics.updateExtraEdgesVisual();
+                        }
+                        console.log('Extra edges visibility:', this.physics.showExtraEdges && this.physics.showWireframe);
+                    }
+                    if (this.physics.pointsGraphics) {
+                        this.physics.pointsGraphics.visible = this.physics.showPoints;
+                        if (this.physics.showPoints) {
+                            this.physics.updatePointsVisual();
+                        }
+                        console.log('Points visibility:', this.physics.showPoints);
+                    }
+
+                } else {
+                    btnSim.className = "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded bg-emerald-600 text-white shadow-sm transition-all";
+                    btnModel.className = "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded hover:bg-zinc-800 text-zinc-400 transition-all";
+                    document.getElementById('mode-badge').innerText = "MODE: SIMULATION";
+                    document.getElementById('mode-badge').className = "px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono font-medium backdrop-blur-sm";
+                    
+                    // Start simulation from initial positions
+                    if (this.physics.points.length > 0) {
+                        this.physics.startSimulation();
+                    }
+                    
+                    // Hide sprite and UI graphics in simulation mode
+                    if (this.editor.sprite) {
+                        this.editor.sprite.visible = false;
+                        console.log('Editor sprite set hidden');
+                    }
+                    if (this.uiGraphics) {
+                        this.uiGraphics.visible = false;
+                        // Also clear the graphics to ensure nothing is drawn
+                        this.uiGraphics.clear();
+                        console.log('UI graphics set hidden and cleared');
+                    }
+                    
+                    // Show physics objects based on settings
+                    if (this.physics.mesh) {
+                        this.physics.mesh.visible = true;
+                        console.log('Physics mesh set visible for simulation');
+                    }
+                    if (this.physics.wireframe) {
+                        this.physics.wireframe.visible = this.physics.showWireframe;
+                        console.log('Wireframe visibility for sim:', this.physics.showWireframe);
+                    }
+                    if (this.physics.extraEdgesGraphics) {
+                        this.physics.extraEdgesGraphics.visible = this.physics.showExtraEdges && this.physics.showWireframe;
+                        console.log('Extra edges visibility for sim:', this.physics.showExtraEdges && this.physics.showWireframe);
+                    }
+                    if (this.physics.pointsGraphics) {
+                        this.physics.pointsGraphics.visible = this.physics.showPoints;
+                        console.log('Points visibility for sim:', this.physics.showPoints);
+                    }
+                    
+                    // Sync UI sliders
+                    const meshOpacity = document.getElementById('mesh-opacity-slider');
+                    const simMeshOpacity = document.getElementById('sim-mesh-opacity-slider');
+                    if (meshOpacity && simMeshOpacity) {
+                        simMeshOpacity.value = meshOpacity.value;
+                        document.getElementById('val-sim-mesh-opacity').innerText = meshOpacity.value + '%';
+                    }
+                    
+                    const wireframeChecked = document.getElementById('wireframe-toggle');
+                    const simWireframeToggle = document.getElementById('sim-wireframe-toggle');
+                    if (wireframeChecked && simWireframeToggle) {
+                        simWireframeToggle.checked = wireframeChecked.checked;
+                    }
+                    
+                    const pointsChecked = document.getElementById('points-toggle');
+                    const simPointsToggle = document.getElementById('sim-points-toggle');
+                    if (pointsChecked && simPointsToggle) {
+                        simPointsToggle.checked = pointsChecked.checked;
+                    }
+                }
+                
+                // Force redraw editor UI to clear or show graphics based on mode
+                this.editor.drawUI();
+                
+                // Re-initialize lucide icons (in case new buttons were added)
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+                
+                console.log('Tab switch complete');
+            }
+        };
+
+        // Initialize
+        window.onload = () => App.init();
+
+    </script>
+</body>
+</html>
