@@ -150,55 +150,173 @@
         <div id="ctxCopyStatus" class="hidden px-3 pb-2 text-[11px] text-slate-500"></div>
     </div>
 
-    <!-- Chroma Key Modal -->
+    <!-- Image Filter Modal -->
     <div id="chromaModal" class="fixed inset-0 bg-slate-900/60 hidden z-50 items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200 pointer-events-none">
-        <div class="bg-white rounded-2xl shadow-2xl w-[640px] max-w-[95vw] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200" id="chromaModalContent">
-            
+        <div class="bg-white rounded-2xl shadow-2xl w-[980px] max-w-[96vw] max-h-[94vh] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200" id="chromaModalContent">
             <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                 <h3 class="font-bold text-slate-800 flex items-center gap-2">
-                    <div class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                        <i class="fas fa-eye-dropper text-sm"></i>
+                    <div class="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                        <i class="fas fa-sliders text-sm"></i>
                     </div>
-                    Chroma Key Tool
+                    Image Filter Tool
                 </h3>
                 <button id="ckBtnClose" class="text-slate-400 hover:text-slate-600 transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200"><i class="fas fa-times text-lg"></i></button>
             </div>
             
-            <div class="p-5 flex flex-col gap-5">
-                <div class="relative bg-slate-100 rounded-xl overflow-hidden border border-slate-200/60 h-[320px] flex items-center justify-center cursor-crosshair group" id="ckPreviewContainer">
-                    <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%); background-size: 16px 16px;"></div>
-                    <canvas id="ckCanvas" class="max-w-full max-h-full block relative z-10 shadow-sm"></canvas>
-                    <div class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-slate-900/80 backdrop-blur-sm text-white text-xs font-medium px-3 py-1.5 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg">
-                        <i class="fas fa-mouse-pointer"></i> Click on image to pick color
+            <div class="p-5 grid grid-cols-[minmax(0,1fr)_340px] gap-5 overflow-y-auto">
+                <div class="min-w-0 space-y-3">
+                    <div class="relative bg-slate-100 rounded-xl overflow-hidden border border-slate-200/60 h-[480px] flex items-center justify-center cursor-crosshair group" id="ckPreviewContainer">
+                        <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%); background-size: 16px 16px;"></div>
+                        <canvas id="ckCanvas" class="max-w-full max-h-full block relative z-10 shadow-sm"></canvas>
+                        <div class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-slate-900/80 backdrop-blur-sm text-white text-xs font-medium px-3 py-1.5 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg">
+                            <i class="fas fa-mouse-pointer"></i> Click image to pick chroma key color
+                        </div>
                     </div>
+                    <p class="text-xs text-slate-500 leading-relaxed">
+                        Preview reflects chroma key and image filters together. Clicking the image picks the chroma key color and enables chroma key.
+                    </p>
                 </div>
-                
-                <div class="flex gap-5 items-center bg-white p-4 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
-                    <div class="flex flex-col gap-2 shrink-0">
-                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Key Color</label>
-                        <div class="flex items-center gap-2.5">
-                            <input type="color" id="ckColorInput" value="#00ff00" class="w-9 h-9 rounded cursor-pointer border-0 p-0 bg-transparent">
-                            <span id="ckColorHex" class="text-sm font-mono text-slate-700 uppercase w-16 font-semibold">#00FF00</span>
+
+                <div class="space-y-5 min-w-0">
+                    <section class="bg-white p-4 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] space-y-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                                <i class="fas fa-eye-dropper text-emerald-500"></i> Chroma Key
+                            </h4>
+                            <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none">
+                                <input type="checkbox" id="ckEnabled" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                                Enable
+                            </label>
                         </div>
-                    </div>
-                    
-                    <div class="w-px h-12 bg-slate-100 shrink-0"></div>
-                    
-                    <div class="flex-1 flex flex-col gap-2">
-                        <div class="flex justify-between items-end">
-                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tolerance (Threshold)</label>
-                            <span id="ckThresholdVal" class="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">50</span>
+
+                        <div class="grid grid-cols-[auto_1fr] gap-3 items-center">
+                            <input type="color" id="ckColorInput" value="#00ff00" class="w-10 h-10 rounded cursor-pointer border-0 p-0 bg-transparent">
+                            <div class="min-w-0">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Key Color</label>
+                                <span id="ckColorHex" class="text-sm font-mono text-slate-700 uppercase font-semibold">#00FF00</span>
+                            </div>
                         </div>
-                        <input type="range" id="ckThresholdSlider" min="0" max="442" value="50" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
-                    </div>
+
+                        <div>
+                            <div class="flex justify-between items-end mb-1.5">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tolerance</label>
+                                <span id="ckThresholdVal" class="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">50</span>
+                            </div>
+                            <input type="range" id="ckThresholdSlider" min="0" max="442" value="50" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </section>
+
+                    <section class="space-y-4">
+                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fas fa-sun text-amber-500"></i> Light
+                        </h4>
+
+                        <div class="space-y-3">
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">明るさ</span>
+                                    <span id="filterBrightnessVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterBrightness" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">露出</span>
+                                    <span id="filterExposureVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterExposure" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">コントラスト</span>
+                                    <span id="filterContrastVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterContrast" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">ハイライト</span>
+                                    <span id="filterHighlightsVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterHighlights" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">シャドー</span>
+                                    <span id="filterShadowsVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterShadows" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">ふちどり</span>
+                                    <span id="filterOutlineVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input type="range" id="filterOutline" min="0" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                                    <input type="color" id="filterOutlineColor" value="#ffffff" title="Outline Color" class="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0">
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="space-y-4">
+                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fas fa-palette text-pink-500"></i> Color
+                        </h4>
+
+                        <div class="space-y-3">
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">彩度</span>
+                                    <span id="filterSaturationVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterSaturation" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">暖かさ</span>
+                                    <span id="filterWarmthVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterWarmth" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">濃淡</span>
+                                    <span id="filterTintVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterTint" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-slate-600 font-medium">鮮明度</span>
+                                    <span id="filterClarityVal" class="font-mono text-blue-600 font-bold">0</span>
+                                </div>
+                                <input type="range" id="filterClarity" min="-100" max="100" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
 
-            <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-                <button id="ckBtnCancel" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
-                <button id="ckBtnApply" class="px-6 py-2 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-md shadow-emerald-600/20 transition-colors flex items-center gap-2">
-                    <i class="fas fa-check"></i> Apply Chroma
+            <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-between gap-3">
+                <button id="filterBtnReset" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors flex items-center gap-2">
+                    <i class="fas fa-rotate-left"></i> Reset
                 </button>
+                <div class="flex justify-end gap-3">
+                    <button id="ckBtnCancel" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
+                    <button id="ckBtnApply" class="px-6 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-md shadow-blue-600/20 transition-colors flex items-center gap-2">
+                        <i class="fas fa-check"></i> Apply Filters
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1461,11 +1579,11 @@
                 btnEditText.draggable = false;
                 btnEditText.onclick = (e) => { e.stopPropagation(); editTextLayer(i); };
 
-                // Chroma Key Button
+                // Image Filter Button
                 const btnChroma = document.createElement('button');
-                btnChroma.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-emerald-600 rounded-md hover:bg-emerald-50 transition-colors';
-                btnChroma.innerHTML = '<i class="fas fa-eye-dropper text-xs"></i>';
-                btnChroma.title = "Chroma Key Tool";
+                btnChroma.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors';
+                btnChroma.innerHTML = '<i class="fas fa-sliders text-xs"></i>';
+                btnChroma.title = "Image Filter Tool";
                 btnChroma.draggable = false;
                 btnChroma.onclick = (e) => { e.stopPropagation(); openChromaModal(i); };
 
@@ -2127,28 +2245,52 @@
         });
 
 
-        // --- Chroma Key Logic ---
+        // --- Image Filter Logic ---
         let targetLayerIndex = -1;
         let originalImageData = null;
+        let previewFrameRequest = null;
         
         const chromaModal = document.getElementById('chromaModal');
         const chromaModalContent = document.getElementById('chromaModalContent');
         const ckCanvas = document.getElementById('ckCanvas');
         const ckCtx = ckCanvas.getContext('2d', { willReadFrequently: true });
         
+        const ckEnabled = document.getElementById('ckEnabled');
         const ckColorInput = document.getElementById('ckColorInput');
         const ckColorHex = document.getElementById('ckColorHex');
         const ckThresholdSlider = document.getElementById('ckThresholdSlider');
         const ckThresholdVal = document.getElementById('ckThresholdVal');
+        const filterBtnReset = document.getElementById('filterBtnReset');
         
         const ckBtnClose = document.getElementById('ckBtnClose');
         const ckBtnCancel = document.getElementById('ckBtnCancel');
         const ckBtnApply = document.getElementById('ckBtnApply');
 
+        const imageFilterControls = [
+            { id: 'filterBrightness', valId: 'filterBrightnessVal', key: 'brightness', defaultValue: 0 },
+            { id: 'filterExposure', valId: 'filterExposureVal', key: 'exposure', defaultValue: 0 },
+            { id: 'filterContrast', valId: 'filterContrastVal', key: 'contrast', defaultValue: 0 },
+            { id: 'filterHighlights', valId: 'filterHighlightsVal', key: 'highlights', defaultValue: 0 },
+            { id: 'filterShadows', valId: 'filterShadowsVal', key: 'shadows', defaultValue: 0 },
+            { id: 'filterOutline', valId: 'filterOutlineVal', key: 'outline', defaultValue: 0 },
+            { id: 'filterSaturation', valId: 'filterSaturationVal', key: 'saturation', defaultValue: 0 },
+            { id: 'filterWarmth', valId: 'filterWarmthVal', key: 'warmth', defaultValue: 0 },
+            { id: 'filterTint', valId: 'filterTintVal', key: 'tint', defaultValue: 0 },
+            { id: 'filterClarity', valId: 'filterClarityVal', key: 'clarity', defaultValue: 0 }
+        ].map(item => ({
+            ...item,
+            el: document.getElementById(item.id),
+            valEl: document.getElementById(item.valId)
+        }));
+
+        const filterOutlineColor = document.getElementById('filterOutlineColor');
+
         function openChromaModal(index) {
             if (!objects[index] || objects[index].type === 'text') return;
             targetLayerIndex = index;
+            selectedIndex = index;
             const img = objects[index].img;
+            resetImageFilterControls(false);
             
             chromaModal.classList.remove('opacity-0', 'pointer-events-none', 'hidden');
             chromaModal.classList.add('flex');
@@ -2159,23 +2301,33 @@
                 chromaModalContent.classList.add('scale-100');
             }, 10);
 
-            ckCanvas.width = img.width;
-            ckCanvas.height = img.height;
-            ckCtx.drawImage(img, 0, 0);
+            const sourceWidth = img.naturalWidth || img.width;
+            const sourceHeight = img.naturalHeight || img.height;
+            ckCanvas.width = sourceWidth;
+            ckCanvas.height = sourceHeight;
+            ckCtx.clearRect(0, 0, ckCanvas.width, ckCanvas.height);
+            ckCtx.drawImage(img, 0, 0, sourceWidth, sourceHeight);
             originalImageData = ckCtx.getImageData(0, 0, ckCanvas.width, ckCanvas.height);
             
-            applyChromaKeyPreview();
+            scheduleImageFilterPreview();
+            updateLayerList();
+            render();
         }
 
         function closeChromaModal() {
             chromaModal.classList.add('opacity-0');
             chromaModalContent.classList.remove('scale-100');
             chromaModalContent.classList.add('scale-95');
+            if (previewFrameRequest !== null) {
+                cancelAnimationFrame(previewFrameRequest);
+                previewFrameRequest = null;
+            }
             
             setTimeout(() => {
                 chromaModal.classList.add('hidden', 'pointer-events-none');
                 chromaModal.classList.remove('flex');
                 originalImageData = null;
+                targetLayerIndex = -1;
             }, 200);
         }
 
@@ -2183,54 +2335,262 @@
             return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toUpperCase();
         }
 
-        function applyChromaKeyPreview() {
+        function clampChannel(value) {
+            return Math.max(0, Math.min(255, value));
+        }
+
+        function readImageFilterState() {
+            const state = {
+                chromaEnabled: !!ckEnabled.checked,
+                keyColor: ckColorInput.value,
+                threshold: parseInt(ckThresholdSlider.value, 10) || 0,
+                outlineColor: filterOutlineColor.value
+            };
+            imageFilterControls.forEach(control => {
+                state[control.key] = Number(control.el.value) || 0;
+            });
+            return state;
+        }
+
+        function updateFilterValueLabels() {
+            ckColorHex.innerText = ckColorInput.value.toUpperCase();
+            ckThresholdVal.innerText = ckThresholdSlider.value;
+            imageFilterControls.forEach(control => {
+                control.valEl.innerText = String(control.el.value);
+            });
+        }
+
+        function resetImageFilterControls(shouldPreview = true) {
+            ckEnabled.checked = false;
+            ckColorInput.value = '#00ff00';
+            ckThresholdSlider.value = '50';
+            filterOutlineColor.value = '#ffffff';
+            imageFilterControls.forEach(control => {
+                control.el.value = String(control.defaultValue);
+            });
+            updateFilterValueLabels();
+            if (shouldPreview) scheduleImageFilterPreview();
+        }
+
+        function scheduleImageFilterPreview() {
             if (!originalImageData) return;
-            
-            const w = ckCanvas.width;
-            const h = ckCanvas.height;
-            const newImageData = ckCtx.createImageData(w, h);
-            const srcData = originalImageData.data;
-            const dstData = newImageData.data;
-            
-            const hex = ckColorInput.value;
+            if (previewFrameRequest !== null) cancelAnimationFrame(previewFrameRequest);
+            previewFrameRequest = requestAnimationFrame(() => {
+                previewFrameRequest = null;
+                applyImageFilterPreview();
+            });
+        }
+
+        function applyImageFilterPreview() {
+            if (!originalImageData) return;
+            const state = readImageFilterState();
+            const previewImageData = processImageFilters(originalImageData, state);
+            ckCtx.putImageData(previewImageData, 0, 0);
+        }
+
+        function processImageFilters(sourceImageData, state) {
+            const w = sourceImageData.width;
+            const h = sourceImageData.height;
+            const result = new ImageData(w, h);
+            const srcData = sourceImageData.data;
+            const dstData = result.data;
+
+            const hex = state.keyColor;
             const rT = parseInt(hex.slice(1, 3), 16);
             const gT = parseInt(hex.slice(3, 5), 16);
             const bT = parseInt(hex.slice(5, 7), 16);
-            
-            const threshold = parseInt(ckThresholdSlider.value);
-            
+            const threshold = state.threshold;
+
+            const exposureMultiplier = Math.pow(2, state.exposure / 50);
+            const contrastValue = state.contrast * 2.55;
+            const contrastFactor = (259 * (contrastValue + 255)) / (255 * (259 - contrastValue));
+            const saturationFactor = 1 + state.saturation / 100;
+            const brightnessOffset = state.brightness * 1.8;
+            const warmthOffset = state.warmth * 0.75;
+            const tintOffset = state.tint * 0.65;
+            const highlightsAmount = state.highlights * 1.4;
+            const shadowsAmount = state.shadows * 1.4;
+
             for (let i = 0; i < srcData.length; i += 4) {
-                const r = srcData[i];
-                const g = srcData[i+1];
-                const b = srcData[i+2];
-                const a = srcData[i+3];
-                
-                if (a === 0) {
-                    dstData[i] = r; dstData[i+1] = g; dstData[i+2] = b; dstData[i+3] = 0;
+                const originalR = srcData[i];
+                const originalG = srcData[i + 1];
+                const originalB = srcData[i + 2];
+                const originalA = srcData[i + 3];
+
+                if (originalA === 0) {
+                    dstData[i] = originalR;
+                    dstData[i + 1] = originalG;
+                    dstData[i + 2] = originalB;
+                    dstData[i + 3] = 0;
                     continue;
                 }
 
-                const dist = Math.sqrt((r - rT)**2 + (g - gT)**2 + (b - bT)**2);
-                
-                if (dist <= threshold) {
-                    dstData[i] = r; dstData[i+1] = g; dstData[i+2] = b; dstData[i+3] = 0;
-                } else {
-                    dstData[i] = r; dstData[i+1] = g; dstData[i+2] = b; dstData[i+3] = a;
+                const keyDistance = Math.sqrt((originalR - rT) ** 2 + (originalG - gT) ** 2 + (originalB - bT) ** 2);
+                if (state.chromaEnabled && keyDistance <= threshold) {
+                    dstData[i] = originalR;
+                    dstData[i + 1] = originalG;
+                    dstData[i + 2] = originalB;
+                    dstData[i + 3] = 0;
+                    continue;
+                }
+
+                let r = originalR * exposureMultiplier + brightnessOffset;
+                let g = originalG * exposureMultiplier + brightnessOffset;
+                let b = originalB * exposureMultiplier + brightnessOffset;
+
+                let luminance = 0.299 * originalR + 0.587 * originalG + 0.114 * originalB;
+                const highlightsWeight = Math.max(0, (luminance - 128) / 127);
+                const shadowsWeight = Math.max(0, (128 - luminance) / 128);
+                r += highlightsAmount * highlightsWeight + shadowsAmount * shadowsWeight;
+                g += highlightsAmount * highlightsWeight + shadowsAmount * shadowsWeight;
+                b += highlightsAmount * highlightsWeight + shadowsAmount * shadowsWeight;
+
+                r = contrastFactor * (r - 128) + 128;
+                g = contrastFactor * (g - 128) + 128;
+                b = contrastFactor * (b - 128) + 128;
+
+                luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+                r = luminance + (r - luminance) * saturationFactor;
+                g = luminance + (g - luminance) * saturationFactor;
+                b = luminance + (b - luminance) * saturationFactor;
+
+                r += warmthOffset;
+                b -= warmthOffset;
+                r += tintOffset;
+                b += tintOffset;
+                g -= tintOffset;
+
+                dstData[i] = clampChannel(r);
+                dstData[i + 1] = clampChannel(g);
+                dstData[i + 2] = clampChannel(b);
+                dstData[i + 3] = originalA;
+            }
+
+            let output = result;
+            if (state.clarity !== 0) {
+                output = applyClarityFilter(output, state.clarity);
+            }
+            if (state.outline > 0) {
+                output = applyOutlineFilter(output, Math.round(state.outline / 5), state.outlineColor);
+            }
+            return output;
+        }
+
+        function applyClarityFilter(imageData, clarity) {
+            const w = imageData.width;
+            const h = imageData.height;
+            const src = imageData.data;
+            const result = new ImageData(new Uint8ClampedArray(src), w, h);
+            const dst = result.data;
+            const amount = Math.abs(clarity) / 100;
+            const sharpen = clarity > 0;
+
+            for (let y = 1; y < h - 1; y++) {
+                for (let x = 1; x < w - 1; x++) {
+                    const idx = (y * w + x) * 4;
+                    if (src[idx + 3] === 0) continue;
+
+                    let sumR = 0;
+                    let sumG = 0;
+                    let sumB = 0;
+                    let count = 0;
+
+                    for (let oy = -1; oy <= 1; oy++) {
+                        for (let ox = -1; ox <= 1; ox++) {
+                            const ni = ((y + oy) * w + (x + ox)) * 4;
+                            if (src[ni + 3] === 0) continue;
+                            sumR += src[ni];
+                            sumG += src[ni + 1];
+                            sumB += src[ni + 2];
+                            count++;
+                        }
+                    }
+
+                    if (count === 0) continue;
+                    const blurR = sumR / count;
+                    const blurG = sumG / count;
+                    const blurB = sumB / count;
+
+                    if (sharpen) {
+                        dst[idx] = clampChannel(src[idx] + (src[idx] - blurR) * amount * 1.8);
+                        dst[idx + 1] = clampChannel(src[idx + 1] + (src[idx + 1] - blurG) * amount * 1.8);
+                        dst[idx + 2] = clampChannel(src[idx + 2] + (src[idx + 2] - blurB) * amount * 1.8);
+                    } else {
+                        dst[idx] = clampChannel(src[idx] + (blurR - src[idx]) * amount);
+                        dst[idx + 1] = clampChannel(src[idx + 1] + (blurG - src[idx + 1]) * amount);
+                        dst[idx + 2] = clampChannel(src[idx + 2] + (blurB - src[idx + 2]) * amount);
+                    }
                 }
             }
-            
-            ckCtx.putImageData(newImageData, 0, 0);
+            return result;
         }
+
+        function applyOutlineFilter(imageData, radius, colorHex) {
+            if (radius <= 0) return imageData;
+            const w = imageData.width;
+            const h = imageData.height;
+            const src = imageData.data;
+            const result = new ImageData(new Uint8ClampedArray(src), w, h);
+            const dst = result.data;
+            const rO = parseInt(colorHex.slice(1, 3), 16);
+            const gO = parseInt(colorHex.slice(3, 5), 16);
+            const bO = parseInt(colorHex.slice(5, 7), 16);
+            const maxRadius = Math.min(20, radius);
+            const radiusSquared = maxRadius * maxRadius;
+
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
+                    if (src[idx + 3] > 0) continue;
+
+                    let shouldOutline = false;
+                    for (let oy = -maxRadius; oy <= maxRadius && !shouldOutline; oy++) {
+                        const ny = y + oy;
+                        if (ny < 0 || ny >= h) continue;
+                        for (let ox = -maxRadius; ox <= maxRadius; ox++) {
+                            if (ox * ox + oy * oy > radiusSquared) continue;
+                            const nx = x + ox;
+                            if (nx < 0 || nx >= w) continue;
+                            const ni = (ny * w + nx) * 4;
+                            if (src[ni + 3] > 24) {
+                                shouldOutline = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (shouldOutline) {
+                        dst[idx] = rO;
+                        dst[idx + 1] = gO;
+                        dst[idx + 2] = bO;
+                        dst[idx + 3] = 255;
+                    }
+                }
+            }
+            return result;
+        }
+
+        ckEnabled.addEventListener('change', scheduleImageFilterPreview);
 
         ckColorInput.addEventListener('input', (e) => {
             ckColorHex.innerText = e.target.value.toUpperCase();
-            applyChromaKeyPreview();
+            scheduleImageFilterPreview();
         });
 
         ckThresholdSlider.addEventListener('input', (e) => {
             ckThresholdVal.innerText = e.target.value;
-            applyChromaKeyPreview();
+            scheduleImageFilterPreview();
         });
+
+        imageFilterControls.forEach(control => {
+            control.el.addEventListener('input', () => {
+                control.valEl.innerText = String(control.el.value);
+                scheduleImageFilterPreview();
+            });
+        });
+
+        filterOutlineColor.addEventListener('input', scheduleImageFilterPreview);
+        filterBtnReset.addEventListener('click', () => resetImageFilterControls(true));
 
         ckCanvas.addEventListener('mousedown', (e) => {
             const rect = ckCanvas.getBoundingClientRect();
@@ -2243,15 +2603,16 @@
             if (x >= 0 && x < ckCanvas.width && y >= 0 && y < ckCanvas.height && originalImageData) {
                 const i = (y * ckCanvas.width + x) * 4;
                 const r = originalImageData.data[i];
-                const g = originalImageData.data[i+1];
-                const b = originalImageData.data[i+2];
-                const a = originalImageData.data[i+3];
+                const g = originalImageData.data[i + 1];
+                const b = originalImageData.data[i + 2];
+                const a = originalImageData.data[i + 3];
                 
                 if (a > 0) {
                     const hex = rgbToHex(r, g, b);
+                    ckEnabled.checked = true;
                     ckColorInput.value = hex;
                     ckColorHex.innerText = hex;
-                    applyChromaKeyPreview();
+                    scheduleImageFilterPreview();
                 }
             }
         });
@@ -2264,24 +2625,41 @@
         });
 
         ckBtnApply.addEventListener('click', () => {
+            if (!originalImageData || !objects[targetLayerIndex]) return;
             const before = captureState();
             const btnIcon = ckBtnApply.querySelector('i');
+            const previousIcon = btnIcon.className;
             btnIcon.className = 'fas fa-spinner fa-spin';
+            ckBtnApply.disabled = true;
             
             setTimeout(() => {
-                const dataUrl = ckCanvas.toDataURL('image/png');
-                const newImg = new Image();
-                newImg.onload = () => {
-                    if (objects[targetLayerIndex]) {
-                        objects[targetLayerIndex].img = newImg;
-                        pushHistorySnapshot(before);
-                        updateLayerList();
-                        render();
-                    }
-                    btnIcon.className = 'fas fa-check';
-                    closeChromaModal();
-                };
-                newImg.src = dataUrl;
+                try {
+                    const state = readImageFilterState();
+                    const finalImageData = processImageFilters(originalImageData, state);
+                    ckCtx.putImageData(finalImageData, 0, 0);
+                    const dataUrl = ckCanvas.toDataURL('image/png');
+                    const newImg = new Image();
+                    newImg.onload = () => {
+                        if (objects[targetLayerIndex]) {
+                            objects[targetLayerIndex].img = newImg;
+                            pushHistorySnapshot(before);
+                            updateLayerList();
+                            render();
+                        }
+                        btnIcon.className = previousIcon;
+                        ckBtnApply.disabled = false;
+                        closeChromaModal();
+                    };
+                    newImg.onerror = () => {
+                        btnIcon.className = previousIcon;
+                        ckBtnApply.disabled = false;
+                    };
+                    newImg.src = dataUrl;
+                } catch (err) {
+                    console.error(err);
+                    btnIcon.className = previousIcon;
+                    ckBtnApply.disabled = false;
+                }
             }, 10);
         });
 
