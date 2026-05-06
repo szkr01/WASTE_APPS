@@ -10,6 +10,17 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+
+        @font-face {
+            font-family: 'notobk';
+            src: url('https://raw.githubusercontent.com/yurafuca/5000choyen/master/docs/res/notobk-subset.otf') format('opentype');
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'notoserifbk';
+            src: url('https://raw.githubusercontent.com/yurafuca/5000choyen/master/docs/res/notoserifbk-subset.otf') format('opentype');
+            font-display: swap;
+        }
         body { margin: 0; overflow: hidden; background-color: #f3f4f6; user-select: none; }
         canvas { display: block; width: 100%; height: 100%; outline: none; }
         input[type=range] { accent-color: #3b82f6; }
@@ -223,6 +234,8 @@
                                 <option value="'Comic Sans MS', 'Comic Sans', cursive">Comic Sans MS</option>
                                 <option value="'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif">Yu Gothic</option>
                                 <option value="'MS PGothic', sans-serif">MS PGothic</option>
+                                <option value="__5000CHOYEN_TOP__">5000兆円風・赤金（上）</option>
+                                <option value="__5000CHOYEN_BOTTOM__">5000兆円風・銀紺（下）</option>
                                 <option value="serif">Generic Serif</option>
                                 <option value="sans-serif">Generic Sans</option>
                             </select>
@@ -372,6 +385,30 @@
         const BOARD_W = 1024;
         const BOARD_H = 1024;
         const HANDLE_SIZE = 10;
+        const CHOYEN_TOP_FONT_VALUE = '__5000CHOYEN_TOP__';
+        const CHOYEN_BOTTOM_FONT_VALUE = '__5000CHOYEN_BOTTOM__';
+
+        function isChoyenSpecialFont(fontFamily) {
+            return fontFamily === CHOYEN_TOP_FONT_VALUE || fontFamily === CHOYEN_BOTTOM_FONT_VALUE;
+        }
+
+        function getChoyenCanvasFont(fontFamily) {
+            return fontFamily === CHOYEN_BOTTOM_FONT_VALUE ? "100px notoserifbk" : "100px notobk";
+        }
+
+        function preloadChoyenFonts() {
+            if (!document.fonts) return;
+            Promise.all([
+                document.fonts.load('100px notobk'),
+                document.fonts.load('100px notoserifbk')
+            ]).then(() => {
+                objects.forEach(obj => {
+                    if (obj.type === 'text' && isChoyenSpecialFont(obj.fontFamily)) invalidateTextTexture(obj);
+                });
+                render();
+                renderTextEditorPreview();
+            }).catch(console.warn);
+        }
 
         let objects = [];
         let selectedIndex = -1;
@@ -395,6 +432,8 @@
         let textCreateStart = { x: 0, y: 0 };
         let textCreateRect = null;
         let textEditorState = null;
+
+        preloadChoyenFonts();
 
         const HISTORY_LIMIT = 50;
         const undoStack = [];
@@ -652,7 +691,245 @@
             return x;
         }
 
+        function cropCanvasToAlpha(sourceCanvas, margin = 8) {
+            const width = sourceCanvas.width;
+            const height = sourceCanvas.height;
+            const sourceCtx = sourceCanvas.getContext('2d');
+            const data = sourceCtx.getImageData(0, 0, width, height).data;
+            let minX = width;
+            let minY = height;
+            let maxX = -1;
+            let maxY = -1;
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const alpha = data[(y * width + x) * 4 + 3];
+                    if (alpha > 0) {
+                        if (x < minX) minX = x;
+                        if (y < minY) minY = y;
+                        if (x > maxX) maxX = x;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+
+            if (maxX < minX || maxY < minY) {
+                const emptyCanvas = document.createElement('canvas');
+                emptyCanvas.width = 1;
+                emptyCanvas.height = 1;
+                return emptyCanvas;
+            }
+
+            minX = Math.max(0, minX - margin);
+            minY = Math.max(0, minY - margin);
+            maxX = Math.min(width - 1, maxX + margin);
+            maxY = Math.min(height - 1, maxY + margin);
+
+            const croppedCanvas = document.createElement('canvas');
+            croppedCanvas.width = Math.max(1, maxX - minX + 1);
+            croppedCanvas.height = Math.max(1, maxY - minY + 1);
+            croppedCanvas.getContext('2d').drawImage(
+                sourceCanvas,
+                minX,
+                minY,
+                croppedCanvas.width,
+                croppedCanvas.height,
+                0,
+                0,
+                croppedCanvas.width,
+                croppedCanvas.height
+            );
+            return croppedCanvas;
+        }
+
+        function drawChoyenTopText(ctxToDraw, value, x, y) {
+            ctxToDraw.setTransform(1, 0, -0.45, 1, 0, 0);
+
+            // 黒色
+            {
+                ctxToDraw.strokeStyle = '#000';
+                ctxToDraw.lineWidth = 22;
+                ctxToDraw.strokeText(value, x + 4, y + 4);
+            }
+            // 銀色
+            {
+                const grad = ctxToDraw.createLinearGradient(0, 24, 0, 122);
+                grad.addColorStop(0.0, 'rgb(0,15,36)');
+                grad.addColorStop(0.10, 'rgb(255,255,255)');
+                grad.addColorStop(0.18, 'rgb(55,58,59)');
+                grad.addColorStop(0.25, 'rgb(55,58,59)');
+                grad.addColorStop(0.5, 'rgb(200,200,200)');
+                grad.addColorStop(0.75, 'rgb(55,58,59)');
+                grad.addColorStop(0.85, 'rgb(25,20,31)');
+                grad.addColorStop(0.91, 'rgb(240,240,240)');
+                grad.addColorStop(0.95, 'rgb(166,175,194)');
+                grad.addColorStop(1, 'rgb(50,50,50)');
+                ctxToDraw.strokeStyle = grad;
+                ctxToDraw.lineWidth = 20;
+                ctxToDraw.strokeText(value, x + 4, y + 4);
+            }
+
+            // 黒色
+            {
+                ctxToDraw.strokeStyle = '#000000';
+                ctxToDraw.lineWidth = 16;
+                ctxToDraw.strokeText(value, x, y);
+            }
+
+            // 金色
+            {
+                const grad = ctxToDraw.createLinearGradient(0, 20, 0, 100);
+                grad.addColorStop(0, 'rgb(253,241,0)');
+                grad.addColorStop(0.25, 'rgb(245,253,187)');
+                grad.addColorStop(0.4, 'rgb(255,255,255)');
+                grad.addColorStop(0.75, 'rgb(253,219,9)');
+                grad.addColorStop(0.9, 'rgb(127,53,0)');
+                grad.addColorStop(1, 'rgb(243,196,11)');
+                ctxToDraw.strokeStyle = grad;
+                ctxToDraw.lineWidth = 10;
+                ctxToDraw.strokeText(value, x, y);
+            }
+
+            // 黒
+            ctxToDraw.lineWidth = 6;
+            ctxToDraw.strokeStyle = '#000';
+            ctxToDraw.strokeText(value, x + 2, y - 3);
+
+            // 白
+            ctxToDraw.lineWidth = 6;
+            ctxToDraw.strokeStyle = '#FFFFFF';
+            ctxToDraw.strokeText(value, x, y - 3);
+
+            // 赤
+            {
+                const grad = ctxToDraw.createLinearGradient(0, 20, 0, 100);
+                grad.addColorStop(0, 'rgb(255, 100, 0)');
+                grad.addColorStop(0.5, 'rgb(123, 0, 0)');
+                grad.addColorStop(0.51, 'rgb(240, 0, 0)');
+                grad.addColorStop(1, 'rgb(5, 0, 0)');
+                ctxToDraw.lineWidth = 4;
+                ctxToDraw.strokeStyle = grad;
+                ctxToDraw.strokeText(value, x, y - 3);
+            }
+
+            // 赤
+            {
+                const grad = ctxToDraw.createLinearGradient(0, 20, 0, 100);
+                grad.addColorStop(0, 'rgb(230, 0, 0)');
+                grad.addColorStop(0.5, 'rgb(123, 0, 0)');
+                grad.addColorStop(0.51, 'rgb(240, 0, 0)');
+                grad.addColorStop(1, 'rgb(5, 0, 0)');
+                ctxToDraw.fillStyle = grad;
+                ctxToDraw.fillText(value, x, y - 3);
+            }
+        }
+
+        function drawChoyenBottomText(ctxToDraw, value, x, y) {
+            ctxToDraw.setTransform(1, 0, -0.45, 1, 0, 0);
+
+            // 黒色
+            {
+                ctxToDraw.strokeStyle = '#000';
+                ctxToDraw.lineWidth = 22;
+                ctxToDraw.strokeText(value, x + 5, y + 2);
+            }
+
+            // 銀
+            {
+                const grad = ctxToDraw.createLinearGradient(0, y - 80, 0, y + 18);
+                grad.addColorStop(0, 'rgb(0,15,36)');
+                grad.addColorStop(0.25, 'rgb(250,250,250)');
+                grad.addColorStop(0.5, 'rgb(150,150,150)');
+                grad.addColorStop(0.75, 'rgb(55,58,59)');
+                grad.addColorStop(0.85, 'rgb(25,20,31)');
+                grad.addColorStop(0.91, 'rgb(240,240,240)');
+                grad.addColorStop(0.95, 'rgb(166,175,194)');
+                grad.addColorStop(1, 'rgb(50,50,50)');
+                ctxToDraw.strokeStyle = grad;
+                ctxToDraw.lineWidth = 19;
+                ctxToDraw.strokeText(value, x + 5, y + 2);
+            }
+
+            // 黒色
+            {
+                ctxToDraw.strokeStyle = '#10193A';
+                ctxToDraw.lineWidth = 17;
+                ctxToDraw.strokeText(value, x, y);
+            }
+
+            // 白
+            {
+                ctxToDraw.strokeStyle = '#DDD';
+                ctxToDraw.lineWidth = 8;
+                ctxToDraw.strokeText(value, x, y);
+            }
+
+            // 紺
+            {
+                const grad = ctxToDraw.createLinearGradient(0, y - 80, 0, y);
+                grad.addColorStop(0, 'rgb(16,25,58)');
+                grad.addColorStop(0.03, 'rgb(255,255,255)');
+                grad.addColorStop(0.08, 'rgb(16,25,58)');
+                grad.addColorStop(0.2, 'rgb(16,25,58)');
+                grad.addColorStop(1, 'rgb(16,25,58)');
+                ctxToDraw.strokeStyle = grad;
+                ctxToDraw.lineWidth = 7;
+                ctxToDraw.strokeText(value, x, y);
+            }
+
+            // 銀
+            {
+                const grad = ctxToDraw.createLinearGradient(0, y - 80, 0, y);
+                grad.addColorStop(0, 'rgb(245,246,248)');
+                grad.addColorStop(0.15, 'rgb(255,255,255)');
+                grad.addColorStop(0.35, 'rgb(195,213,220)');
+                grad.addColorStop(0.5, 'rgb(160,190,201)');
+                grad.addColorStop(0.51, 'rgb(160,190,201)');
+                grad.addColorStop(0.52, 'rgb(196,215,222)');
+                grad.addColorStop(1.0, 'rgb(255,255,255)');
+                ctxToDraw.fillStyle = grad;
+                ctxToDraw.fillText(value, x, y - 3);
+            }
+        }
+
+        function buildChoyenTextTexture(obj) {
+            const value = String(obj.text || ' ');
+            const fontFamily = obj.fontFamily || CHOYEN_TOP_FONT_VALUE;
+            const isBottom = fontFamily === CHOYEN_BOTTOM_FONT_VALUE;
+            const drawX = isBottom ? 250 : 70;
+            const drawY = isBottom ? 230 : 100;
+            const canvasHeight = isBottom ? 320 : 180;
+
+            const measureCanvas = document.createElement('canvas');
+            const measureCtx = measureCanvas.getContext('2d');
+            measureCtx.font = getChoyenCanvasFont(fontFamily);
+            const measuredWidth = Math.ceil(measureCtx.measureText(value).width);
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = Math.max(1, measuredWidth + (isBottom ? 360 : 180));
+            tempCanvas.height = canvasHeight;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+            tempCtx.font = getChoyenCanvasFont(fontFamily);
+            tempCtx.textBaseline = 'alphabetic';
+            tempCtx.lineJoin = 'round';
+            tempCtx.lineCap = 'round';
+
+            if (isBottom) {
+                drawChoyenBottomText(tempCtx, value, drawX, drawY);
+            } else {
+                drawChoyenTopText(tempCtx, value, drawX, drawY);
+            }
+
+            tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+            return cropCanvasToAlpha(tempCanvas, 12);
+        }
+
         function buildTextTexture(obj) {
+            if (isChoyenSpecialFont(obj.fontFamily)) {
+                return buildChoyenTextTexture(obj);
+            }
+
             const lines = String(obj.text || '').split(/\r?\n/);
             const fontSize = 200;
             const paddingX = 40;
