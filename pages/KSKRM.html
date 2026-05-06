@@ -387,6 +387,9 @@
         const HANDLE_SIZE = 10;
         const CHOYEN_TOP_FONT_VALUE = '__5000CHOYEN_TOP__';
         const CHOYEN_BOTTOM_FONT_VALUE = '__5000CHOYEN_BOTTOM__';
+        const TEXT_RASTER_OVERSAMPLE = 3;
+        const TEXT_RASTER_MAX_SCALE = 4;
+        const TEXT_RASTER_MAX_DIMENSION = 4096;
 
         function isChoyenSpecialFont(fontFamily) {
             return fontFamily === CHOYEN_TOP_FONT_VALUE || fontFamily === CHOYEN_BOTTOM_FONT_VALUE;
@@ -652,6 +655,24 @@
             };
         }
 
+        function getTextRasterScale(obj, baseWidth, baseHeight) {
+            const safeBaseWidth = Math.max(1, Number(baseWidth) || 1);
+            const safeBaseHeight = Math.max(1, Number(baseHeight) || 1);
+            const dpr = Math.max(1, Math.min(TEXT_RASTER_MAX_SCALE, window.devicePixelRatio || 1));
+            const layerScale = Math.max(
+                1,
+                Math.abs(Number(obj?.w) || safeBaseWidth) / safeBaseWidth,
+                Math.abs(Number(obj?.h) || safeBaseHeight) / safeBaseHeight
+            );
+            const desiredScale = Math.min(TEXT_RASTER_MAX_SCALE, Math.max(dpr, layerScale * TEXT_RASTER_OVERSAMPLE));
+            const dimensionLimitedScale = Math.min(
+                desiredScale,
+                TEXT_RASTER_MAX_DIMENSION / safeBaseWidth,
+                TEXT_RASTER_MAX_DIMENSION / safeBaseHeight
+            );
+            return Math.max(1, dimensionLimitedScale);
+        }
+
         function makeTextTextureKey(obj) {
             return JSON.stringify({
                 text: obj.text || '',
@@ -664,7 +685,11 @@
                 letterSpacing: Number(obj.letterSpacing || 0),
                 lineHeight: Number(obj.lineHeight || 1.0),
                 strokeColor: obj.strokeColor || '#FFFFFF',
-                strokeWidth: Number(obj.strokeWidth || 0)
+                strokeWidth: Number(obj.strokeWidth || 0),
+                w: Math.round(Number(obj.w || 0) * 100) / 100,
+                h: Math.round(Number(obj.h || 0) * 100) / 100,
+                rasterOversample: TEXT_RASTER_OVERSAMPLE,
+                rasterMaxScale: TEXT_RASTER_MAX_SCALE
             });
         }
 
@@ -742,8 +767,8 @@
             return croppedCanvas;
         }
 
-        function drawChoyenTopText(ctxToDraw, value, x, y) {
-            ctxToDraw.setTransform(1, 0, -0.45, 1, 0, 0);
+        function drawChoyenTopText(ctxToDraw, value, x, y, rasterScale = 1) {
+            ctxToDraw.setTransform(rasterScale, 0, -0.45 * rasterScale, rasterScale, 0, 0);
 
             // 黒色
             {
@@ -824,8 +849,8 @@
             }
         }
 
-        function drawChoyenBottomText(ctxToDraw, value, x, y) {
-            ctxToDraw.setTransform(1, 0, -0.45, 1, 0, 0);
+        function drawChoyenBottomText(ctxToDraw, value, x, y, rasterScale = 1) {
+            ctxToDraw.setTransform(rasterScale, 0, -0.45 * rasterScale, rasterScale, 0, 0);
 
             // 黒色
             {
@@ -904,10 +929,13 @@
             const measureCtx = measureCanvas.getContext('2d');
             measureCtx.font = getChoyenCanvasFont(fontFamily);
             const measuredWidth = Math.ceil(measureCtx.measureText(value).width);
+            const baseWidth = Math.max(1, measuredWidth + (isBottom ? 360 : 180));
+            const baseHeight = canvasHeight;
+            const rasterScale = getTextRasterScale(obj, baseWidth, baseHeight);
 
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = Math.max(1, measuredWidth + (isBottom ? 360 : 180));
-            tempCanvas.height = canvasHeight;
+            tempCanvas.width = Math.max(1, Math.ceil(baseWidth * rasterScale));
+            tempCanvas.height = Math.max(1, Math.ceil(baseHeight * rasterScale));
             const tempCtx = tempCanvas.getContext('2d');
             tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
             tempCtx.font = getChoyenCanvasFont(fontFamily);
@@ -916,13 +944,13 @@
             tempCtx.lineCap = 'round';
 
             if (isBottom) {
-                drawChoyenBottomText(tempCtx, value, drawX, drawY);
+                drawChoyenBottomText(tempCtx, value, drawX, drawY, rasterScale);
             } else {
-                drawChoyenTopText(tempCtx, value, drawX, drawY);
+                drawChoyenTopText(tempCtx, value, drawX, drawY, rasterScale);
             }
 
             tempCtx.setTransform(1, 0, 0, 1, 0, 0);
-            return cropCanvasToAlpha(tempCanvas, 12);
+            return cropCanvasToAlpha(tempCanvas, Math.ceil(12 * rasterScale));
         }
 
         function buildTextTexture(obj) {
@@ -954,11 +982,16 @@
                 maxWidth = Math.max(maxWidth, Math.ceil(measureSpacedLine(measureCtx, line, letterSpacing)));
             }
 
+            const baseWidth = Math.max(1, Math.ceil(maxWidth + paddingX * 2 + strokeWidth * 2));
+            const baseHeight = Math.max(1, Math.ceil(lines.length * innerLineHeight + paddingY * 2 + strokeWidth * 2));
+            const rasterScale = getTextRasterScale(obj, baseWidth, baseHeight);
+
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = Math.max(1, Math.ceil(maxWidth + paddingX * 2 + strokeWidth * 2));
-            tempCanvas.height = Math.max(1, Math.ceil(lines.length * innerLineHeight + paddingY * 2 + strokeWidth * 2));
+            tempCanvas.width = Math.max(1, Math.ceil(baseWidth * rasterScale));
+            tempCanvas.height = Math.max(1, Math.ceil(baseHeight * rasterScale));
             const tempCtx = tempCanvas.getContext('2d');
             tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+            tempCtx.scale(rasterScale, rasterScale);
             tempCtx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
             tempCtx.textBaseline = 'top';
             tempCtx.lineJoin = 'round';
@@ -967,7 +1000,10 @@
             tempCtx.strokeStyle = obj.strokeColor || '#FFFFFF';
             tempCtx.lineWidth = strokeWidth;
 
-            const innerWidth = tempCanvas.width - paddingX * 2 - strokeWidth * 2;
+            // Coordinates below are expressed in the unscaled logical text space.
+            // tempCanvas.width is physical pixels after rasterScale, so using it here
+            // pushes centered/right-aligned ordinary text outside the texture.
+            const innerWidth = baseWidth - paddingX * 2 - strokeWidth * 2;
 
             lines.forEach((line, idx) => {
                 const drawLine = line || ' ';
