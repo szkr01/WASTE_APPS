@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glass Path Tracer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Cormorant+Garamond:ital,wght@0,300;1,300&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg:       #f4f4f0;
+  --panel:    #ffffff;
+  --border:   #e2e2dc;
+  --border2:  #d0d0c8;
+  --text:     #1a1a18;
+  --muted:    #9a9a92;
+  --accent:   #2a5cdc;
+  --accent2:  #dc2a5c;
+  --track:    #e8e8e4;
+  --thumb:    #2a5cdc;
+  --viewport: #e8e8e2;
+  --corner:   rgba(42,92,220,0.25);
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  display: flex;
+  height: 100vh;
+}
+
+#viewport {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--viewport);
+  overflow: hidden;
+}
+
+#viewport::before, #viewport::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+#viewport::before { width: 1px; height: 100%; left: 50%; background: rgba(42,92,220,0.06); }
+#viewport::after  { height: 1px; width: 100%; top: 50%;  background: rgba(42,92,220,0.06); }
+
+canvas#gl {
+  display: block;
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.corner {
+  position: absolute;
+  width: 18px; height: 18px;
+  z-index: 3;
+  pointer-events: none;
+  border-color: var(--corner);
+  border-style: solid;
+  border-width: 0;
+}
+.corner.tl { top: 14px; left: 14px; border-top-width: 1px; border-left-width: 1px; }
+.corner.tr { top: 14px; right: 14px; border-top-width: 1px; border-right-width: 1px; }
+.corner.bl { bottom: 14px; left: 14px; border-bottom-width: 1px; border-left-width: 1px; }
+.corner.br { bottom: 14px; right: 14px; border-bottom-width: 1px; border-right-width: 1px; }
+
+/* ── Panel ── */
+#panel {
+  width: 264px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+#panel::-webkit-scrollbar { width: 3px; }
+#panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.ph {
+  padding: 18px 18px 13px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ph h1 {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 300;
+  font-style: italic;
+  font-size: 17px;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.ph sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 7.5px;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.status {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 8.5px;
+  flex-shrink: 0;
+  background: #fafaf8;
+}
+.status span { color: var(--muted); }
+.status b { color: var(--accent); font-weight: 700; }
+
+.sec {
+  padding: 12px 18px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sec-label {
+  font-size: 7px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 13px;
+}
+
+.param { margin-bottom: 13px; }
+.param:last-child { margin-bottom: 0; }
+
+.param-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+.param-name { font-size: 9px; color: var(--text); }
+.param-val {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: var(--track);
+  outline: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--thumb);
+  border: 2px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--border2);
+  cursor: pointer;
+  transition: transform .12s;
+}
+input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.3); background: var(--accent2); }
+input[type=range]::-moz-range-thumb {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--thumb);
+  border: 2px solid var(--panel);
+  cursor: pointer;
+}
+
+.hint { font-size: 7px; color: var(--muted); margin-top: 3px; }
+
+/* Upload */
+.upload-sec {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.upload-label {
+  font-size: 7px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+#uploadBtn {
+  width: 100%;
+  padding: 9px 0;
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-family: 'Space Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all .16s;
+}
+#uploadBtn:hover { border-color: var(--accent); color: var(--accent); background: rgba(42,92,220,0.04); }
+#uploadBtn.loading { opacity: 0.6; cursor: default; }
+#fileInput { display: none; }
+
+#imgInfo {
+  margin-top: 7px;
+  font-size: 7.5px;
+  color: var(--muted);
+  min-height: 12px;
+  word-break: break-all;
+}
+
+/* Pipeline info */
+.info-sec {
+  padding: 10px 18px 16px;
+  flex-shrink: 0;
+}
+.info-sec .sec-label { margin-bottom: 8px; }
+.pipeline {
+  font-size: 7.5px;
+  color: var(--muted);
+  line-height: 1.95;
+}
+.pipeline span { color: var(--text); }
+</style>
+</head>
+<body>
+
+<div id="viewport">
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+  <canvas id="gl"></canvas>
+</div>
+
+<aside id="panel">
+  <div class="ph">
+    <h1>Glass Path Tracer</h1>
+    <sub>WebGL2 · Fragment Shader · Real-time</sub>
+  </div>
+
+  <div class="status">
+    <span><b id="fps">--</b> fps</span>
+    <span><b id="spp">--</b> spp</span>
+    <span id="resLabel">--</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-label">光学特性 / Optics</div>
+
+    <div class="param">
+      <div class="param-row">
+        <span class="param-name">屈折率 IOR</span>
+        <span class="param-val" id="v_ior">1.50</span>
+      </div>
+      <input type="range" id="s_ior" min="1.0" max="2.5" step="0.01" value="1.5">
+      <div class="hint">1.0=空気 · 1.5=ガラス · 2.4=ダイヤ</div>
+    </div>
+
+    <div class="param">
+      <div class="param-row">
+        <span class="param-name">反射具合</span>
+        <span class="param-val" id="v_refl">0.60</span>
+      </div>
+      <input type="range" id="s_refl" min="0" max="1" step="0.01" value="0.6">
+    </div>
+
+    <div class="param">
+      <div class="param-row">
+        <span class="param-name">色収差</span>
+        <span class="param-val" id="v_aber">0.35</span>
+      </div>
+      <input type="range" id="s_aber" min="0" max="1.5" step="0.01" value="0.35">
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-label">表面ノイズ / Surface</div>
+
+    <div class="param">
+      <div class="param-row">
+        <span class="param-name">ノイズの大きさ</span>
+        <span class="param-val" id="v_freq">4.0</span>
+      </div>
+      <input type="range" id="s_freq" min="0.2" max="20" step="0.1" value="4.0">
+    </div>
+
+    <div class="param">
+      <div class="param-row">
+        <span class="param-name">強度</span>
+        <span class="param-val" id="v_amp">0.90</span>
+      </div>
+      <input type="range" id="s_amp" min="0" max="5" step="0.01" value="0.9">
+    </div>
+
+    <div class="param">
+      <div class="param-row">
+        <span class="param-name">滑らかさ</span>
+        <span class="param-val" id="v_smooth">0.55</span>
+      </div>
+      <input type="range" id="s_smooth" min="0" max="1" step="0.01" value="0.55">
+      <div class="hint">低=粗い · 高=細かい (多オクターブFBM)</div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-label">レンダリング精度 / Precision</div>
+    <div class="param">
+      <div class="param-row">
+        <span class="param-name">サンプル数 (spp)</span>
+        <span class="param-val" id="v_prec">4</span>
+      </div>
+      <input type="range" id="s_prec" min="1" max="32" step="1" value="4">
+      <div class="hint">高いほど滑らか · 負荷大</div>
+    </div>
+  </div>
+
+  <div class="upload-sec">
+    <div class="upload-label">画像ソース / Image</div>
+    <button id="uploadBtn">▲ 画像をアップロード</button>
+    <div id="imgInfo">デフォルト画像を使用中</div>
+    <input type="file" id="fileInput" accept="image/*">
+  </div>
+
+  <div class="info-sec">
+    <div class="sec-label">シェーダーパイプライン</div>
+    <div class="pipeline">
+      <span>1.</span> カメラレイ生成 (直交投影)<br>
+      <span>2.</span> FBM ノイズ表面評価<br>
+      <span>3.</span> 有限差分 → 法線ベクトル<br>
+      <span>4.</span> Schlick フレネル係数<br>
+      <span>5.</span> Snell's Law 屈折計算<br>
+      <span>6.</span> 波長別 IOR → 色収差<br>
+      <span>7.</span> 鏡面反射 UV サンプリング<br>
+      <span>8.</span> フレネル混合 (屈折+反射)<br>
+      <span>9.</span> Monte Carlo 確率的積分<br>
+      <span>10.</span> アスペクト比補正 + γ2.2
+    </div>
+  </div>
+</aside>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  Glass Path Tracer  —  WebGL2 Real-time Renderer
+// ═══════════════════════════════════════════════════
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {
+  antialias: false,
+  alpha: false,
+  preserveDrawingBuffer: false
+});
+if (!gl) alert('WebGL2 が利用できません');
+
+// ── GLSL ──────────────────────────────────────────
+
+const VERT = `#version 300 es
+in vec2 a_pos;
+out vec2 vUV;
+void main() {
+  vUV = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const FRAG = `#version 300 es
+precision highp float;
+in  vec2 vUV;
+out vec4 fragColor;
+
+uniform sampler2D uTex;
+uniform float uIOR;
+uniform float uNoiseFreq;
+uniform float uNoiseAmp;
+uniform float uSmoothness;
+uniform float uReflection;
+uniform float uAberration;
+uniform int   uPrecision;
+uniform float uImgAspect;   // 画像の width/height
+
+// ────────────────────────────────────────────────
+//  アスペクト比補正  (object-fit: contain)
+//
+//  正方形キャンバスに対し任意比率の画像を正しく表示。
+//  UV を中心からのずれで処理し、imgAspect に応じて
+//  x または y 軸をスケールして 0-1 に戻す。
+//
+//  横長(>1): x はそのまま、y を imgAspect 倍 → 縦が圧縮
+//  縦長(<1): y はそのまま、x を 1/imgAspect 倍 → 横が圧縮
+// ────────────────────────────────────────────────
+vec2 containUV(vec2 uv) {
+  vec2 c = uv - 0.5;
+  if (uImgAspect >= 1.0) {
+    c.y *= uImgAspect;     // 横長: y スケール
+  } else {
+    c.x /= uImgAspect;     // 縦長: x スケール
+  }
+  return c + 0.5;
+}
+
+// ────────────────────────────────────────────────
+//  ハッシュ / ノイズ / FBM
+// ────────────────────────────────────────────────
+float hash21(vec2 p) {
+  vec2 q = fract(p * vec2(0.1031, 0.1030));
+  q += dot(q, q.yx + 33.33);
+  return fract((q.x + q.y) * q.x);
+}
+float valNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i), hash21(i+vec2(1,0)), u.x),
+             mix(hash21(i+vec2(0,1)), hash21(i+vec2(1,1)), u.x), u.y);
+}
+float fbm(vec2 p, int oct) {
+  float v=0., a=0.5, f=1.;
+  for (int i=0; i<8; i++) {
+    if (i>=oct) break;
+    v += a*valNoise(p*f); a*=0.5; f*=2.13;
+  }
+  return v;
+}
+
+// ────────────────────────────────────────────────
+//  法線 (有限差分)
+// ────────────────────────────────────────────────
+vec3 normal(vec2 p, float e, int oct) {
+  float h  = fbm(p, oct);
+  float hx = fbm(p + vec2(e, 0), oct);
+  float hy = fbm(p + vec2(0, e), oct);
+  return normalize(vec3(-(hx-h)/e * uNoiseAmp,
+                        -(hy-h)/e * uNoiseAmp, 1.0));
+}
+
+// ────────────────────────────────────────────────
+//  Schlick フレネル
+// ────────────────────────────────────────────────
+float schlick(float c, float ior) {
+  float r0 = (1.-ior)/(1.+ior); r0*=r0;
+  return r0 + (1.-r0)*pow(clamp(1.-c,0.,1.),5.);
+}
+
+// ────────────────────────────────────────────────
+//  テクスチャサンプリング (アスペクト比補正 + 境界処理)
+// ────────────────────────────────────────────────
+vec3 smp(vec2 rawUV) {
+  vec2 uv = containUV(rawUV);
+  // 範囲外は明るいグレー (letterbox/pillarbox 領域)
+  if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.)
+    return vec3(0.94);
+  return texture(uTex, clamp(uv, 0.001, 0.999)).rgb;
+}
+
+// ────────────────────────────────────────────────
+//  屈折UV (Snell + UVオフセット)
+// ────────────────────────────────────────────────
+vec2 refUV(vec2 uv, vec3 N, float ior) {
+  vec3 I = vec3(0.,0.,-1.);
+  vec3 R = refract(I, N, 1./ior);
+  if (dot(R,R) < 0.001) R = reflect(I, N);
+  return uv + (R.xy / abs(R.z)) * 0.22;
+}
+
+// ════════════════════════════════════════════════
+void main() {
+  int oct = int(uSmoothness * 7.) + 1;
+  vec2 nUV = vUV * uNoiseFreq;
+
+  vec3 accum = vec3(0.);
+
+  for (int s=0; s<32; s++) {
+    if (s >= uPrecision) break;
+    float fi = float(s);
+
+    // 確率的ジッター (Monte Carlo)
+    vec2 jit = (vec2(hash21(vUV*431.+fi*vec2(0.145,0.789)),
+                     hash21(vUV*978.+fi*vec2(0.543,0.213)))*2.-1.) * 0.003;
+
+    vec3 N = normal(nUV, 0.012, oct);
+    N = normalize(N + vec3(jit*0.8, 0.));
+
+    vec3  I = vec3(0.,0.,-1.);
+    float F = schlick(dot(-I, N), uIOR) * uReflection;
+
+    // 色収差: 波長ごとに異なるIOR
+    float da = uAberration * 0.04;
+    vec3 refractCol = vec3(
+      smp(refUV(vUV, N, max(1.001, uIOR-da))).r,
+      smp(refUV(vUV, N, uIOR)).g,
+      smp(refUV(vUV, N, uIOR+da)).b
+    );
+
+    // 反射
+    vec3 rDir = reflect(I, N);
+    vec2 rUV  = clamp(vec2(1.-vUV.x, vUV.y) + rDir.xy*0.25, 0.001, 0.999);
+    vec3 reflCol = smp(rUV) * vec3(0.84,0.90,0.88);
+
+    // フレネル混合
+    accum += mix(refractCol, reflCol, F);
+  }
+
+  vec3 col = accum / float(uPrecision);
+
+  // ビネット
+  vec2 d = vUV*2.-1.;
+  col *= 1. - smoothstep(0.5, 1.4, length(d)*0.7);
+
+  // γ2.2
+  fragColor = vec4(pow(clamp(col,0.,1.), vec3(1./2.2)), 1.);
+}`;
+
+// ── プログラム ────────────────────────────────────
+
+function mkShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error('Shader error:', gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, mkShader(gl.VERTEX_SHADER,   VERT));
+gl.attachShader(prog, mkShader(gl.FRAGMENT_SHADER, FRAG));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
+  console.error('Link:', gl.getProgramInfoLog(prog));
+
+// Quad
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+// Uniforms
+const U = {};
+['uTex','uIOR','uNoiseFreq','uNoiseAmp','uSmoothness',
+ 'uReflection','uAberration','uPrecision','uImgAspect'
+].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+
+// ── テクスチャ管理 ────────────────────────────────
+
+let activeTex   = null;  // 現在描画に使用中
+let nextTex     = null;  // 次フレームで切り替え予定
+let nextAspect  = null;
+let imgAspect   = 1.0;
+
+function uploadTexture(source, w, h) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+
+// デフォルト画像生成
+function makeDefault() {
+  const sz = 512, c = document.createElement('canvas');
+  c.width = c.height = sz;
+  const ctx = c.getContext('2d');
+
+  const bg = ctx.createLinearGradient(0, 0, sz, sz);
+  bg.addColorStop(0, '#e8eeff'); bg.addColorStop(0.5, '#f0f4ff'); bg.addColorStop(1, '#eef0ff');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,sz,sz);
+
+  const circles = [
+    {x:140,y:160,r:90, c:['#ff4e6a','#c0001c']},
+    {x:380,y:130,r:65, c:['#ffcc00','#e07400']},
+    {x:270,y:310,r:105,c:['#00cc6a','#007a3d']},
+    {x: 90,y:390,r:55, c:['#40b4ff','#005bcc']},
+    {x:430,y:370,r:75, c:['#ce7dff','#7000cc']},
+    {x:360,y:260,r:42, c:['#ff8a50','#c94000']},
+  ];
+  circles.forEach(({x,y,r,c}) => {
+    const g = ctx.createRadialGradient(x-r*.3,y-r*.3,r*.05,x,y,r);
+    g.addColorStop(0,c[0]); g.addColorStop(1,c[1]);
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  });
+
+  ctx.strokeStyle='rgba(0,0,0,0.07)'; ctx.lineWidth=1;
+  for (let i=0; i<=16; i++) {
+    const t=i*sz/16;
+    ctx.beginPath(); ctx.moveTo(t,0); ctx.lineTo(t,sz); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,t); ctx.lineTo(sz,t); ctx.stroke();
+  }
+
+  ctx.fillStyle='rgba(0,0,0,0.65)';
+  ctx.font='bold 19px "Space Mono",monospace'; ctx.textAlign='center';
+  ctx.fillText('GLASS PATH TRACER', sz/2, sz/2-8);
+  ctx.font='9px "Space Mono",monospace';
+  ctx.fillStyle='rgba(0,0,0,0.28)';
+  ctx.fillText('WebGL2 · Real-time Rendering', sz/2, sz/2+14);
+  return c;
+}
+
+// 初期テクスチャ
+activeTex  = uploadTexture(makeDefault(), 512, 512);
+imgAspect  = 1.0;
+
+// ── 画像アップロード ──────────────────────────────
+
+const uploadBtn = document.getElementById('uploadBtn');
+const fileInput = document.getElementById('fileInput');
+const imgInfo   = document.getElementById('imgInfo');
+
+uploadBtn.addEventListener('click', () => {
+  if (!uploadBtn.classList.contains('loading')) fileInput.click();
+});
+
+fileInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+
+  uploadBtn.textContent = '▷ 読み込み中...';
+  uploadBtn.classList.add('loading');
+
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+
+  img.onload = () => {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const aspect = w / h;
+
+    // ★ pendingとしてセット → レンダーループで安全に切り替え
+    nextTex    = uploadTexture(img, w, h);
+    nextAspect = aspect;
+
+    // UI
+    const name = f.name.length > 24 ? f.name.slice(0,22)+'…' : f.name;
+    imgInfo.textContent = `${name}  ${w}×${h}  (${aspect.toFixed(3)})`;
+    uploadBtn.textContent = '▲ 画像をアップロード';
+    uploadBtn.classList.remove('loading');
+
+    URL.revokeObjectURL(url);
+    fileInput.value = ''; // 同じファイルを再選択可能に
+  };
+
+  img.onerror = () => {
+    imgInfo.textContent = '⚠ 読み込みエラー';
+    uploadBtn.textContent = '▲ 画像をアップロード';
+    uploadBtn.classList.remove('loading');
+    URL.revokeObjectURL(url);
+    fileInput.value = '';
+  };
+
+  img.src = url;
+});
+
+// ── パラメータ ────────────────────────────────────
+
+const params = {
+  ior:1.5, noiseFreq:4.0, noiseAmp:0.9,
+  smoothness:0.55, reflection:0.6, aberration:0.35, precision:4
+};
+
+[['s_ior','v_ior','ior',v=>v.toFixed(2)],
+ ['s_freq','v_freq','noiseFreq',v=>v.toFixed(1)],
+ ['s_amp','v_amp','noiseAmp',v=>v.toFixed(2)],
+ ['s_smooth','v_smooth','smoothness',v=>v.toFixed(2)],
+ ['s_refl','v_refl','reflection',v=>v.toFixed(2)],
+ ['s_aber','v_aber','aberration',v=>v.toFixed(2)],
+ ['s_prec','v_prec','precision',v=>v.toFixed(0)],
+].forEach(([sid,vid,key,fmt]) => {
+  const sl=document.getElementById(sid), vl=document.getElementById(vid);
+  sl.addEventListener('input', () => { params[key]=parseFloat(sl.value); vl.textContent=fmt(params[key]); });
+});
+
+// ── Resize ───────────────────────────────────────
+
+function resize() {
+  const vp = document.getElementById('viewport');
+  const sz = Math.min(vp.clientWidth, vp.clientHeight, 760);
+  canvas.width = canvas.height = sz;
+  gl.viewport(0, 0, sz, sz);
+  document.getElementById('resLabel').textContent = sz+'×'+sz;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Render Loop ───────────────────────────────────
+
+let frames=0, lastT=performance.now();
+
+function render() {
+  // ★ テクスチャの安全な切り替え
+  //   描画の直前に swap し、古いテクスチャは setTimeout で遅延破棄
+  if (nextTex !== null) {
+    const old = activeTex;
+    activeTex  = nextTex;
+    imgAspect  = nextAspect;
+    nextTex    = null;
+    nextAspect = null;
+    if (old) setTimeout(() => { try { gl.deleteTexture(old); } catch(_){} }, 200);
+  }
+
+  gl.useProgram(prog);
+  gl.bindVertexArray(vao);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, activeTex);
+
+  gl.uniform1i(U.uTex,        0);
+  gl.uniform1f(U.uIOR,        params.ior);
+  gl.uniform1f(U.uNoiseFreq,  params.noiseFreq);
+  gl.uniform1f(U.uNoiseAmp,   params.noiseAmp);
+  gl.uniform1f(U.uSmoothness, params.smoothness);
+  gl.uniform1f(U.uReflection, params.reflection);
+  gl.uniform1f(U.uAberration, params.aberration);
+  gl.uniform1i(U.uPrecision,  params.precision);
+  gl.uniform1f(U.uImgAspect,  imgAspect);
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  frames++;
+  const now = performance.now();
+  if (now - lastT >= 600) {
+    document.getElementById('fps').textContent = (frames/((now-lastT)/1e3)).toFixed(1);
+    document.getElementById('spp').textContent = params.precision;
+    frames=0; lastT=now;
+  }
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

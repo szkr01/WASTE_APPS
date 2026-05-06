@@ -3,3 +3,21 @@
 pages/ptsdit.html
 pages/psdit.html
 glo
+
+# Assets
+
+Assets/__glo_diffusion_model.onnx
+Assets/_glo_diffusion_model.onnx
+Assets/glo_diffusion_model*.onnx
+Assets/srdit_model.onnx
+Assets/ink.js
+
+# Pages
+pages/EP.html
+pages/FRAGI.html
+pages/inki.html
+pages/ptsdit=t.html
+pages/ptsdit2.html
+pages/STB.html
+pages/te.html
+pages/Water.html

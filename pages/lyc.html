@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- Meta Data -->
+    <title>Lyric Flow Player</title>
+    <meta name="description" content="Real-time lyric synchronization player with iOS-style UI.">
+    <meta name="page:icon" content="https://cdnjs.cloudflare.com/ajax/libs/phosphor-icons/1.4.2/icons/music-notes-simple-bold.svg">
+    <meta name="page:color" content="#ffffff">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- Google Fonts (Inter & Noto Sans JP for clean typography) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Base Styles */
+        :root {
+            --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #F2F2F7; /* iOS Light Gray Background */
+            color: #1C1C1E;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Utilities */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Lyric Animation Classes */
+        .lyric-word {
+            transition: transform 0.3s var(--ease-ios), 
+                        opacity 0.3s var(--ease-ios), 
+                        filter 0.3s var(--ease-ios),
+                        color 0.3s var(--ease-ios);
+            transform-origin: left center;
+            display: inline-block;
+            cursor: pointer;
+            will-change: transform, opacity, filter;
+        }
+
+        .lyric-word.inactive {
+            opacity: 0.4;
+            filter: blur(1px);
+            transform: scale(0.95);
+        }
+
+        .lyric-word.active {
+            opacity: 1;
+            filter: blur(0);
+            transform: scale(1.1);
+            color: #000000;
+            font-weight: 700;
+        }
+
+        .lyric-word.past {
+            opacity: 0.8;
+            filter: blur(0);
+            transform: scale(1.0);
+            color: #333333;
+        }
+
+        /* Input Range Styling (iOS Style) */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            margin-top: -8px;
+            cursor: pointer;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #E5E5EA;
+            border-radius: 2px;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+
+        /* Smooth Layout Transitions */
+        .view-transition {
+            transition: opacity 0.4s var(--ease-ios), transform 0.4s var(--ease-ios);
+        }
+    </style>
+</head>
+<body class="h-dvh w-full overflow-hidden flex flex-col items-center justify-center">
+
+    <!-- SETUP VIEW -->
+    <div id="setup-view" class="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-[#F2F2F7] view-transition">
+        <div class="w-full max-w-md space-y-8">
+            <div class="text-center space-y-2">
+                <div class="inline-flex items-center justify-center size-16 rounded-2xl bg-white shadow-sm mb-4">
+                    <i class="ph ph-music-notes-simple text-3xl text-blue-500"></i>
+                </div>
+                <h1 class="text-2xl font-bold tracking-tight text-balance text-gray-900">Lyric Flow</h1>
+                <p class="text-sm text-gray-500 text-pretty">音声ファイルとJSONデータを入力して、同期歌詞を再生します。</p>
+            </div>
+
+            <div class="bg-white p-6 rounded-3xl shadow-sm space-y-6">
+                <!-- Audio Input -->
+                <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-wider text-gray-400 pl-1">音声ファイル (.mp3, .wav)</label>
+                    <div class="relative group">
+                        <input type="file" id="audio-input" accept="audio/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="audio-file-label" class="flex items-center gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100 group-hover:bg-gray-100 transition-colors">
+                            <i class="ph ph-upload-simple text-xl text-blue-500"></i>
+                            <span class="text-sm font-medium text-gray-600 truncate">ファイルを選択...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JSON Input -->
+                <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-wider text-gray-400 pl-1">JSONデータ</label>
+                    <textarea id="json-input" rows="4" class="w-full p-4 text-xs font-mono rounded-xl bg-gray-50 border border-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none tabular-nums" placeholder='[{"text": "いつ", "start_time": 16.56, "end_time": 17.44}, ...]'></textarea>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" class="hidden flex items-center gap-2 text-red-500 text-xs font-medium bg-red-50 p-3 rounded-lg">
+                    <i class="ph ph-warning-circle text-lg"></i>
+                    <span>入力データを確認してください。</span>
+                </div>
+
+                <!-- Submit Button -->
+                <button id="start-btn" class="w-full py-3.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+                    <span>プレーヤーを開く</span>
+                    <i class="ph ph-arrow-right font-bold"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PLAYER VIEW -->
+    <div id="player-view" class="absolute inset-0 z-10 flex flex-col bg-white opacity-0 pointer-events-none translate-y-4 scale-95 view-transition">
+        
+        <!-- Header -->
+        <div class="flex-none pt-safe-top px-6 h-16 flex items-center justify-between z-10 bg-white/80 backdrop-blur-md border-b border-gray-100/50 sticky top-0">
+            <button id="back-btn" class="size-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors" aria-label="Back to setup">
+                <i class="ph ph-caret-left text-xl"></i>
+            </button>
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-widest">Now Playing</span>
+            <div class="size-10"></div> <!-- Spacer for center alignment -->
+        </div>
+
+        <!-- Lyrics Container -->
+        <div id="lyrics-container" class="flex-1 overflow-y-auto px-8 py-[50vh] text-center hide-scrollbar scroll-smooth relative">
+            <div id="lyrics-content" class="flex flex-wrap justify-center content-center gap-x-1.5 gap-y-3 max-w-2xl mx-auto leading-relaxed text-2xl md:text-3xl font-medium text-gray-400 select-none">
+                <!-- Lyrics will be injected here -->
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex-none pb-safe-bottom bg-white/90 backdrop-blur-xl border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.02)] z-20">
+            <div class="max-w-md mx-auto px-6 py-6 space-y-4">
+                
+                <!-- Progress Bar -->
+                <div class="space-y-2">
+                    <input type="range" id="progress-bar" min="0" max="100" value="0" class="w-full h-1 bg-gray-200 rounded-full appearance-none cursor-pointer">
+                    <div class="flex justify-between text-[10px] font-medium text-gray-400 tabular-nums">
+                        <span id="current-time">0:00</span>
+                        <span id="duration">0:00</span>
+                    </div>
+                </div>
+
+                <!-- Playback Controls -->
+                <div class="flex items-center justify-center gap-8">
+                    <button id="rewind-btn" class="text-gray-400 hover:text-gray-800 transition-colors" aria-label="Rewind 10s">
+                        <i class="ph ph-rewind-circle text-3xl"></i>
+                    </button>
+                    
+                    <button id="play-pause-btn" class="size-16 bg-gray-900 text-white rounded-full flex items-center justify-center shadow-xl shadow-gray-900/20 active:scale-90 transition-transform" aria-label="Play/Pause">
+                        <i class="ph ph-play-fill text-2xl ml-1" id="play-icon"></i>
+                        <i class="ph ph-pause-fill text-2xl hidden" id="pause-icon"></i>
+                    </button>
+                    
+                    <button id="forward-btn" class="text-gray-400 hover:text-gray-800 transition-colors" aria-label="Forward 10s">
+                        <i class="ph ph-fast-forward-circle text-3xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audio Element (Hidden) -->
+    <audio id="audio-element" preload="auto"></audio>
+
+    <script>
+        // --- Utilities ---
+        const $ = (selector) => document.querySelector(selector);
+        const formatTime = (seconds) => {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        };
+
+        // --- State ---
+        const state = {
+            audioBlob: null,
+            lyricData: [],
+            isPlaying: false,
+            duration: 0,
+            animationId: null,
+            activeIndex: -1
+        };
+
+        // --- Elements ---
+        const elements = {
+            setupView: $('#setup-view'),
+            playerView: $('#player-view'),
+            audioInput: $('#audio-input'),
+            audioFileLabel: $('#audio-file-label span'),
+            jsonInput: $('#json-input'),
+            startBtn: $('#start-btn'),
+            backBtn: $('#back-btn'),
+            errorMsg: $('#error-message'),
+            lyricsContent: $('#lyrics-content'),
+            lyricsContainer: $('#lyrics-container'),
+            audio: $('#audio-element'),
+            playPauseBtn: $('#play-pause-btn'),
+            playIcon: $('#play-icon'),
+            pauseIcon: $('#pause-icon'),
+            progressBar: $('#progress-bar'),
+            currentTime: $('#current-time'),
+            duration: $('#duration'),
+            rewindBtn: $('#rewind-btn'),
+            forwardBtn: $('#forward-btn')
+        };
+
+        // --- Initialization & Event Listeners ---
+        
+        // 1. File Input Handling
+        elements.audioInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                state.audioBlob = URL.createObjectURL(file);
+                elements.audio.src = state.audioBlob;
+                elements.audioFileLabel.textContent = file.name;
+                elements.audioFileLabel.classList.add('text-gray-900');
+            }
+        });
+
+        // 2. Start Player
+        elements.startBtn.addEventListener('click', () => {
+            const jsonText = elements.jsonInput.value.trim();
+            
+            if (!state.audioBlob) {
+                showError("音声ファイルを選択してください。");
+                return;
+            }
+            if (!jsonText) {
+                showError("JSONデータを入力してください。");
+                return;
+            }
+
+            try {
+                // Parse JSON
+                state.lyricData = JSON.parse(jsonText);
+                
+                // Validate Structure
+                if (!Array.isArray(state.lyricData) || !state.lyricData[0].hasOwnProperty('start_time')) {
+                    throw new Error("Invalid format");
+                }
+
+                // Sort by time just in case
+                state.lyricData.sort((a, b) => a.start_time - b.start_time);
+
+                // Build UI
+                buildLyricsUI();
+                
+                // Switch View
+                switchView('player');
+                elements.errorMsg.classList.add('hidden');
+
+            } catch (e) {
+                console.error(e);
+                showError("JSONデータの形式が正しくありません。");
+            }
+        });
+
+        // 3. Back to Setup
+        elements.backBtn.addEventListener('click', () => {
+            pauseAudio();
+            switchView('setup');
+        });
+
+        // 4. Audio Controls
+        elements.playPauseBtn.addEventListener('click', togglePlay);
+        
+        elements.audio.addEventListener('timeupdate', updateProgress);
+        elements.audio.addEventListener('loadedmetadata', () => {
+            state.duration = elements.audio.duration;
+            elements.duration.textContent = formatTime(state.duration);
+            elements.progressBar.max = state.duration;
+        });
+        elements.audio.addEventListener('ended', () => {
+            state.isPlaying = false;
+            updatePlayIcon();
+            elements.progressBar.value = 0;
+            elements.currentTime.textContent = "0:00";
+            scrollToIndex(-1); // Reset scroll
+        });
+
+        elements.progressBar.addEventListener('input', (e) => {
+            const time = parseFloat(e.target.value);
+            elements.audio.currentTime = time;
+            updateLyricsVisuals(time);
+        });
+
+        elements.rewindBtn.addEventListener('click', () => {
+            elements.audio.currentTime = Math.max(0, elements.audio.currentTime - 5);
+        });
+        elements.forwardBtn.addEventListener('click', () => {
+            elements.audio.currentTime = Math.min(elements.audio.duration, elements.audio.currentTime + 5);
+        });
+
+        // Click on word to seek
+        elements.lyricsContent.addEventListener('click', (e) => {
+            const wordEl = e.target.closest('.lyric-word');
+            if (wordEl) {
+                const startTime = parseFloat(wordEl.dataset.start);
+                elements.audio.currentTime = startTime;
+                if(!state.isPlaying) togglePlay();
+            }
+        });
+
+        // --- Functions ---
+
+        function showError(msg) {
+            elements.errorMsg.querySelector('span').textContent = msg;
+            elements.errorMsg.classList.remove('hidden');
+        }
+
+        function switchView(viewName) {
+            if (viewName === 'player') {
+                elements.setupView.classList.add('opacity-0', 'scale-90', 'pointer-events-none');
+                elements.playerView.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4', 'scale-95');
+            } else {
+                elements.playerView.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4', 'scale-95');
+                elements.setupView.classList.remove('opacity-0', 'scale-90', 'pointer-events-none');
+            }
+        }
+
+        function buildLyricsUI() {
+            elements.lyricsContent.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+
+            state.lyricData.forEach((item, index) => {
+                const span = document.createElement('span');
+                span.textContent = item.text;
+                span.className = 'lyric-word inactive mx-[2px] py-1 px-1 rounded-md transition-colors';
+                span.dataset.start = item.start_time;
+                span.dataset.end = item.end_time;
+                span.dataset.index = index;
+                fragment.appendChild(span);
+            });
+
+            elements.lyricsContent.appendChild(fragment);
+        }
+
+        function togglePlay() {
+            if (state.isPlaying) {
+                pauseAudio();
+            } else {
+                playAudio();
+            }
+        }
+
+        function playAudio() {
+            elements.audio.play();
+            state.isPlaying = true;
+            updatePlayIcon();
+            requestAnimationFrame(animationLoop);
+        }
+
+        function pauseAudio() {
+            elements.audio.pause();
+            state.isPlaying = false;
+            updatePlayIcon();
+            if (state.animationId) cancelAnimationFrame(state.animationId);
+        }
+
+        function updatePlayIcon() {
+            if (state.isPlaying) {
+                elements.playIcon.classList.add('hidden');
+                elements.pauseIcon.classList.remove('hidden');
+            } else {
+                elements.playIcon.classList.remove('hidden');
+                elements.pauseIcon.classList.add('hidden');
+            }
+        }
+
+        function updateProgress() {
+            const current = elements.audio.currentTime;
+            elements.progressBar.value = current;
+            elements.currentTime.textContent = formatTime(current);
+            
+            // We do visual updates in animationLoop for smoother performace, 
+            // but audio timeupdate is good for slider sync.
+        }
+
+        function animationLoop() {
+            if (!state.isPlaying) return;
+            
+            const currentTime = elements.audio.currentTime;
+            updateLyricsVisuals(currentTime);
+            
+            state.animationId = requestAnimationFrame(animationLoop);
+        }
+
+        function updateLyricsVisuals(time) {
+            // Find active word
+            // Using a simple find for this dataset size is fine. 
+            // For massive datasets, an optimized search based on previous index would be better.
+            let activeIndex = -1;
+
+            // Optimization: Start searching from slightly before the last known index
+            const searchStart = Math.max(0, state.activeIndex - 5);
+            
+            for (let i = searchStart; i < state.lyricData.length; i++) {
+                const word = state.lyricData[i];
+                if (time >= word.start_time && time < word.end_time) {
+                    activeIndex = i;
+                    break;
+                }
+                // If we passed the time, stop (since array is sorted)
+                if (word.start_time > time) break;
+            }
+            
+            // Fallback: If in a gap between words, keep the last active one or show upcoming?
+            // Let's stick strictly to timing. If silence, no word is "active".
+
+            if (activeIndex !== state.activeIndex) {
+                state.activeIndex = activeIndex;
+                renderActiveState(activeIndex);
+                
+                if (activeIndex !== -1) {
+                    scrollToIndex(activeIndex);
+                }
+            }
+        }
+
+        function renderActiveState(activeIndex) {
+            const words = elements.lyricsContent.children;
+            
+            // Using requestAnimationFrame to batch DOM reads/writes is implicitly handled by the loop calling this
+            // But we can optimize by not iterating everything every time if performance lags.
+            // For < 1000 nodes, iterating classList is usually okay on modern devices.
+            
+            for (let i = 0; i < words.length; i++) {
+                const word = words[i];
+                
+                // Clear all states first
+                word.classList.remove('active', 'inactive', 'past');
+
+                if (i === activeIndex) {
+                    word.classList.add('active');
+                } else if (i < activeIndex) {
+                    word.classList.add('past'); // Words already sung
+                } else {
+                    word.classList.add('inactive'); // Future words
+                }
+            }
+        }
+
+        function scrollToIndex(index) {
+            if (index < 0) {
+                elements.lyricsContainer.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+
+            const activeEl = elements.lyricsContent.children[index];
+            if (activeEl) {
+                activeEl.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                    inline: 'center'
+                });
+            }
+        }
+
+        // --- Visual Polish ---
+        // Add safe-area padding for mobile handling via JS if CSS env() fails (fallback)
+        const setSafeAreas = () => {
+            const root = document.documentElement;
+            root.style.setProperty('--sat', 'env(safe-area-inset-top, 20px)');
+            root.style.setProperty('--sab', 'env(safe-area-inset-bottom, 20px)');
+        };
+        setSafeAreas();
+
+    </script>
+</body>
+</html>

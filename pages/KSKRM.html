@@ -1,0 +1,1981 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>クソコラジャケット メーカー</title>
+    <meta name="description" content="A tool to create shitty collages by pasting images, applying chroma key, and intentionally degrading them with JPEG artifacts and downscaling.">
+    <meta name="page:icon" content="fas fa-layer-group">
+    <meta name="page:color" content="#ffffff">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f3f4f6; user-select: none; }
+        canvas { display: block; width: 100%; height: 100%; outline: none; }
+        input[type=range] { accent-color: #3b82f6; }
+        input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type=color]::-webkit-color-swatch { border: none; border-radius: 0.375rem; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1); }
+        .grabbing { cursor: grabbing !important; }
+        .grab { cursor: grab !important; }
+        .nwse-resize { cursor: nwse-resize !important; }
+        .nesw-resize { cursor: nesw-resize !important; }
+        .layer-item { cursor: grab; }
+        .layer-item:active { cursor: grabbing; }
+        .layer-dragging { opacity: 0.45; }
+        .layer-drop-before { box-shadow: inset 0 3px 0 #3b82f6; }
+        .layer-drop-after { box-shadow: inset 0 -3px 0 #3b82f6; }
+        .canvas-context-menu { min-width: 190px; }
+        .canvas-context-menu button:disabled { opacity: 0.55; cursor: wait; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="flex h-screen w-screen text-slate-800 font-sans">
+
+    <!-- Sidebar -->
+    <aside class="w-80 bg-white border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex flex-col z-10 shrink-0 h-full">
+        <div class="p-5 border-b border-slate-100 flex items-center gap-3 shrink-0">
+            <div class="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                <i class="fas fa-images text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-slate-900 leading-tight">クソコラジャケット メーカー</h1>
+                <p class="text-[11px] text-slate-500 font-medium">1024x1024 Canvas</p>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div class="p-5 border-b border-slate-100 shrink-0 space-y-6 overflow-y-auto">
+                <div class="grid grid-cols-2 gap-y-2 gap-x-2 text-[10px] text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 shadow-sm shadow-slate-100/50">
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Ctrl+V</kbd> Paste</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Space</kbd> Pan</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Wheel</kbd> Zoom</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Del</kbd> Delete</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Ctrl+Z</kbd> Undo</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Ctrl+Y</kbd> Redo</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Drag</kbd> Reorder</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Text</kbd> Draw Box</div>
+                    <div class="flex items-center gap-1.5"><kbd class="bg-white border border-slate-200 text-slate-500 rounded px-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-sans">Esc</kbd> Cancel</div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btnUndo" disabled class="w-full bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-rotate-left"></i> Undo
+                    </button>
+                    <button id="btnRedo" disabled class="w-full bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-rotate-right"></i> Redo
+                    </button>
+                </div>
+
+                <button id="btnAddText" class="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2">
+                    <i class="fas fa-font"></i> Add Text
+                </button>
+
+                <section class="bg-white">
+                    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i class="fas fa-magic text-blue-500"></i> Degrade Settings
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-600 font-medium">Resolution Scale</span>
+                                <span id="scaleVal" class="font-mono text-blue-600 font-bold">10%</span>
+                            </div>
+                            <input type="range" id="scaleSlider" min="0.01" max="1.0" step="0.01" value="0.1" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-600 font-medium">JPEG Quality</span>
+                                <span id="qualityVal" class="font-mono text-blue-600 font-bold">20%</span>
+                            </div>
+                            <input type="range" id="qualitySlider" min="0.00" max="1.0" step="0.01" value="0.2" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <button id="btnDegrade" class="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md shadow-blue-600/20">
+                            <i class="fas fa-bolt"></i> ガビガビナイズ
+                        </button>
+                    </div>
+                </section>
+            </div>
+
+            <section class="flex-1 flex flex-col min-h-0 bg-slate-50/50">
+                <div class="p-4 pb-2 shrink-0 flex items-center justify-between">
+                    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fas fa-layer-group text-slate-400"></i> Layers
+                    </h2>
+                    <span id="layerCount" class="bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm">0</span>
+                </div>
+                
+                <div id="layerList" class="flex-1 overflow-y-auto p-4 pt-0 space-y-2">
+                </div>
+            </section>
+        </div>
+
+        <div class="p-5 border-t border-slate-100 bg-white gap-3 flex flex-col shrink-0">
+            <button id="btnExport" class="w-full bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium py-2.5 rounded-lg transition-colors shadow-md shadow-slate-800/20 flex items-center justify-center gap-2">
+                <i class="fas fa-download"></i> Save Image
+            </button>
+            <button id="btnClear" class="w-full bg-white hover:bg-slate-50 text-red-600 border border-slate-200 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2">
+                <i class="fas fa-trash-alt"></i> Clear Canvas
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Canvas -->
+    <main class="flex-1 relative bg-slate-200/80 overflow-hidden" id="canvasContainer">
+        <canvas id="appCanvas" tabindex="0"></canvas>
+    </main>
+
+    <!-- Canvas Context Menu -->
+    <div id="canvasContextMenu" class="canvas-context-menu fixed hidden z-[60] bg-white border border-slate-200 rounded-xl shadow-2xl shadow-slate-900/15 overflow-hidden py-1 text-sm">
+        <button id="ctxCopyImage" class="w-full px-3 py-2.5 text-left text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2">
+            <i class="fas fa-copy text-xs w-4"></i>
+            <span>Copy Image</span>
+        </button>
+        <div id="ctxCopyStatus" class="hidden px-3 pb-2 text-[11px] text-slate-500"></div>
+    </div>
+
+    <!-- Chroma Key Modal -->
+    <div id="chromaModal" class="fixed inset-0 bg-slate-900/60 hidden z-50 items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200 pointer-events-none">
+        <div class="bg-white rounded-2xl shadow-2xl w-[640px] max-w-[95vw] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200" id="chromaModalContent">
+            
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                        <i class="fas fa-eye-dropper text-sm"></i>
+                    </div>
+                    Chroma Key Tool
+                </h3>
+                <button id="ckBtnClose" class="text-slate-400 hover:text-slate-600 transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            
+            <div class="p-5 flex flex-col gap-5">
+                <div class="relative bg-slate-100 rounded-xl overflow-hidden border border-slate-200/60 h-[320px] flex items-center justify-center cursor-crosshair group" id="ckPreviewContainer">
+                    <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%); background-size: 16px 16px;"></div>
+                    <canvas id="ckCanvas" class="max-w-full max-h-full block relative z-10 shadow-sm"></canvas>
+                    <div class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-slate-900/80 backdrop-blur-sm text-white text-xs font-medium px-3 py-1.5 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg">
+                        <i class="fas fa-mouse-pointer"></i> Click on image to pick color
+                    </div>
+                </div>
+                
+                <div class="flex gap-5 items-center bg-white p-4 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+                    <div class="flex flex-col gap-2 shrink-0">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Key Color</label>
+                        <div class="flex items-center gap-2.5">
+                            <input type="color" id="ckColorInput" value="#00ff00" class="w-9 h-9 rounded cursor-pointer border-0 p-0 bg-transparent">
+                            <span id="ckColorHex" class="text-sm font-mono text-slate-700 uppercase w-16 font-semibold">#00FF00</span>
+                        </div>
+                    </div>
+                    
+                    <div class="w-px h-12 bg-slate-100 shrink-0"></div>
+                    
+                    <div class="flex-1 flex flex-col gap-2">
+                        <div class="flex justify-between items-end">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tolerance (Threshold)</label>
+                            <span id="ckThresholdVal" class="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">50</span>
+                        </div>
+                        <input type="range" id="ckThresholdSlider" min="0" max="442" value="50" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                <button id="ckBtnCancel" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
+                <button id="ckBtnApply" class="px-6 py-2 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-md shadow-emerald-600/20 transition-colors flex items-center gap-2">
+                    <i class="fas fa-check"></i> Apply Chroma
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text Editor Modal -->
+    <div id="textEditorModal" class="fixed inset-0 bg-slate-900/60 hidden z-50 items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200 pointer-events-none">
+        <div class="bg-white rounded-2xl shadow-2xl w-[920px] max-w-[96vw] max-h-[94vh] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200" id="textEditorModalContent">
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center">
+                        <i class="fas fa-font text-sm"></i>
+                    </div>
+                    Text Editor
+                </h3>
+                <button id="teBtnClose" class="text-slate-400 hover:text-slate-600 transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200"><i class="fas fa-times text-lg"></i></button>
+            </div>
+
+            <div class="p-5 grid grid-cols-[minmax(0,1fr)_320px] gap-5 overflow-y-auto">
+                <div class="space-y-4 min-w-0">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Text</label>
+                        <textarea id="teTextInput" class="w-full min-h-[140px] border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 resize-y focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400" placeholder="Enter text"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Font</label>
+                            <select id="teFontFamily" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+                                <option value="Arial, Helvetica, sans-serif">Arial</option>
+                                <option value="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif">Impact</option>
+                                <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                                <option value="'Courier New', Courier, monospace">Courier New</option>
+                                <option value="'Comic Sans MS', 'Comic Sans', cursive">Comic Sans MS</option>
+                                <option value="'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif">Yu Gothic</option>
+                                <option value="'MS PGothic', sans-serif">MS PGothic</option>
+                                <option value="serif">Generic Serif</option>
+                                <option value="sans-serif">Generic Sans</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Text Color</label>
+                            <div class="flex items-center gap-2.5">
+                                <input type="color" id="teColorInput" value="#000000" class="w-10 h-10 rounded cursor-pointer border-0 p-0 bg-transparent">
+                                <span id="teColorHex" class="text-sm font-mono text-slate-700 uppercase font-semibold">#000000</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Weight</label>
+                            <select id="teFontWeight" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+                                <option value="400">Regular</option>
+                                <option value="700">Bold</option>
+                                <option value="900">Black</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Align</label>
+                            <select id="teTextAlign" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+                                <option value="left">Left</option>
+                                <option value="center">Center</option>
+                                <option value="right">Right</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Style</label>
+                            <div class="flex items-center gap-2">
+                                <button id="teBtnBold" class="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold hover:bg-slate-50 transition-colors">B</button>
+                                <button id="teBtnItalic" class="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm italic hover:bg-slate-50 transition-colors">I</button>
+                                <button id="teBtnUnderline" class="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm underline hover:bg-slate-50 transition-colors">U</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-2">
+                            <div class="flex justify-between items-end">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Letter Spacing</label>
+                                <span id="teLetterSpacingVal" class="text-xs font-mono font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded">0</span>
+                            </div>
+                            <input type="range" id="teLetterSpacing" min="0" max="40" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <div class="flex justify-between items-end">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Line Height</label>
+                                <span id="teLineHeightVal" class="text-xs font-mono font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded">1.00</span>
+                            </div>
+                            <input type="range" id="teLineHeight" min="0.70" max="1.80" step="0.05" value="1.00" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col gap-2">
+                            <div class="flex justify-between items-end">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outline Width</label>
+                                <span id="teStrokeWidthVal" class="text-xs font-mono font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded">0</span>
+                            </div>
+                            <input type="range" id="teStrokeWidth" min="0" max="30" step="1" value="0" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outline Color</label>
+                            <div class="flex items-center gap-2.5">
+                                <input type="color" id="teStrokeColor" value="#ffffff" class="w-10 h-10 rounded cursor-pointer border-0 p-0 bg-transparent">
+                                <span id="teStrokeColorHex" class="text-sm font-mono text-slate-700 uppercase font-semibold">#FFFFFF</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <div>
+                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Preview</div>
+                        <div class="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+                            <div class="h-[260px] relative">
+                                <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%); background-size: 16px 16px;"></div>
+                                <canvas id="tePreviewCanvas" class="w-full h-full block relative z-10"></canvas>
+                            </div>
+                            <div class="px-4 py-3 text-xs text-slate-500 border-t border-slate-100 bg-white">The preview and final text are stretched to the layer rectangle.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                <button id="teBtnCancel" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
+                <button id="teBtnApply" class="px-6 py-2 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white shadow-md shadow-violet-600/20 transition-colors flex items-center gap-2">
+                    <i class="fas fa-check"></i> Apply Text
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Core Application Logic ---
+        const canvas = document.getElementById('appCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const container = document.getElementById('canvasContainer');
+
+        const scaleSlider = document.getElementById('scaleSlider');
+        const scaleVal = document.getElementById('scaleVal');
+        const qualitySlider = document.getElementById('qualitySlider');
+        const qualityVal = document.getElementById('qualityVal');
+        
+        const btnDegrade = document.getElementById('btnDegrade');
+        const layerList = document.getElementById('layerList');
+        const layerCount = document.getElementById('layerCount');
+        const btnExport = document.getElementById('btnExport');
+        const btnClear = document.getElementById('btnClear');
+        const btnUndo = document.getElementById('btnUndo');
+        const btnRedo = document.getElementById('btnRedo');
+        const btnAddText = document.getElementById('btnAddText');
+        const canvasContextMenu = document.getElementById('canvasContextMenu');
+        const ctxCopyImage = document.getElementById('ctxCopyImage');
+        const ctxCopyStatus = document.getElementById('ctxCopyStatus');
+
+        const textEditorModal = document.getElementById('textEditorModal');
+        const textEditorModalContent = document.getElementById('textEditorModalContent');
+        const teBtnClose = document.getElementById('teBtnClose');
+        const teBtnCancel = document.getElementById('teBtnCancel');
+        const teBtnApply = document.getElementById('teBtnApply');
+        const teTextInput = document.getElementById('teTextInput');
+        const teFontFamily = document.getElementById('teFontFamily');
+        const teColorInput = document.getElementById('teColorInput');
+        const teColorHex = document.getElementById('teColorHex');
+        const teFontWeight = document.getElementById('teFontWeight');
+        const teTextAlign = document.getElementById('teTextAlign');
+        const teBtnBold = document.getElementById('teBtnBold');
+        const teBtnItalic = document.getElementById('teBtnItalic');
+        const teBtnUnderline = document.getElementById('teBtnUnderline');
+        const teLetterSpacing = document.getElementById('teLetterSpacing');
+        const teLetterSpacingVal = document.getElementById('teLetterSpacingVal');
+        const teLineHeight = document.getElementById('teLineHeight');
+        const teLineHeightVal = document.getElementById('teLineHeightVal');
+        const teStrokeWidth = document.getElementById('teStrokeWidth');
+        const teStrokeWidthVal = document.getElementById('teStrokeWidthVal');
+        const teStrokeColor = document.getElementById('teStrokeColor');
+        const teStrokeColorHex = document.getElementById('teStrokeColorHex');
+        const tePreviewCanvas = document.getElementById('tePreviewCanvas');
+        const tePreviewCtx = tePreviewCanvas.getContext('2d');
+
+        const BOARD_W = 1024;
+        const BOARD_H = 1024;
+        const HANDLE_SIZE = 10;
+
+        let objects = [];
+        let selectedIndex = -1;
+        let layerCounter = 1;
+
+        let view = { x: 0, y: 0, zoom: 1 };
+        
+        let isSpacePressed = false;
+        let isPanning = false;
+        let isDragging = false;
+        let isResizing = false;
+        let resizeHandle = '';
+        let panStart = { x: 0, y: 0 };
+        let actionStart = { x: 0, y: 0 };
+        let origObj = {};
+        let transformStartSnapshot = null;
+        let dragLayerIndex = -1;
+        let layerDragDidMove = false;
+        let isTextMode = false;
+        let isCreatingText = false;
+        let textCreateStart = { x: 0, y: 0 };
+        let textCreateRect = null;
+        let textEditorState = null;
+
+        const HISTORY_LIMIT = 50;
+        const undoStack = [];
+        const redoStack = [];
+
+        function getObjectImageSrc(obj) {
+            return obj?.img?.src || '';
+        }
+
+        function captureState() {
+            return {
+                objects: objects.map(obj => ({
+                    id: obj.id,
+                    type: obj.type || 'image',
+                    name: obj.name,
+                    src: obj.type === 'text' ? '' : getObjectImageSrc(obj),
+                    text: obj.type === 'text' ? (obj.text || '') : '',
+                    color: obj.color || '#000000',
+                    fontFamily: obj.fontFamily || "Arial, Helvetica, sans-serif",
+                    fontWeight: String(obj.fontWeight || '900'),
+                    fontStyle: obj.fontStyle || 'normal',
+                    underline: !!obj.underline,
+                    textAlign: obj.textAlign || 'center',
+                    letterSpacing: obj.letterSpacing || 0,
+                    lineHeight: obj.lineHeight || 1.0,
+                    strokeColor: obj.strokeColor || '#FFFFFF',
+                    strokeWidth: obj.strokeWidth || 0,
+                    x: obj.x,
+                    y: obj.y,
+                    w: obj.w,
+                    h: obj.h
+                })),
+                selectedIndex,
+                layerCounter
+            };
+        }
+
+        function statesEqual(a, b) {
+            if (!a || !b) return false;
+            if (a.selectedIndex !== b.selectedIndex || a.layerCounter !== b.layerCounter) return false;
+            if (a.objects.length !== b.objects.length) return false;
+
+            for (let i = 0; i < a.objects.length; i++) {
+                const ao = a.objects[i];
+                const bo = b.objects[i];
+                if (
+                    ao.id !== bo.id ||
+                    ao.type !== bo.type ||
+                    ao.name !== bo.name ||
+                    ao.src !== bo.src ||
+                    ao.text !== bo.text ||
+                    ao.color !== bo.color ||
+                    ao.fontFamily !== bo.fontFamily ||
+                    ao.fontWeight !== bo.fontWeight ||
+                    ao.fontStyle !== bo.fontStyle ||
+                    ao.underline !== bo.underline ||
+                    ao.textAlign !== bo.textAlign ||
+                    ao.letterSpacing !== bo.letterSpacing ||
+                    ao.lineHeight !== bo.lineHeight ||
+                    ao.strokeColor !== bo.strokeColor ||
+                    ao.strokeWidth !== bo.strokeWidth ||
+                    ao.x !== bo.x ||
+                    ao.y !== bo.y ||
+                    ao.w !== bo.w ||
+                    ao.h !== bo.h
+                ) return false;
+            }
+            return true;
+        }
+
+        function pushHistorySnapshot(snapshot) {
+            if (!snapshot || statesEqual(snapshot, captureState())) return;
+            undoStack.push(snapshot);
+            if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+            redoStack.length = 0;
+            updateHistoryControls();
+        }
+
+        function restoreState(state) {
+            objects = state.objects.map(obj => {
+                if (obj.type === 'text') {
+                    return {
+                        id: obj.id,
+                        type: 'text',
+                        name: obj.name,
+                        text: obj.text || '',
+                        color: obj.color || '#000000',
+                        fontFamily: obj.fontFamily || "Arial, Helvetica, sans-serif",
+                        fontWeight: String(obj.fontWeight || '900'),
+                        fontStyle: obj.fontStyle || 'normal',
+                        underline: !!obj.underline,
+                        textAlign: obj.textAlign || 'center',
+                        letterSpacing: obj.letterSpacing || 0,
+                        lineHeight: obj.lineHeight || 1.0,
+                        strokeColor: obj.strokeColor || '#FFFFFF',
+                        strokeWidth: obj.strokeWidth || 0,
+                        x: obj.x,
+                        y: obj.y,
+                        w: obj.w,
+                        h: obj.h
+                    };
+                }
+
+                const img = new Image();
+                img.onload = () => render();
+                img.src = obj.src;
+                return {
+                    id: obj.id,
+                    type: 'image',
+                    name: obj.name,
+                    img,
+                    x: obj.x,
+                    y: obj.y,
+                    w: obj.w,
+                    h: obj.h
+                };
+            });
+
+            selectedIndex = state.selectedIndex;
+            if (selectedIndex >= objects.length) selectedIndex = objects.length - 1;
+            if (objects.length === 0) selectedIndex = -1;
+            layerCounter = state.layerCounter;
+
+            updateLayerList();
+            updateHistoryControls();
+            render();
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            const previous = undoStack.pop();
+            redoStack.push(captureState());
+            restoreState(previous);
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const next = redoStack.pop();
+            undoStack.push(captureState());
+            restoreState(next);
+        }
+
+        function updateHistoryControls() {
+            btnUndo.disabled = undoStack.length === 0;
+            btnRedo.disabled = redoStack.length === 0;
+        }
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function normalizeRect(a, b) {
+            return {
+                x: Math.min(a.x, b.x),
+                y: Math.min(a.y, b.y),
+                w: Math.abs(b.x - a.x),
+                h: Math.abs(b.y - a.y)
+            };
+        }
+
+        function setTextMode(active) {
+            isTextMode = active;
+            if (!active) {
+                isCreatingText = false;
+                textCreateRect = null;
+            }
+            btnAddText.className = active
+                ? 'w-full bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-md shadow-blue-600/20 flex items-center justify-center gap-2'
+                : 'w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2';
+            render();
+        }
+
+        function getDefaultTextObject(overrides = {}) {
+            return {
+                type: 'text',
+                name: `Text ${layerCounter}`,
+                text: 'Text',
+                color: '#000000',
+                fontFamily: 'Arial, Helvetica, sans-serif',
+                fontWeight: '900',
+                fontStyle: 'normal',
+                underline: false,
+                textAlign: 'center',
+                letterSpacing: 0,
+                lineHeight: 1.0,
+                strokeColor: '#FFFFFF',
+                strokeWidth: 0,
+                x: 0,
+                y: 0,
+                w: 240,
+                h: 120,
+                ...overrides
+            };
+        }
+
+        function cloneTextObject(obj) {
+            return {
+                id: obj.id,
+                type: 'text',
+                name: obj.name,
+                text: obj.text || '',
+                color: obj.color || '#000000',
+                fontFamily: obj.fontFamily || 'Arial, Helvetica, sans-serif',
+                fontWeight: String(obj.fontWeight || '900'),
+                fontStyle: obj.fontStyle || 'normal',
+                underline: !!obj.underline,
+                textAlign: obj.textAlign || 'center',
+                letterSpacing: Number(obj.letterSpacing || 0),
+                lineHeight: Number(obj.lineHeight || 1.0),
+                strokeColor: obj.strokeColor || '#FFFFFF',
+                strokeWidth: Number(obj.strokeWidth || 0),
+                x: obj.x,
+                y: obj.y,
+                w: obj.w,
+                h: obj.h
+            };
+        }
+
+        function makeTextTextureKey(obj) {
+            return JSON.stringify({
+                text: obj.text || '',
+                color: obj.color || '#000000',
+                fontFamily: obj.fontFamily || 'Arial, Helvetica, sans-serif',
+                fontWeight: String(obj.fontWeight || '900'),
+                fontStyle: obj.fontStyle || 'normal',
+                underline: !!obj.underline,
+                textAlign: obj.textAlign || 'center',
+                letterSpacing: Number(obj.letterSpacing || 0),
+                lineHeight: Number(obj.lineHeight || 1.0),
+                strokeColor: obj.strokeColor || '#FFFFFF',
+                strokeWidth: Number(obj.strokeWidth || 0)
+            });
+        }
+
+        function measureSpacedLine(ctxToMeasure, line, letterSpacing) {
+            const chars = Array.from(line || ' ');
+            if (chars.length === 0) return 0;
+            let width = 0;
+            chars.forEach((ch, idx) => {
+                width += ctxToMeasure.measureText(ch).width;
+                if (idx < chars.length - 1) width += letterSpacing;
+            });
+            return width;
+        }
+
+        function drawSpacedLine(ctxToDraw, line, startX, y, letterSpacing, strokeWidth) {
+            const chars = Array.from(line || ' ');
+            let x = startX;
+            chars.forEach((ch, idx) => {
+                if (strokeWidth > 0) ctxToDraw.strokeText(ch, x, y);
+                ctxToDraw.fillText(ch, x, y);
+                x += ctxToDraw.measureText(ch).width;
+                if (idx < chars.length - 1) x += letterSpacing;
+            });
+            return x;
+        }
+
+        function buildTextTexture(obj) {
+            const lines = String(obj.text || '').split(/\r?\n/);
+            const fontSize = 200;
+            const paddingX = 40;
+            const paddingY = 32;
+            const letterSpacing = Number(obj.letterSpacing || 0);
+            const lineHeightFactor = Number(obj.lineHeight || 1.0);
+            const innerLineHeight = Math.max(1, Math.round(fontSize * lineHeightFactor));
+            const fontWeight = String(obj.fontWeight || '900');
+            const fontStyle = obj.fontStyle === 'italic' ? 'italic' : 'normal';
+            const fontFamily = obj.fontFamily || 'Arial, Helvetica, sans-serif';
+            const strokeWidth = Number(obj.strokeWidth || 0);
+
+            const measureCanvas = document.createElement('canvas');
+            const measureCtx = measureCanvas.getContext('2d');
+            measureCtx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+            measureCtx.textBaseline = 'top';
+            measureCtx.lineJoin = 'round';
+            measureCtx.lineCap = 'round';
+
+            let maxWidth = 1;
+            for (const line of lines) {
+                maxWidth = Math.max(maxWidth, Math.ceil(measureSpacedLine(measureCtx, line, letterSpacing)));
+            }
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = Math.max(1, Math.ceil(maxWidth + paddingX * 2 + strokeWidth * 2));
+            tempCanvas.height = Math.max(1, Math.ceil(lines.length * innerLineHeight + paddingY * 2 + strokeWidth * 2));
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+            tempCtx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+            tempCtx.textBaseline = 'top';
+            tempCtx.lineJoin = 'round';
+            tempCtx.lineCap = 'round';
+            tempCtx.fillStyle = obj.color || '#000000';
+            tempCtx.strokeStyle = obj.strokeColor || '#FFFFFF';
+            tempCtx.lineWidth = strokeWidth;
+
+            const innerWidth = tempCanvas.width - paddingX * 2 - strokeWidth * 2;
+
+            lines.forEach((line, idx) => {
+                const drawLine = line || ' ';
+                const lineWidth = measureSpacedLine(tempCtx, drawLine, letterSpacing);
+                let startX = paddingX + strokeWidth;
+                if ((obj.textAlign || 'center') === 'center') {
+                    startX = paddingX + strokeWidth + (innerWidth - lineWidth) / 2;
+                } else if ((obj.textAlign || 'center') === 'right') {
+                    startX = paddingX + strokeWidth + (innerWidth - lineWidth);
+                }
+
+                const y = paddingY + strokeWidth + idx * innerLineHeight;
+                drawSpacedLine(tempCtx, drawLine, startX, y, letterSpacing, strokeWidth);
+
+                if (obj.underline) {
+                    const underlineY = y + fontSize + 12;
+                    tempCtx.save();
+                    tempCtx.strokeStyle = obj.color || '#000000';
+                    tempCtx.lineWidth = Math.max(4, fontSize * 0.045);
+                    tempCtx.beginPath();
+                    tempCtx.moveTo(startX, underlineY);
+                    tempCtx.lineTo(startX + lineWidth, underlineY);
+                    tempCtx.stroke();
+                    tempCtx.restore();
+                }
+            });
+
+            return tempCanvas;
+        }
+
+        function getTextTexture(obj) {
+            const key = makeTextTextureKey(obj);
+            if (obj._textTextureKey !== key || !obj._textTextureCanvas) {
+                obj._textTextureCanvas = buildTextTexture(obj);
+                obj._textTextureKey = key;
+            }
+            return obj._textTextureCanvas;
+        }
+
+        function invalidateTextTexture(obj) {
+            if (!obj) return;
+            obj._textTextureCanvas = null;
+            obj._textTextureKey = '';
+        }
+
+        function drawTextObject(ctxToDraw, obj) {
+            const texture = getTextTexture(obj);
+            if (!texture) return;
+            ctxToDraw.imageSmoothingEnabled = true;
+            ctxToDraw.drawImage(texture, obj.x, obj.y, obj.w, obj.h);
+        }
+
+        function drawObject(ctxToDraw, obj) {
+            if (obj?.type === 'text') {
+                drawTextObject(ctxToDraw, obj);
+                return;
+            }
+            if (obj?.img?.complete && obj.img.naturalWidth > 0) {
+                ctxToDraw.drawImage(obj.img, obj.x, obj.y, obj.w, obj.h);
+            }
+        }
+
+        function renderBoardToCanvas() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = BOARD_W;
+            tempCanvas.height = BOARD_H;
+            const tCtx = tempCanvas.getContext('2d', { alpha: false });
+
+            tCtx.fillStyle = '#ffffff';
+            tCtx.fillRect(0, 0, BOARD_W, BOARD_H);
+
+            for (let i = 0; i < objects.length; i++) {
+                drawObject(tCtx, objects[i]);
+            }
+
+            return tempCanvas;
+        }
+
+        function canvasToBlobSafe(canvasToConvert, type = 'image/png', quality) {
+            return new Promise((resolve, reject) => {
+                canvasToConvert.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('Canvas rendering failed.'));
+                }, type, quality);
+            });
+        }
+
+        function setCopyStatus(message, isError = false) {
+            ctxCopyStatus.innerText = message;
+            ctxCopyStatus.className = `px-3 pb-2 text-[11px] ${isError ? 'text-red-600' : 'text-slate-500'}`;
+        }
+
+        function showCanvasContextMenu(clientX, clientY) {
+            ctxCopyImage.disabled = false;
+            ctxCopyStatus.classList.add('hidden');
+            canvasContextMenu.classList.remove('hidden');
+
+            const margin = 8;
+            const rect = canvasContextMenu.getBoundingClientRect();
+            const left = Math.min(clientX, window.innerWidth - rect.width - margin);
+            const top = Math.min(clientY, window.innerHeight - rect.height - margin);
+
+            canvasContextMenu.style.left = `${Math.max(margin, left)}px`;
+            canvasContextMenu.style.top = `${Math.max(margin, top)}px`;
+        }
+
+        function hideCanvasContextMenu() {
+            canvasContextMenu.classList.add('hidden');
+            ctxCopyImage.disabled = false;
+        }
+
+        async function copyRenderedImageToClipboard() {
+            try {
+                ctxCopyImage.disabled = true;
+                ctxCopyStatus.classList.remove('hidden');
+                setCopyStatus('Copying...');
+
+                if (!navigator.clipboard || !window.ClipboardItem) {
+                    throw new Error('This browser or page context does not allow image clipboard writing. Use HTTPS or localhost.');
+                }
+
+                const renderedCanvas = renderBoardToCanvas();
+                const blob = await canvasToBlobSafe(renderedCanvas, 'image/png');
+                await navigator.clipboard.write([
+                    new ClipboardItem({ 'image/png': blob })
+                ]);
+
+                setCopyStatus('Copied PNG to clipboard.');
+                setTimeout(hideCanvasContextMenu, 900);
+            } catch (err) {
+                console.error(err);
+                setCopyStatus('Copy failed. Clipboard image write requires permission and HTTPS/localhost.', true);
+                ctxCopyImage.disabled = false;
+            }
+        }
+
+        function openTextEditorForEdit(idx) {
+            const obj = objects[idx];
+            if (!obj || obj.type !== 'text') return;
+            textEditorState = {
+                mode: 'edit',
+                targetIndex: idx,
+                beforeSnapshot: captureState(),
+                draft: cloneTextObject(obj)
+            };
+            populateTextEditorForm();
+            openTextEditorModal();
+        }
+
+        function openTextEditorForCreate(rect) {
+            textEditorState = {
+                mode: 'create',
+                targetIndex: -1,
+                beforeSnapshot: captureState(),
+                draft: getDefaultTextObject(rect)
+            };
+            populateTextEditorForm();
+            openTextEditorModal();
+        }
+
+        function editTextLayer(idx) {
+            openTextEditorForEdit(idx);
+        }
+
+        function updateTextStyleButtons() {
+            if (!textEditorState?.draft) return;
+            const draft = textEditorState.draft;
+            teBtnBold.className = `flex-1 px-3 py-2 rounded-lg border text-sm font-bold transition-colors ${String(draft.fontWeight) === '700' || String(draft.fontWeight) === '900' ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 hover:bg-slate-50'}`;
+            teBtnItalic.className = `flex-1 px-3 py-2 rounded-lg border text-sm italic transition-colors ${draft.fontStyle === 'italic' ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 hover:bg-slate-50'}`;
+            teBtnUnderline.className = `flex-1 px-3 py-2 rounded-lg border text-sm underline transition-colors ${draft.underline ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 hover:bg-slate-50'}`;
+        }
+
+        function syncDraftFromTextEditorForm() {
+            if (!textEditorState?.draft) return;
+            const draft = textEditorState.draft;
+            draft.text = teTextInput.value;
+            draft.fontFamily = teFontFamily.value;
+            draft.color = teColorInput.value.toUpperCase();
+            draft.fontWeight = String(teFontWeight.value);
+            draft.textAlign = teTextAlign.value;
+            draft.letterSpacing = Number(teLetterSpacing.value);
+            draft.lineHeight = Number(teLineHeight.value);
+            draft.strokeWidth = Number(teStrokeWidth.value);
+            draft.strokeColor = teStrokeColor.value.toUpperCase();
+            teColorHex.innerText = draft.color;
+            teStrokeColorHex.innerText = draft.strokeColor;
+            teLetterSpacingVal.innerText = String(draft.letterSpacing);
+            teLineHeightVal.innerText = draft.lineHeight.toFixed(2);
+            teStrokeWidthVal.innerText = String(draft.strokeWidth);
+            updateTextStyleButtons();
+            renderTextEditorPreview();
+        }
+
+        function populateTextEditorForm() {
+            if (!textEditorState?.draft) return;
+            const draft = textEditorState.draft;
+            teTextInput.value = draft.text || '';
+            teFontFamily.value = draft.fontFamily || 'Arial, Helvetica, sans-serif';
+            teColorInput.value = draft.color || '#000000';
+            teFontWeight.value = String(draft.fontWeight || '900');
+            teTextAlign.value = draft.textAlign || 'center';
+            teLetterSpacing.value = String(draft.letterSpacing || 0);
+            teLineHeight.value = String(draft.lineHeight || 1.0);
+            teStrokeWidth.value = String(draft.strokeWidth || 0);
+            teStrokeColor.value = draft.strokeColor || '#FFFFFF';
+            syncDraftFromTextEditorForm();
+            setTimeout(() => teTextInput.focus(), 30);
+        }
+
+        function renderTextEditorPreview() {
+            if (!textEditorState?.draft) return;
+            const draft = cloneTextObject({ ...textEditorState.draft, x: 30, y: 30, w: 340, h: 200 });
+            tePreviewCanvas.width = 400;
+            tePreviewCanvas.height = 260;
+            tePreviewCtx.clearRect(0, 0, tePreviewCanvas.width, tePreviewCanvas.height);
+            drawTextObject(tePreviewCtx, draft);
+        }
+
+        function openTextEditorModal() {
+            textEditorModal.classList.remove('opacity-0', 'pointer-events-none', 'hidden');
+            textEditorModal.classList.add('flex');
+            setTimeout(() => {
+                textEditorModal.classList.remove('opacity-0');
+                textEditorModalContent.classList.remove('scale-95');
+                textEditorModalContent.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeTextEditorModal() {
+            textEditorModal.classList.add('opacity-0');
+            textEditorModalContent.classList.remove('scale-100');
+            textEditorModalContent.classList.add('scale-95');
+            setTimeout(() => {
+                textEditorModal.classList.add('hidden', 'pointer-events-none');
+                textEditorModal.classList.remove('flex');
+                textEditorState = null;
+            }, 200);
+        }
+
+        function applyTextEditorChanges() {
+            if (!textEditorState?.draft) return;
+            const draft = cloneTextObject(textEditorState.draft);
+
+            if (textEditorState.mode === 'edit') {
+                const obj = objects[textEditorState.targetIndex];
+                if (!obj || obj.type !== 'text') return;
+                Object.assign(obj, draft);
+                invalidateTextTexture(obj);
+                selectedIndex = textEditorState.targetIndex;
+            } else {
+                const newObj = { id: layerCounter, ...draft, name: `Text ${layerCounter}` };
+                objects.push(newObj);
+                layerCounter++;
+                selectedIndex = objects.length - 1;
+            }
+
+            pushHistorySnapshot(textEditorState.beforeSnapshot);
+            updateLayerList();
+            render();
+            closeTextEditorModal();
+        }
+
+        function resize() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            render();
+        }
+
+        function initView() {
+            const padding = 40;
+            const scaleX = (canvas.width - padding * 2) / BOARD_W;
+            const scaleY = (canvas.height - padding * 2) / BOARD_H;
+            view.zoom = Math.min(scaleX, scaleY, 1);
+            view.x = (canvas.width - BOARD_W * view.zoom) / 2;
+            view.y = (canvas.height - BOARD_H * view.zoom) / 2;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        initView();
+
+        scaleSlider.addEventListener('input', (e) => { scaleVal.innerText = Math.round(e.target.value * 100) + '%'; });
+        qualitySlider.addEventListener('input', (e) => { qualityVal.innerText = Math.round(e.target.value * 100) + '%'; });
+
+        function getSelected() {
+            return selectedIndex >= 0 && selectedIndex < objects.length ? objects[selectedIndex] : null;
+        }
+
+        function clearLayerDragIndicators() {
+            document.querySelectorAll('.layer-item').forEach(item => {
+                item.classList.remove('layer-drop-before', 'layer-drop-after');
+            });
+        }
+
+        function reorderLayerByDrag(fromIdx, targetIdx, placeAfterInList) {
+            if (
+                fromIdx < 0 || fromIdx >= objects.length ||
+                targetIdx < 0 || targetIdx >= objects.length ||
+                fromIdx === targetIdx
+            ) return;
+
+            const before = captureState();
+            const draggedObj = objects[fromIdx];
+            const targetObj = objects[targetIdx];
+
+            const displayOrder = objects.slice().reverse().filter(obj => obj !== draggedObj);
+            const targetDisplayIndex = displayOrder.indexOf(targetObj);
+            if (targetDisplayIndex === -1) return;
+
+            const insertAt = targetDisplayIndex + (placeAfterInList ? 1 : 0);
+            displayOrder.splice(insertAt, 0, draggedObj);
+
+            objects = displayOrder.reverse();
+            selectedIndex = objects.indexOf(draggedObj);
+
+            pushHistorySnapshot(before);
+            updateLayerList();
+            render();
+        }
+
+        function updateLayerList() {
+            layerList.innerHTML = '';
+            layerCount.innerText = objects.length;
+
+            if (objects.length === 0) {
+                layerList.innerHTML = `
+                    <div class="h-full min-h-[150px] flex flex-col items-center justify-center text-slate-400 text-xs text-center p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                        <i class="fas fa-images text-3xl mb-3 text-slate-300"></i>
+                        <p>No layers yet.<br>Press <kbd class="bg-white border rounded px-1 mx-1 shadow-sm font-sans text-slate-500">Ctrl+V</kbd> to paste or use Add Text.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            for (let i = objects.length - 1; i >= 0; i--) {
+                const obj = objects[i];
+                const isSelected = selectedIndex === i;
+                
+                const item = document.createElement('div');
+                item.className = `layer-item group flex items-center gap-3 p-2 bg-white border rounded-xl transition-all duration-200 ${isSelected ? 'border-blue-500 ring-1 ring-blue-500 shadow-md' : 'border-slate-200 shadow-sm hover:border-slate-300 hover:shadow'}`;
+                item.draggable = true;
+                item.dataset.layerIndex = i;
+                item.title = 'Drag to reorder layers';
+
+                item.addEventListener('mousedown', (e) => {
+                    item.draggable = !e.target.closest('button');
+                });
+
+                item.addEventListener('mouseup', () => {
+                    item.draggable = true;
+                });
+
+                item.addEventListener('dragstart', (e) => {
+                    if (e.target.closest('button')) {
+                        e.preventDefault();
+                        return;
+                    }
+
+                    dragLayerIndex = i;
+                    layerDragDidMove = false;
+                    selectedIndex = i;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', String(i));
+                    requestAnimationFrame(() => item.classList.add('layer-dragging'));
+                    render();
+                });
+
+                item.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    if (dragLayerIndex === -1 || dragLayerIndex === i) return;
+
+                    layerDragDidMove = true;
+                    const rect = item.getBoundingClientRect();
+                    const placeAfter = e.clientY > rect.top + rect.height / 2;
+                    clearLayerDragIndicators();
+                    item.classList.add(placeAfter ? 'layer-drop-after' : 'layer-drop-before');
+                    e.dataTransfer.dropEffect = 'move';
+                });
+
+                item.addEventListener('dragleave', (e) => {
+                    if (!item.contains(e.relatedTarget)) {
+                        item.classList.remove('layer-drop-before', 'layer-drop-after');
+                    }
+                });
+
+                item.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    const fromIdx = dragLayerIndex !== -1 ? dragLayerIndex : parseInt(e.dataTransfer.getData('text/plain'), 10);
+                    const rect = item.getBoundingClientRect();
+                    const placeAfter = e.clientY > rect.top + rect.height / 2;
+                    clearLayerDragIndicators();
+                    reorderLayerByDrag(fromIdx, i, placeAfter);
+                    dragLayerIndex = -1;
+                    layerDragDidMove = false;
+                });
+
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('layer-dragging');
+                    clearLayerDragIndicators();
+                    dragLayerIndex = -1;
+                    setTimeout(() => { layerDragDidMove = false; }, 0);
+                });
+                
+                item.onclick = (e) => {
+                    if (layerDragDidMove || e.target.closest('button')) return; 
+                    selectedIndex = i;
+                    updateLayerList();
+                    render();
+                };
+
+                const thumb = document.createElement('div');
+                thumb.className = 'w-10 h-10 bg-slate-100 rounded-lg border border-slate-200/60 flex items-center justify-center overflow-hidden shrink-0 pointer-events-none relative';
+
+                if (obj.type === 'text') {
+                    const thumbLabel = document.createElement('div');
+                    thumbLabel.className = 'relative z-10 text-[11px] font-black text-slate-700 leading-none px-1 text-center break-all';
+                    thumbLabel.innerText = (obj.text || 'T').slice(0, 4);
+                    thumb.appendChild(thumbLabel);
+                } else {
+                    const checkerboard = document.createElement('div');
+                    checkerboard.className = 'absolute inset-0 opacity-20';
+                    checkerboard.style.backgroundImage = 'repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%)';
+                    checkerboard.style.backgroundSize = '8px 8px';
+                    
+                    const thumbImg = document.createElement('img');
+                    thumbImg.src = obj.img.src;
+                    thumbImg.className = 'max-w-full max-h-full object-contain relative z-10';
+                    
+                    thumb.appendChild(checkerboard);
+                    thumb.appendChild(thumbImg);
+                }
+
+                const titleContainer = document.createElement('div');
+                titleContainer.className = 'flex-1 flex flex-col min-w-0 pointer-events-none';
+                
+                const title = document.createElement('div');
+                title.className = `text-xs font-bold truncate ${isSelected ? 'text-blue-700' : 'text-slate-700'}`;
+                title.innerText = obj.name;
+                
+                const subtitle = document.createElement('div');
+                subtitle.className = 'text-[9px] text-slate-400 truncate mt-0.5 font-medium';
+                subtitle.innerText = `${obj.type === 'text' ? 'Text · ' : ''}${Math.round(obj.w)} x ${Math.round(obj.h)}`;
+
+                titleContainer.appendChild(title);
+                titleContainer.appendChild(subtitle);
+
+                const actions = document.createElement('div');
+                actions.className = `flex items-center gap-0.5 transition-opacity duration-200 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`;
+                actions.addEventListener('mousedown', (e) => e.stopPropagation());
+
+                const btnEditText = document.createElement('button');
+                btnEditText.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-violet-600 rounded-md hover:bg-violet-50 transition-colors';
+                btnEditText.innerHTML = '<i class="fas fa-pen text-xs"></i>';
+                btnEditText.title = 'Edit Text';
+                btnEditText.draggable = false;
+                btnEditText.onclick = (e) => { e.stopPropagation(); editTextLayer(i); };
+
+                // Chroma Key Button
+                const btnChroma = document.createElement('button');
+                btnChroma.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-emerald-600 rounded-md hover:bg-emerald-50 transition-colors';
+                btnChroma.innerHTML = '<i class="fas fa-eye-dropper text-xs"></i>';
+                btnChroma.title = "Chroma Key Tool";
+                btnChroma.draggable = false;
+                btnChroma.onclick = (e) => { e.stopPropagation(); openChromaModal(i); };
+
+                const btnUp = document.createElement('button');
+                btnUp.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400';
+                btnUp.innerHTML = '<i class="fas fa-chevron-up text-xs"></i>';
+                btnUp.draggable = false;
+                btnUp.disabled = i === objects.length - 1;
+                btnUp.onclick = () => moveLayerUp(i);
+
+                const btnDown = document.createElement('button');
+                btnDown.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400';
+                btnDown.innerHTML = '<i class="fas fa-chevron-down text-xs"></i>';
+                btnDown.draggable = false;
+                btnDown.disabled = i === 0;
+                btnDown.onclick = () => moveLayerDown(i);
+
+                const btnDel = document.createElement('button');
+                btnDel.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors';
+                btnDel.innerHTML = '<i class="fas fa-trash-alt text-xs"></i>';
+                btnDel.draggable = false;
+                btnDel.onclick = () => deleteLayer(i);
+
+                if (obj.type === 'text') actions.appendChild(btnEditText);
+                if (obj.type !== 'text') actions.appendChild(btnChroma);
+                actions.appendChild(btnUp);
+                actions.appendChild(btnDown);
+                actions.appendChild(btnDel);
+
+                item.appendChild(thumb);
+                item.appendChild(titleContainer);
+                item.appendChild(actions);
+
+                layerList.appendChild(item);
+            }
+        }
+
+        function moveLayerUp(idx) {
+            if (idx < objects.length - 1) {
+                const before = captureState();
+                const obj = objects.splice(idx, 1)[0];
+                objects.splice(idx + 1, 0, obj);
+                if (selectedIndex === idx) selectedIndex = idx + 1;
+                else if (selectedIndex === idx + 1) selectedIndex = idx;
+                pushHistorySnapshot(before);
+                updateLayerList();
+                render();
+            }
+        }
+
+        function moveLayerDown(idx) {
+            if (idx > 0) {
+                const before = captureState();
+                const obj = objects.splice(idx, 1)[0];
+                objects.splice(idx - 1, 0, obj);
+                if (selectedIndex === idx) selectedIndex = idx - 1;
+                else if (selectedIndex === idx - 1) selectedIndex = idx;
+                pushHistorySnapshot(before);
+                updateLayerList();
+                render();
+            }
+        }
+
+        function deleteLayer(idx) {
+            if (idx < 0 || idx >= objects.length) return;
+            const before = captureState();
+            objects.splice(idx, 1);
+            if (selectedIndex === idx) selectedIndex = -1;
+            else if (selectedIndex > idx) selectedIndex--;
+            pushHistorySnapshot(before);
+            updateLayerList();
+            render();
+        }
+
+        function screenToWorld(sx, sy) {
+            return {
+                x: (sx - view.x) / view.zoom,
+                y: (sy - view.y) / view.zoom
+            };
+        }
+
+        function render() {
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const patternSize = 20 * view.zoom;
+            ctx.fillStyle = '#cbd5e1';
+            for(let i=0; i<canvas.width; i+=patternSize*2) {
+                for(let j=0; j<canvas.height; j+=patternSize*2) {
+                    ctx.fillRect(i, j, patternSize, patternSize);
+                    ctx.fillRect(i+patternSize, j+patternSize, patternSize, patternSize);
+                }
+            }
+
+            ctx.save();
+            ctx.translate(view.x, view.y);
+            ctx.scale(view.zoom, view.zoom);
+
+            ctx.shadowColor = 'rgba(0,0,0,0.15)';
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 15;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, BOARD_W, BOARD_H);
+            ctx.shadowColor = 'transparent';
+
+            ctx.beginPath();
+            ctx.rect(0, 0, BOARD_W, BOARD_H);
+            ctx.clip();
+
+            for (let i = 0; i < objects.length; i++) {
+                drawObject(ctx, objects[i]);
+            }
+            
+            ctx.restore();
+
+            if (isCreatingText && textCreateRect) {
+                ctx.save();
+                ctx.translate(view.x, view.y);
+                ctx.scale(view.zoom, view.zoom);
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 2 / view.zoom;
+                ctx.setLineDash([10 / view.zoom, 8 / view.zoom]);
+                ctx.fillRect(textCreateRect.x, textCreateRect.y, textCreateRect.w, textCreateRect.h);
+                ctx.strokeRect(textCreateRect.x, textCreateRect.y, textCreateRect.w, textCreateRect.h);
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
+            const sel = getSelected();
+            if (sel) {
+                ctx.save();
+                ctx.translate(view.x, view.y);
+                ctx.scale(view.zoom, view.zoom);
+                
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 2 / view.zoom;
+                ctx.strokeRect(sel.x, sel.y, sel.w, sel.h);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 2 / view.zoom;
+                const hs = HANDLE_SIZE / view.zoom;
+
+                const handles = [
+                    { x: sel.x, y: sel.y },
+                    { x: sel.x + sel.w, y: sel.y },
+                    { x: sel.x, y: sel.y + sel.h },
+                    { x: sel.x + sel.w, y: sel.y + sel.h }
+                ];
+
+                handles.forEach(h => {
+                    ctx.fillRect(h.x - hs/2, h.y - hs/2, hs, hs);
+                    ctx.strokeRect(h.x - hs/2, h.y - hs/2, hs, hs);
+                });
+
+                ctx.restore();
+            }
+        }
+
+        window.addEventListener('paste', (e) => {
+            const items = e.clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    const url = URL.createObjectURL(blob);
+                    const img = new Image();
+                    img.onload = () => {
+                        const before = captureState();
+                        let w = img.width;
+                        let h = img.height;
+                        const max = 800;
+                        if (w > max || h > max) {
+                            const ratio = Math.min(max/w, max/h);
+                            w *= ratio;
+                            h *= ratio;
+                        }
+                        objects.push({
+                            id: layerCounter,
+                            type: 'image',
+                            name: `Image ${layerCounter}`,
+                            img: img,
+                            x: (BOARD_W - w) / 2,
+                            y: (BOARD_H - h) / 2,
+                            w: w,
+                            h: h
+                        });
+                        layerCounter++;
+                        selectedIndex = objects.length - 1;
+                        pushHistorySnapshot(before);
+                        updateLayerList();
+                        render();
+                    };
+                    img.src = url;
+                    break;
+                }
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            const activeTag = document.activeElement?.tagName;
+            const isTypingTarget = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+            const isTextEditorOpen = !textEditorModal.classList.contains('hidden');
+            const isCanvasContextMenuOpen = !canvasContextMenu.classList.contains('hidden');
+            const isUndoShortcut = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyZ';
+            const isRedoShortcut = (e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || (e.shiftKey && e.code === 'KeyZ'));
+
+            if (!isTypingTarget && !isTextEditorOpen && isUndoShortcut) {
+                e.preventDefault();
+                undo();
+                return;
+            }
+
+            if (!isTypingTarget && !isTextEditorOpen && isRedoShortcut) {
+                e.preventDefault();
+                redo();
+                return;
+            }
+
+            if (!isTypingTarget && e.code === 'Escape') {
+                if (isCanvasContextMenuOpen) {
+                    hideCanvasContextMenu();
+                    return;
+                }
+                if (!textEditorModal.classList.contains('hidden')) {
+                    closeTextEditorModal();
+                    return;
+                }
+                if (isTextMode || isCreatingText) {
+                    setTextMode(false);
+                    render();
+                    return;
+                }
+            }
+
+            if (!isTypingTarget && e.code === 'KeyT') {
+                e.preventDefault();
+                setTextMode(!isTextMode);
+                return;
+            }
+
+            if (e.code === 'Space') {
+                isSpacePressed = true;
+                canvas.classList.add('grab');
+                e.preventDefault();
+            }
+            if ((e.code === 'Delete' || e.code === 'Backspace') && selectedIndex !== -1) {
+                if(!isTypingTarget) {
+                    deleteLayer(selectedIndex);
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                isSpacePressed = false;
+                isPanning = false;
+                canvas.classList.remove('grab', 'grabbing');
+            }
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const z = Math.exp(-e.deltaY * 0.002);
+            const zoomBefore = view.zoom;
+            view.zoom *= z;
+            view.zoom = Math.max(0.05, Math.min(view.zoom, 10));
+            
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            view.x = mx - (mx - view.x) * (view.zoom / zoomBefore);
+            view.y = my - (my - view.y) * (view.zoom / zoomBefore);
+
+            render();
+        }, { passive: false });
+
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            if (isPanning || isDragging || isResizing || isCreatingText) return;
+            showCanvasContextMenu(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            hideCanvasContextMenu();
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            if (isSpacePressed || e.button === 1) {
+                isPanning = true;
+                panStart = { x: mx - view.x, y: my - view.y };
+                canvas.classList.add('grabbing');
+                return;
+            }
+
+            const wpos = screenToWorld(mx, my);
+
+            if (isTextMode) {
+                if (wpos.x >= 0 && wpos.x <= BOARD_W && wpos.y >= 0 && wpos.y <= BOARD_H) {
+                    isCreatingText = true;
+                    textCreateStart = { x: clamp(wpos.x, 0, BOARD_W), y: clamp(wpos.y, 0, BOARD_H) };
+                    textCreateRect = { x: textCreateStart.x, y: textCreateStart.y, w: 0, h: 0 };
+                    selectedIndex = -1;
+                    updateLayerList();
+                    render();
+                }
+                return;
+            }
+
+            const sel = getSelected();
+            const hs = (HANDLE_SIZE * 1.5) / view.zoom; 
+
+            if (sel) {
+                const handles = {
+                    tl: { x: sel.x, y: sel.y },
+                    tr: { x: sel.x + sel.w, y: sel.y },
+                    bl: { x: sel.x, y: sel.y + sel.h },
+                    br: { x: sel.x + sel.w, y: sel.y + sel.h }
+                };
+
+                for (let key in handles) {
+                    const h = handles[key];
+                    if (Math.abs(wpos.x - h.x) <= hs && Math.abs(wpos.y - h.y) <= hs) {
+                        isResizing = true;
+                        resizeHandle = key;
+                        actionStart = { x: wpos.x, y: wpos.y };
+                        origObj = { x: sel.x, y: sel.y, w: sel.w, h: sel.h };
+                        transformStartSnapshot = captureState();
+                        return;
+                    }
+                }
+            }
+
+            let clickedIdx = -1;
+            
+            if (wpos.x >= 0 && wpos.x <= BOARD_W && wpos.y >= 0 && wpos.y <= BOARD_H) {
+                for (let i = objects.length - 1; i >= 0; i--) {
+                    const obj = objects[i];
+                    if (wpos.x >= obj.x && wpos.x <= obj.x + obj.w &&
+                        wpos.y >= obj.y && wpos.y <= obj.y + obj.h) {
+                        clickedIdx = i;
+                        break;
+                    }
+                }
+            }
+
+            if (selectedIndex !== clickedIdx) {
+                selectedIndex = clickedIdx;
+                updateLayerList();
+            }
+            
+            if (selectedIndex !== -1) {
+                isDragging = true;
+                actionStart = { x: wpos.x, y: wpos.y };
+                origObj = { x: objects[selectedIndex].x, y: objects[selectedIndex].y };
+                transformStartSnapshot = captureState();
+            }
+            render();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            if (isPanning) {
+                view.x = mx - panStart.x;
+                view.y = my - panStart.y;
+                render();
+                return;
+            }
+
+            const wpos = screenToWorld(mx, my);
+
+            if (isCreatingText) {
+                const current = { x: clamp(wpos.x, 0, BOARD_W), y: clamp(wpos.y, 0, BOARD_H) };
+                textCreateRect = normalizeRect(textCreateStart, current);
+                render();
+                return;
+            }
+
+            if (isDragging && selectedIndex !== -1) {
+                const dx = wpos.x - actionStart.x;
+                const dy = wpos.y - actionStart.y;
+                objects[selectedIndex].x = origObj.x + dx;
+                objects[selectedIndex].y = origObj.y + dy;
+                render();
+                return;
+            }
+
+            if (isResizing && selectedIndex !== -1) {
+                const sel = objects[selectedIndex];
+                const dx = wpos.x - actionStart.x;
+                const dy = wpos.y - actionStart.y;
+                const minSize = 10;
+
+                let nw = origObj.w;
+                let nh = origObj.h;
+                let nx = origObj.x;
+                let ny = origObj.y;
+
+                if (resizeHandle === 'br') {
+                    nw = origObj.w + dx;
+                    nh = origObj.h + dy;
+                } else if (resizeHandle === 'bl') {
+                    nw = origObj.w - dx;
+                    nh = origObj.h + dy;
+                    nx = origObj.x + dx;
+                } else if (resizeHandle === 'tr') {
+                    nw = origObj.w + dx;
+                    nh = origObj.h - dy;
+                    ny = origObj.y + dy;
+                } else if (resizeHandle === 'tl') {
+                    nw = origObj.w - dx;
+                    nh = origObj.h - dy;
+                    nx = origObj.x + dx;
+                    ny = origObj.y + dy;
+                }
+
+                if (e.shiftKey) {
+                    const ratio = origObj.w / origObj.h;
+                    if (nw / nh > ratio) nw = nh * ratio;
+                    else nh = nw / ratio;
+                    
+                    if (resizeHandle === 'bl') nx = origObj.x + (origObj.w - nw);
+                    if (resizeHandle === 'tr') ny = origObj.y + (origObj.h - nh);
+                    if (resizeHandle === 'tl') {
+                        nx = origObj.x + (origObj.w - nw);
+                        ny = origObj.y + (origObj.h - nh);
+                    }
+                }
+
+                if (nw < minSize) {
+                    if (resizeHandle === 'bl' || resizeHandle === 'tl') nx -= minSize - nw;
+                    nw = minSize;
+                }
+                if (nh < minSize) {
+                    if (resizeHandle === 'tr' || resizeHandle === 'tl') ny -= minSize - nh;
+                    nh = minSize;
+                }
+
+                sel.x = nx;
+                sel.y = ny;
+                sel.w = nw;
+                sel.h = nh;
+                
+                if (document.activeElement === canvas) {
+                    const itemSubtitle = layerList.children[objects.length - 1 - selectedIndex]?.querySelector('.text-\\[9px\\]');
+                    if(itemSubtitle) itemSubtitle.innerText = `${Math.round(nw)} x ${Math.round(nh)}`;
+                }
+
+                render();
+                return;
+            }
+
+            if (!isSpacePressed) {
+                let cursor = isTextMode ? 'crosshair' : 'default';
+                const sel = getSelected();
+                const hs = (HANDLE_SIZE * 1.5) / view.zoom;
+                
+                if (!isTextMode && sel) {
+                    const handles = {
+                        tl: { x: sel.x, y: sel.y, c: 'nwse-resize' },
+                        tr: { x: sel.x + sel.w, y: sel.y, c: 'nesw-resize' },
+                        bl: { x: sel.x, y: sel.y + sel.h, c: 'nesw-resize' },
+                        br: { x: sel.x + sel.w, y: sel.y + sel.h, c: 'nwse-resize' }
+                    };
+                    for (let key in handles) {
+                        const h = handles[key];
+                        if (Math.abs(wpos.x - h.x) <= hs && Math.abs(wpos.y - h.y) <= hs) {
+                            cursor = h.c;
+                            break;
+                        }
+                    }
+                }
+                
+                canvas.className = '';
+                canvas.style.cursor = cursor;
+                if (cursor !== 'default' && cursor !== 'crosshair') {
+                    canvas.classList.add(cursor);
+                    canvas.style.cursor = '';
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            const wasTransforming = isDragging || isResizing;
+            isPanning = false;
+            isDragging = false;
+            if (isResizing) {
+                isResizing = false;
+                updateLayerList(); 
+            }
+            if (wasTransforming) {
+                pushHistorySnapshot(transformStartSnapshot);
+                transformStartSnapshot = null;
+            }
+
+            if (isCreatingText) {
+                const finalRect = textCreateRect;
+                isCreatingText = false;
+                textCreateRect = null;
+                setTextMode(false);
+                if (finalRect && finalRect.w >= 10 && finalRect.h >= 10) {
+                    openTextEditorForCreate({ x: finalRect.x, y: finalRect.y, w: finalRect.w, h: finalRect.h });
+                }
+            }
+
+            if (isSpacePressed) {
+                canvas.classList.remove('grabbing');
+                canvas.classList.add('grab');
+            }
+        });
+
+        btnAddText.addEventListener('click', () => {
+            setTextMode(!isTextMode);
+        });
+
+        teTextInput.addEventListener('input', syncDraftFromTextEditorForm);
+        teFontFamily.addEventListener('change', syncDraftFromTextEditorForm);
+        teColorInput.addEventListener('input', syncDraftFromTextEditorForm);
+        teFontWeight.addEventListener('change', syncDraftFromTextEditorForm);
+        teTextAlign.addEventListener('change', syncDraftFromTextEditorForm);
+        teLetterSpacing.addEventListener('input', syncDraftFromTextEditorForm);
+        teLineHeight.addEventListener('input', syncDraftFromTextEditorForm);
+        teStrokeWidth.addEventListener('input', syncDraftFromTextEditorForm);
+        teStrokeColor.addEventListener('input', syncDraftFromTextEditorForm);
+
+        teBtnBold.addEventListener('click', () => {
+            if (!textEditorState?.draft) return;
+            textEditorState.draft.fontWeight = String(textEditorState.draft.fontWeight) === '400' ? '900' : '400';
+            teFontWeight.value = textEditorState.draft.fontWeight;
+            syncDraftFromTextEditorForm();
+        });
+
+        teBtnItalic.addEventListener('click', () => {
+            if (!textEditorState?.draft) return;
+            textEditorState.draft.fontStyle = textEditorState.draft.fontStyle === 'italic' ? 'normal' : 'italic';
+            syncDraftFromTextEditorForm();
+        });
+
+        teBtnUnderline.addEventListener('click', () => {
+            if (!textEditorState?.draft) return;
+            textEditorState.draft.underline = !textEditorState.draft.underline;
+            syncDraftFromTextEditorForm();
+        });
+
+        teBtnClose.addEventListener('click', closeTextEditorModal);
+        teBtnCancel.addEventListener('click', closeTextEditorModal);
+        teBtnApply.addEventListener('click', applyTextEditorChanges);
+        textEditorModal.addEventListener('mousedown', (e) => {
+            if (e.target === textEditorModal) closeTextEditorModal();
+        });
+
+        btnClear.addEventListener('click', () => {
+            if(confirm('Are you sure you want to clear all layers?')) {
+                const before = captureState();
+                objects = [];
+                selectedIndex = -1;
+                layerCounter = 1;
+                pushHistorySnapshot(before);
+                updateLayerList();
+                render();
+            }
+        });
+
+        btnDegrade.addEventListener('click', () => {
+            if (objects.length === 0) return;
+            const before = captureState();
+
+            const btnIcon = btnDegrade.querySelector('i');
+            btnIcon.className = 'fas fa-spinner fa-spin';
+            btnDegrade.disabled = true;
+
+            setTimeout(() => {
+                const q = parseFloat(qualitySlider.value);
+                const s = parseFloat(scaleSlider.value);
+                
+                const w = Math.max(1, Math.floor(BOARD_W * s));
+                const h = Math.max(1, Math.floor(BOARD_H * s));
+                
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = BOARD_W;
+                tempCanvas.height = BOARD_H;
+                const tCtx = tempCanvas.getContext('2d', { alpha: false });
+                
+                tCtx.fillStyle = '#ffffff';
+                tCtx.fillRect(0, 0, BOARD_W, BOARD_H);
+                for (let i = 0; i < objects.length; i++) {
+                    drawObject(tCtx, objects[i]);
+                }
+                
+                const smallCanvas = document.createElement('canvas');
+                smallCanvas.width = w;
+                smallCanvas.height = h;
+                const sCtx = smallCanvas.getContext('2d', { alpha: false });
+                sCtx.drawImage(tempCanvas, 0, 0, w, h);
+                
+                const dataUrl = smallCanvas.toDataURL('image/jpeg', q);
+                
+                const smallImg = new Image();
+                smallImg.onload = () => {
+                    const finalCanvas = document.createElement('canvas');
+                    finalCanvas.width = BOARD_W;
+                    finalCanvas.height = BOARD_H;
+                    const fCtx = finalCanvas.getContext('2d', { alpha: false });
+                    
+                    fCtx.imageSmoothingEnabled = false;
+                    fCtx.drawImage(smallImg, 0, 0, BOARD_W, BOARD_H);
+                    
+                    const finalImg = new Image();
+                    finalImg.onload = () => {
+                        layerCounter = 1;
+                        objects = [{
+                            id: layerCounter,
+                            type: 'image',
+                            name: `Degraded Base`,
+                            img: finalImg,
+                            x: 0, y: 0,
+                            w: BOARD_W, h: BOARD_H
+                        }];
+                        layerCounter++;
+                        selectedIndex = 0;
+                        pushHistorySnapshot(before);
+                        updateLayerList();
+                        render();
+                        
+                        btnIcon.className = 'fas fa-bolt';
+                        btnDegrade.disabled = false;
+                    };
+                    finalImg.src = finalCanvas.toDataURL('image/jpeg', 1.0);
+                };
+                smallImg.src = dataUrl;
+            }, 50); 
+        });
+
+        btnUndo.addEventListener('click', undo);
+        btnRedo.addEventListener('click', redo);
+        ctxCopyImage.addEventListener('click', copyRenderedImageToClipboard);
+
+        window.addEventListener('mousedown', (e) => {
+            if (!canvasContextMenu.classList.contains('hidden') && !canvasContextMenu.contains(e.target)) {
+                hideCanvasContextMenu();
+            }
+        });
+
+        window.addEventListener('resize', hideCanvasContextMenu);
+        window.addEventListener('scroll', hideCanvasContextMenu, true);
+
+        btnExport.addEventListener('click', () => {
+            const tempCanvas = renderBoardToCanvas();
+            const link = document.createElement('a');
+            link.download = `kuso-kora-${Date.now()}.jpg`;
+            link.href = tempCanvas.toDataURL('image/jpeg', 0.95);
+            link.click();
+        });
+
+
+        // --- Chroma Key Logic ---
+        let targetLayerIndex = -1;
+        let originalImageData = null;
+        
+        const chromaModal = document.getElementById('chromaModal');
+        const chromaModalContent = document.getElementById('chromaModalContent');
+        const ckCanvas = document.getElementById('ckCanvas');
+        const ckCtx = ckCanvas.getContext('2d', { willReadFrequently: true });
+        
+        const ckColorInput = document.getElementById('ckColorInput');
+        const ckColorHex = document.getElementById('ckColorHex');
+        const ckThresholdSlider = document.getElementById('ckThresholdSlider');
+        const ckThresholdVal = document.getElementById('ckThresholdVal');
+        
+        const ckBtnClose = document.getElementById('ckBtnClose');
+        const ckBtnCancel = document.getElementById('ckBtnCancel');
+        const ckBtnApply = document.getElementById('ckBtnApply');
+
+        function openChromaModal(index) {
+            if (!objects[index] || objects[index].type === 'text') return;
+            targetLayerIndex = index;
+            const img = objects[index].img;
+            
+            chromaModal.classList.remove('opacity-0', 'pointer-events-none', 'hidden');
+            chromaModal.classList.add('flex');
+            
+            setTimeout(() => {
+                chromaModal.classList.remove('opacity-0');
+                chromaModalContent.classList.remove('scale-95');
+                chromaModalContent.classList.add('scale-100');
+            }, 10);
+
+            ckCanvas.width = img.width;
+            ckCanvas.height = img.height;
+            ckCtx.drawImage(img, 0, 0);
+            originalImageData = ckCtx.getImageData(0, 0, ckCanvas.width, ckCanvas.height);
+            
+            applyChromaKeyPreview();
+        }
+
+        function closeChromaModal() {
+            chromaModal.classList.add('opacity-0');
+            chromaModalContent.classList.remove('scale-100');
+            chromaModalContent.classList.add('scale-95');
+            
+            setTimeout(() => {
+                chromaModal.classList.add('hidden', 'pointer-events-none');
+                chromaModal.classList.remove('flex');
+                originalImageData = null;
+            }, 200);
+        }
+
+        function rgbToHex(r, g, b) {
+            return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toUpperCase();
+        }
+
+        function applyChromaKeyPreview() {
+            if (!originalImageData) return;
+            
+            const w = ckCanvas.width;
+            const h = ckCanvas.height;
+            const newImageData = ckCtx.createImageData(w, h);
+            const srcData = originalImageData.data;
+            const dstData = newImageData.data;
+            
+            const hex = ckColorInput.value;
+            const rT = parseInt(hex.slice(1, 3), 16);
+            const gT = parseInt(hex.slice(3, 5), 16);
+            const bT = parseInt(hex.slice(5, 7), 16);
+            
+            const threshold = parseInt(ckThresholdSlider.value);
+            
+            for (let i = 0; i < srcData.length; i += 4) {
+                const r = srcData[i];
+                const g = srcData[i+1];
+                const b = srcData[i+2];
+                const a = srcData[i+3];
+                
+                if (a === 0) {
+                    dstData[i] = r; dstData[i+1] = g; dstData[i+2] = b; dstData[i+3] = 0;
+                    continue;
+                }
+
+                const dist = Math.sqrt((r - rT)**2 + (g - gT)**2 + (b - bT)**2);
+                
+                if (dist <= threshold) {
+                    dstData[i] = r; dstData[i+1] = g; dstData[i+2] = b; dstData[i+3] = 0;
+                } else {
+                    dstData[i] = r; dstData[i+1] = g; dstData[i+2] = b; dstData[i+3] = a;
+                }
+            }
+            
+            ckCtx.putImageData(newImageData, 0, 0);
+        }
+
+        ckColorInput.addEventListener('input', (e) => {
+            ckColorHex.innerText = e.target.value.toUpperCase();
+            applyChromaKeyPreview();
+        });
+
+        ckThresholdSlider.addEventListener('input', (e) => {
+            ckThresholdVal.innerText = e.target.value;
+            applyChromaKeyPreview();
+        });
+
+        ckCanvas.addEventListener('mousedown', (e) => {
+            const rect = ckCanvas.getBoundingClientRect();
+            const scaleX = ckCanvas.width / rect.width;
+            const scaleY = ckCanvas.height / rect.height;
+            
+            const x = Math.floor((e.clientX - rect.left) * scaleX);
+            const y = Math.floor((e.clientY - rect.top) * scaleY);
+            
+            if (x >= 0 && x < ckCanvas.width && y >= 0 && y < ckCanvas.height && originalImageData) {
+                const i = (y * ckCanvas.width + x) * 4;
+                const r = originalImageData.data[i];
+                const g = originalImageData.data[i+1];
+                const b = originalImageData.data[i+2];
+                const a = originalImageData.data[i+3];
+                
+                if (a > 0) {
+                    const hex = rgbToHex(r, g, b);
+                    ckColorInput.value = hex;
+                    ckColorHex.innerText = hex;
+                    applyChromaKeyPreview();
+                }
+            }
+        });
+
+        ckBtnClose.addEventListener('click', closeChromaModal);
+        ckBtnCancel.addEventListener('click', closeChromaModal);
+        
+        chromaModal.addEventListener('mousedown', (e) => {
+            if (e.target === chromaModal) closeChromaModal();
+        });
+
+        ckBtnApply.addEventListener('click', () => {
+            const before = captureState();
+            const btnIcon = ckBtnApply.querySelector('i');
+            btnIcon.className = 'fas fa-spinner fa-spin';
+            
+            setTimeout(() => {
+                const dataUrl = ckCanvas.toDataURL('image/png');
+                const newImg = new Image();
+                newImg.onload = () => {
+                    if (objects[targetLayerIndex]) {
+                        objects[targetLayerIndex].img = newImg;
+                        pushHistorySnapshot(before);
+                        updateLayerList();
+                        render();
+                    }
+                    btnIcon.className = 'fas fa-check';
+                    closeChromaModal();
+                };
+                newImg.src = dataUrl;
+            }, 10);
+        });
+
+        // Initialize Layer List Display
+        updateLayerList();
+        updateHistoryControls();
+
+    </script>
+</body>
+</html>

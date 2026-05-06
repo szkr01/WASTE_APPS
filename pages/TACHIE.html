@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Tachie Viewer</title>
+    <meta name="description" content="シンプルな立ち絵素材ビューアー。ローカルフォルダを読み込んでキャラクターのパーツを組み合わせてプレビューします。">
+    <meta name="page:icon" content="🎨">
+    <meta name="page:color" content="#ffffff">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Inter"', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        /* Custom Scrollbar for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        
+        /* Hide default file input */
+        input[type="file"] {
+            display: none;
+        }
+
+        /* Checkboard pattern for transparent canvas background */
+        .bg-checkboard {
+            background-color: #f8fafc;
+            background-image: 
+                linear-gradient(45deg, #e2e8f0 25%, transparent 25%), 
+                linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #e2e8f0 75%), 
+                linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+    </style>
+</head>
+<body class="bg-white text-slate-900 font-sans antialiased h-dvh w-full overflow-hidden flex flex-col selection:bg-slate-200">
+
+    <!-- Header -->
+    <header class="h-14 border-b border-slate-200 px-4 flex items-center justify-between shrink-0 bg-white z-10">
+        <div class="flex items-center gap-2">
+            <i class="ph ph-paint-brush-broad text-xl text-slate-700"></i>
+            <h1 class="font-semibold tracking-tight text-slate-800">Tachie Viewer</h1>
+        </div>
+        <div class="flex items-center gap-2">
+            <label class="inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 disabled:pointer-events-none disabled:opacity-50 border border-slate-200 bg-white hover:bg-slate-100 hover:text-slate-900 h-9 px-4 py-2 cursor-pointer shadow-sm">
+                <i class="ph ph-folder-open text-lg"></i>
+                フォルダを開く
+                <!-- webkitdirectory allows folder selection -->
+                <input type="file" id="folderInput" webkitdirectory directory multiple>
+            </label>
+            <button id="resetBtn" disabled class="inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 disabled:pointer-events-none disabled:opacity-50 bg-slate-900 text-white hover:bg-slate-900/90 h-9 px-4 py-2 shadow-sm">
+                <i class="ph ph-arrow-counter-clockwise text-lg"></i>
+                リセット
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar (Controls) -->
+        <aside class="w-80 border-r border-slate-200 bg-slate-50 flex flex-col shrink-0 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)] relative">
+            
+            <!-- Empty State Overlay -->
+            <div id="sidebarEmptyState" class="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center p-6 text-center z-20">
+                <div class="size-12 rounded-full bg-slate-100 flex items-center justify-center mb-4 border border-slate-200">
+                    <i class="ph ph-files text-2xl text-slate-400"></i>
+                </div>
+                <h2 class="text-sm font-semibold text-slate-900 mb-1 text-balance">フォルダが選択されていません</h2>
+                <p class="text-xs text-slate-500 text-pretty">
+                    右上の「フォルダを開く」から、<br>
+                    <code class="bg-slate-100 px-1 py-0.5 rounded text-slate-600 mt-1 inline-block">キャラ名/パーツ/画像</code><br>
+                    の構造を持つフォルダを選択してください。
+                </p>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-6" id="sidebarContent">
+                
+                <!-- Character Selection -->
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Character</label>
+                    <div class="relative">
+                        <select id="characterSelect" class="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                            <option value="">キャラクターを選択...</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                            <i class="ph ph-caret-down"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Layer Ordering -->
+                <div class="space-y-2" id="layerControlSection" style="display: none;">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Layer Order (Bottom to Top)</label>
+                    </div>
+                    <ul id="layerList" class="bg-white border border-slate-200 rounded-md shadow-sm divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                        <!-- Layer items injected here -->
+                    </ul>
+                </div>
+
+                <!-- Parts Selection -->
+                <div class="space-y-4" id="partsContainer">
+                    <!-- Parts groups injected here -->
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- Canvas Area -->
+        <main class="flex-1 bg-slate-100 relative overflow-hidden flex items-center justify-center p-8">
+            
+            <!-- Canvas Container -->
+            <div id="canvasContainer" class="relative w-full h-full max-w-[800px] max-h-[800px] bg-checkboard border border-slate-200 shadow-sm rounded-lg overflow-hidden transition-transform duration-200 ease-out flex items-center justify-center">
+                <!-- Images will be absolutely positioned here -->
+                <div id="renderArea" class="relative w-full h-full pointer-events-none">
+                    <!-- Example empty state text inside canvas if needed, handled by JS -->
+                </div>
+            </div>
+
+            <!-- Zoom Controls (Visual only for layout, fixed size container is better for tachie usually, but we use object-contain) -->
+            <div class="absolute bottom-6 right-6 flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm p-1">
+                <button onclick="document.getElementById('canvasContainer').classList.toggle('bg-checkboard')" class="p-2 rounded hover:bg-slate-100 text-slate-600 transition-colors" aria-label="Toggle Background">
+                    <i class="ph ph-squares-four text-lg"></i>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // --- State Management ---
+        const state = {
+            db: {}, // { [charName]: { [partName]: [ { name, url, file } ] } }
+            activeCharacter: null,
+            activeParts: {}, // { [partName]: url }
+            layerOrder: [], // [partName1, partName2] - index 0 is bottom
+            objectUrls: [] // For memory cleanup
+        };
+
+        // --- DOM Elements ---
+        const els = {
+            folderInput: document.getElementById('folderInput'),
+            resetBtn: document.getElementById('resetBtn'),
+            characterSelect: document.getElementById('characterSelect'),
+            partsContainer: document.getElementById('partsContainer'),
+            renderArea: document.getElementById('renderArea'),
+            sidebarEmptyState: document.getElementById('sidebarEmptyState'),
+            layerControlSection: document.getElementById('layerControlSection'),
+            layerList: document.getElementById('layerList')
+        };
+
+        // --- Utility Functions ---
+        
+        // Clean up previously generated blob URLs to prevent memory leaks
+        function cleanupUrls() {
+            state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+            state.objectUrls = [];
+        }
+
+        // Basic HTML escaping
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag])
+            );
+        }
+
+        // --- Event Listeners ---
+
+        els.folderInput.addEventListener('change', handleFolderSelect);
+        els.characterSelect.addEventListener('change', handleCharacterSelect);
+        els.resetBtn.addEventListener('click', resetActiveParts);
+
+        // --- Core Logic ---
+
+        async function handleFolderSelect(event) {
+            const files = Array.from(event.target.files);
+            if (files.length === 0) return;
+
+            // Reset state
+            cleanupUrls();
+            state.db = {};
+            state.activeCharacter = null;
+            state.activeParts = {};
+            state.layerOrder = [];
+            
+            els.partsContainer.innerHTML = '';
+            els.renderArea.innerHTML = '';
+            els.characterSelect.innerHTML = '<option value="">キャラクターを選択...</option>';
+            els.sidebarEmptyState.style.display = 'none';
+
+            let hasValidData = false;
+
+            for (const file of files) {
+                // Only process images
+                if (!file.type.startsWith('image/')) continue;
+
+                const pathParts = file.webkitRelativePath.split('/');
+                
+                // Expecting at least: RootFolder / CharacterName / PartName / Image.png
+                // We extract based on the end of the path
+                if (pathParts.length < 3) continue;
+
+                const fileName = pathParts.pop();
+                const partName = pathParts.pop();
+                const charName = pathParts.pop();
+
+                if (!state.db[charName]) {
+                    state.db[charName] = {};
+                }
+                if (!state.db[charName][partName]) {
+                    state.db[charName][partName] = [];
+                }
+
+                const url = URL.createObjectURL(file);
+                state.objectUrls.push(url);
+
+                state.db[charName][partName].push({
+                    name: fileName,
+                    url: url,
+                    file: file
+                });
+                
+                hasValidData = true;
+            }
+
+            if (!hasValidData) {
+                alert("指定されたフォルダ内に有効な構造（キャラ名/パーツ名/画像ファイル）が見つかりませんでした。");
+                els.sidebarEmptyState.style.display = 'flex';
+                return;
+            }
+
+            // Populate Character Select
+            const chars = Object.keys(state.db).sort();
+            chars.forEach(char => {
+                const option = document.createElement('option');
+                option.value = char;
+                option.textContent = char;
+                els.characterSelect.appendChild(option);
+            });
+
+            els.resetBtn.disabled = false;
+            els.characterSelect.disabled = false;
+
+            // Auto-select first character if only one exists, or just leave it to user
+            if (chars.length === 1) {
+                els.characterSelect.value = chars[0];
+                handleCharacterSelect({ target: els.characterSelect });
+            }
+        }
+
+        function handleCharacterSelect(event) {
+            const charName = event.target.value;
+            state.activeCharacter = charName;
+            state.activeParts = {};
+            
+            if (!charName) {
+                els.partsContainer.innerHTML = '';
+                els.layerControlSection.style.display = 'none';
+                renderCanvas();
+                return;
+            }
+
+            // Initialize layer order based on parts available for this character
+            // Alphabetical by default, reverse it so standard naming might work better visually 
+            // (e.g. 'Hair' on top of 'Body') - this is arbitrary but a starting point.
+            state.layerOrder = Object.keys(state.db[charName]).sort();
+            
+            renderPartsUI();
+            renderLayerControlUI();
+            renderCanvas();
+        }
+
+        function renderPartsUI() {
+            if (!state.activeCharacter) return;
+            const partsData = state.db[state.activeCharacter];
+            els.partsContainer.innerHTML = '';
+
+            // Render groups based on current layer order (top to bottom for UI)
+            const reversedOrderForUI = [...state.layerOrder].reverse();
+
+            reversedOrderForUI.forEach(partName => {
+                const items = partsData[partName];
+                // Sort items alphabetically
+                items.sort((a, b) => a.name.localeCompare(b.name));
+
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'bg-white border border-slate-200 rounded-md overflow-hidden shadow-sm';
+                
+                // Group Header
+                const header = document.createElement('div');
+                header.className = 'px-3 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center';
+                header.innerHTML = `
+                    <span class="text-sm font-semibold text-slate-800">${escapeHTML(partName)}</span>
+                    <button class="text-xs text-slate-500 hover:text-slate-900 transition-colors" data-action="clear-part" data-part="${escapeHTML(partName)}">クリア</button>
+                `;
+                groupDiv.appendChild(header);
+
+                // Group Items List
+                const list = document.createElement('ul');
+                list.className = 'max-h-60 overflow-y-auto p-1 space-y-0.5';
+                
+                items.forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = `
+                        flex items-center gap-2 p-2 rounded cursor-pointer text-sm transition-colors
+                        ${state.activeParts[partName] === item.url ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}
+                    `;
+                    li.onclick = () => togglePart(partName, item.url);
+                    
+                    li.innerHTML = `
+                        <div class="size-6 shrink-0 rounded bg-slate-200 overflow-hidden border border-slate-300">
+                            <img src="${item.url}" class="w-full h-full object-cover" loading="lazy">
+                        </div>
+                        <span class="truncate" title="${escapeHTML(item.name)}">${escapeHTML(item.name.replace(/\.[^/.]+$/, ""))}</span>
+                        ${state.activeParts[partName] === item.url ? '<i class="ph ph-check ml-auto text-slate-900"></i>' : ''}
+                    `;
+                    list.appendChild(li);
+                });
+
+                groupDiv.appendChild(list);
+                els.partsContainer.appendChild(groupDiv);
+            });
+
+            // Bind clear buttons
+            els.partsContainer.querySelectorAll('[data-action="clear-part"]').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const part = e.target.getAttribute('data-part');
+                    delete state.activeParts[part];
+                    renderPartsUI();
+                    renderCanvas();
+                };
+            });
+        }
+
+        function togglePart(partName, url) {
+            if (state.activeParts[partName] === url) {
+                // Deselect if clicking the already selected item
+                delete state.activeParts[partName];
+            } else {
+                state.activeParts[partName] = url;
+            }
+            renderPartsUI();
+            renderCanvas();
+        }
+
+        function resetActiveParts() {
+            state.activeParts = {};
+            renderPartsUI();
+            renderCanvas();
+        }
+
+        // --- Layer Ordering Logic ---
+
+        function renderLayerControlUI() {
+            if (state.layerOrder.length <= 1) {
+                els.layerControlSection.style.display = 'none';
+                return;
+            }
+            els.layerControlSection.style.display = 'block';
+            els.layerList.innerHTML = '';
+
+            // Render from top to bottom index visually
+            const visualOrder = [...state.layerOrder].reverse();
+
+            visualOrder.forEach((partName, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center justify-between p-2 text-sm text-slate-700 bg-white hover:bg-slate-50';
+                
+                const actualIndex = state.layerOrder.indexOf(partName);
+
+                li.innerHTML = `
+                    <span class="truncate pr-2">${escapeHTML(partName)}</span>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button class="p-1 text-slate-400 hover:text-slate-900 hover:bg-slate-200 rounded disabled:opacity-30 disabled:hover:bg-transparent" 
+                            ${actualIndex === state.layerOrder.length - 1 ? 'disabled' : ''}
+                            onclick="moveLayer('${escapeHTML(partName)}', 1)">
+                            <i class="ph ph-caret-up"></i>
+                        </button>
+                        <button class="p-1 text-slate-400 hover:text-slate-900 hover:bg-slate-200 rounded disabled:opacity-30 disabled:hover:bg-transparent" 
+                            ${actualIndex === 0 ? 'disabled' : ''}
+                            onclick="moveLayer('${escapeHTML(partName)}', -1)">
+                            <i class="ph ph-caret-down"></i>
+                        </button>
+                    </div>
+                `;
+                els.layerList.appendChild(li);
+            });
+        }
+
+        window.moveLayer = function(partName, direction) {
+            const currentIndex = state.layerOrder.indexOf(partName);
+            const newIndex = currentIndex + direction;
+
+            if (newIndex >= 0 && newIndex < state.layerOrder.length) {
+                // Swap elements
+                const temp = state.layerOrder[currentIndex];
+                state.layerOrder[currentIndex] = state.layerOrder[newIndex];
+                state.layerOrder[newIndex] = temp;
+                
+                renderLayerControlUI();
+                renderPartsUI(); // Re-render parts list to match new visual order
+                renderCanvas();
+            }
+        };
+
+        // --- Rendering Logic ---
+
+        function renderCanvas() {
+            els.renderArea.innerHTML = '';
+            
+            if (!state.activeCharacter || Object.keys(state.activeParts).length === 0) {
+                return;
+            }
+
+            // Render based on layerOrder array (index 0 is bottom, painted first)
+            state.layerOrder.forEach((partName, index) => {
+                const url = state.activeParts[partName];
+                if (url) {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    // object-contain ensures the image fits within the container without distortion
+                    // absolute inset-0 stacks them perfectly if they have the same original canvas size
+                    img.className = 'absolute inset-0 w-full h-full object-contain drop-shadow-sm transition-opacity duration-200';
+                    img.style.zIndex = index;
+                    
+                    // Simple entrance micro-animation
+                    img.style.opacity = '0';
+                    img.onload = () => { img.style.opacity = '1'; };
+
+                    els.renderArea.appendChild(img);
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>

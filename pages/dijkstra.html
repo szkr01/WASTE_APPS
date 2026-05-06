@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- REQUIRED META DATA -->
+    <title>Interactive Dijkstra Viz: Shortest Path Tree</title>
+    <meta name="description" content="An interactive tool to visualize Dijkstra's algorithm, edit graph weights/topology, and see path cost calculations in real-time.">
+    <meta name="page:icon" content="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/solid.min.js">
+    <meta name="page:color" content="#0f172a">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* SVG & Interaction */
+        svg {
+            width: 100%;
+            height: 100%;
+            user-select: none;
+            cursor: grab;
+        }
+
+        svg:active {
+            cursor: grabbing;
+        }
+
+        /* Node Animation Fix: Center Scaling */
+        .node-base {
+            transition: all 0.3s var(--ease-spring);
+            transform-box: fill-box;
+            transform-origin: center;
+            cursor: pointer;
+        }
+
+        .node-base:hover {
+            filter: brightness(0.95);
+        }
+
+        /* States */
+        .state-wall {
+            fill: #334155 !important; /* slate-700 */
+            stroke: #1e293b !important; /* slate-800 */
+        }
+        
+        .state-visiting {
+            fill: #fef08a !important; /* yellow-200 */
+            stroke: #eab308 !important; /* yellow-500 */
+            transform: scale(1.15);
+        }
+
+        .state-settled {
+            fill: #e2e8f0 !important; /* slate-200 */
+            stroke: #64748b !important; /* slate-500 */
+        }
+
+        .state-start {
+            fill: #f43f5e !important; /* rose-500 */
+            stroke: #be123c !important; /* rose-700 */
+            fill-opacity: 1 !important;
+        }
+
+        .state-start text {
+            fill: white !important;
+        }
+
+        /* Edges */
+        .edge-line {
+            transition: stroke 0.3s, stroke-width 0.3s;
+            cursor: pointer;
+        }
+        .edge-line:hover {
+            stroke: #3b82f6;
+            stroke-width: 6px;
+        }
+
+        .edge-tree {
+            stroke: #3b82f6 !important; /* blue-500 */
+            stroke-width: 5px !important;
+            stroke-linecap: round;
+            opacity: 1;
+        }
+
+        /* Math Bubble */
+        .math-bubble {
+            position: absolute;
+            background: white;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            padding: 8px 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 14px;
+            color: #1e293b;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.2s, transform 0.2s;
+            white-space: nowrap;
+        }
+        .math-bubble.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="h-dvh flex flex-col md:flex-row overflow-hidden text-slate-900">
+
+    <!-- Sidebar -->
+    <aside class="w-full md:w-96 bg-white border-r border-slate-200 flex flex-col shadow-lg z-20">
+        <div class="p-6 border-b border-slate-100">
+            <h1 class="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+                <i class="ph-fill ph-tree-structure text-blue-600"></i>
+                Dijkstra Viz
+            </h1>
+            <p class="text-sm text-slate-500 mt-2 text-pretty">
+                重み付きグラフの最短経路木を作成します。<br>
+                <span class="text-blue-600 font-medium">コストの和 (Current + Weight)</span> を可視化。
+            </p>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-8">
+            
+            <!-- Mode Toggle -->
+            <div class="bg-slate-100 p-1 rounded-lg flex text-sm font-medium">
+                <button id="modeEdit" class="flex-1 py-2 rounded-md shadow-sm bg-white text-slate-900 transition-all flex justify-center items-center gap-2">
+                    <i class="ph ph-pencil-simple"></i> 編集モード
+                </button>
+                <button id="modeRun" class="flex-1 py-2 rounded-md text-slate-500 hover:text-slate-700 transition-all flex justify-center items-center gap-2">
+                    <i class="ph ph-play"></i> 実行モード
+                </button>
+            </div>
+
+            <!-- Edit Controls -->
+            <div id="panelEdit" class="space-y-6">
+                <div class="p-4 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800 space-y-2">
+                    <p class="font-semibold flex items-center gap-2"><i class="ph-fill ph-info"></i> 編集操作:</p>
+                    <ul class="list-disc list-inside space-y-1 ml-1 opacity-90">
+                        <li><strong>頂点クリック:</strong> 壁 (Wall) の切替</li>
+                        <li><strong>頂点右クリック:</strong> スタート地点の設定</li>
+                        <li><strong>エッジクリック:</strong> 重みを変更 (+1)</li>
+                    </ul>
+                </div>
+
+                <div class="space-y-3">
+                    <label class="text-sm font-bold text-slate-700">グリッドサイズ</label>
+                    <input type="range" id="gridSize" min="3" max="6" value="4" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                    <div class="flex justify-between text-xs text-slate-500 font-mono">
+                        <span>3x3</span>
+                        <span id="gridSizeVal">4x4</span>
+                        <span>6x6</span>
+                    </div>
+                </div>
+
+                <button id="btnResetWeights" class="w-full py-2.5 border border-slate-300 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-2">
+                    <i class="ph ph-shuffle"></i> 重みをランダムリセット
+                </button>
+            </div>
+
+            <!-- Run Controls -->
+            <div id="panelRun" class="hidden space-y-6">
+                <div class="flex gap-2">
+                    <button id="btnStep" class="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-700 font-bold rounded-xl hover:border-slate-300 hover:bg-slate-50 active:scale-95 transition-all flex flex-col items-center justify-center gap-1">
+                        <i class="ph ph-fast-forward text-xl"></i>
+                        <span class="text-xs">1ステップ</span>
+                    </button>
+                    <button id="btnPlay" class="flex-[2] py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 active:scale-95 transition-all flex flex-col items-center justify-center gap-1">
+                        <i class="ph-fill ph-play text-xl"></i>
+                        <span class="text-xs">自動再生</span>
+                    </button>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-sm font-medium text-slate-700 flex justify-between">
+                        再生速度
+                        <span id="speedLabel" class="text-slate-500 text-xs">普通</span>
+                    </label>
+                    <input type="range" id="animSpeed" min="1" max="50" value="10" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                </div>
+
+                <!-- Live Status -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400">Current Calculation</h3>
+                    <div id="calcDisplay" class="font-mono text-sm text-center h-16 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-slate-300">
+                        待機中...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Canvas -->
+    <main class="flex-1 relative bg-slate-100 overflow-hidden flex items-center justify-center">
+        <!-- SVG Container -->
+        <div class="relative w-full h-full max-w-4xl max-h-[90vh] p-8">
+            <svg id="graphSvg" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid meet" class="bg-white rounded-2xl shadow-xl border border-slate-200">
+                <!-- Layers ordered carefully -->
+                <g id="layerEdges"></g>
+                <g id="layerNodes"></g>
+            </svg>
+            
+            <!-- Math Bubble Overlay (Absolute positioned in JS) -->
+            <div id="mathBubble" class="math-bubble">
+                <span class="text-slate-500">10</span> + <span class="text-blue-600">5</span> = <span class="text-emerald-600 font-bold text-lg">15</span>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div id="toast" class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium opacity-0 transition-opacity pointer-events-none">
+            Notification
+        </div>
+    </main>
+
+    <script>
+        // --- Configuration & State ---
+        const CONFIG = {
+            colors: {
+                default: '#f8fafc',
+                wall: '#334155',
+                start: '#f43f5e',
+                strokeDefault: '#94a3b8',
+                strokeHighlight: '#3b82f6',
+                text: '#0f172a'
+            },
+            nodeRadius: 32, // Bigger nodes
+            fontSize: 20 // Bigger font
+        };
+
+        const state = {
+            gridSize: 4,
+            nodes: [], // { id, r, c, x, y, isWall, dist, ... }
+            edges: [], // Adjacency list
+            edgeObjects: {}, // Map "u-v" -> { weight, ... }
+            startNodeId: 0,
+            mode: 'edit', // 'edit' | 'run'
+            isAnimating: false,
+            stepQueue: [], // For step-by-step
+            abortController: null,
+            speed: 10
+        };
+
+        // --- DOM Elements ---
+        const el = {
+            svg: document.getElementById('graphSvg'),
+            lNodes: document.getElementById('layerNodes'),
+            lEdges: document.getElementById('layerEdges'),
+            bubble: document.getElementById('mathBubble'),
+            calcDisplay: document.getElementById('calcDisplay'),
+            toast: document.getElementById('toast'),
+            // Controls
+            gridSize: document.getElementById('gridSize'),
+            gridSizeVal: document.getElementById('gridSizeVal'),
+            btnResetWeights: document.getElementById('btnResetWeights'),
+            modeEdit: document.getElementById('modeEdit'),
+            modeRun: document.getElementById('modeRun'),
+            panelEdit: document.getElementById('panelEdit'),
+            panelRun: document.getElementById('panelRun'),
+            btnPlay: document.getElementById('btnPlay'),
+            btnStep: document.getElementById('btnStep'),
+            speed: document.getElementById('animSpeed')
+        };
+
+        // --- Initialization ---
+        function init() {
+            generateGrid(state.gridSize);
+            render();
+            setupEvents();
+            switchMode('edit');
+        }
+
+        // --- Core Graph Logic ---
+        function generateGrid(n) {
+            state.nodes = [];
+            state.edges = Array.from({length: n*n}, () => []);
+            state.edgeObjects = {};
+            
+            const padding = 80;
+            const size = 800;
+            const spacing = (size - padding * 2) / (n - 1);
+
+            // Create Nodes
+            for(let r=0; r<n; r++) {
+                for(let c=0; c<n; c++) {
+                    const id = r * n + c;
+                    state.nodes.push({
+                        id, r, c,
+                        x: padding + c * spacing,
+                        y: padding + r * spacing,
+                        isWall: false,
+                        dist: Infinity,
+                        parent: null
+                    });
+                }
+            }
+
+            // Create Edges (Grid Neighbor Logic)
+            const directions = [[0,1], [1,0]]; // Right, Down
+            state.nodes.forEach(u => {
+                directions.forEach(([dr, dc]) => {
+                    const nr = u.r + dr;
+                    const nc = u.c + dc;
+                    if(nr < n && nc < n) {
+                        const vId = nr * n + nc;
+                        const w = Math.floor(Math.random() * 9) + 1;
+                        addEdge(u.id, vId, w);
+                    }
+                });
+            });
+
+            // Ensure start node is valid
+            if(state.startNodeId >= n*n) state.startNodeId = 0;
+            state.nodes[state.startNodeId].isWall = false;
+        }
+
+        function addEdge(u, v, w) {
+            const id = [u, v].sort((a,b)=>a-b).join('-');
+            const edgeObj = { id, u, v, w };
+            state.edgeObjects[id] = edgeObj;
+            state.edges[u].push({ to: v, ref: edgeObj });
+            state.edges[v].push({ to: u, ref: edgeObj });
+        }
+
+        // --- Rendering ---
+        function render() {
+            // Use Diffing or just clear/redraw for simplicity given N is small (max 6)
+            el.lNodes.innerHTML = '';
+            el.lEdges.innerHTML = '';
+
+            // Draw Edges
+            Object.values(state.edgeObjects).forEach(e => {
+                const n1 = state.nodes[e.u];
+                const n2 = state.nodes[e.v];
+                
+                const g = createSVG('g', { class: 'group-edge', 'data-id': e.id });
+                
+                // Visible Line
+                const line = createSVG('line', {
+                    x1: n1.x, y1: n1.y, x2: n2.x, y2: n2.y,
+                    class: 'edge-line',
+                    stroke: '#cbd5e1', // slate-300
+                    'stroke-width': 4,
+                    id: `line-${e.id}`
+                });
+                
+                // Weight Box
+                const midX = (n1.x + n2.x) / 2;
+                const midY = (n1.y + n2.y) / 2;
+                
+                const rect = createSVG('rect', {
+                    x: midX - 12, y: midY - 12, width: 24, height: 24,
+                    fill: '#f8fafc', rx: 6,
+                    class: 'cursor-pointer hover:stroke-blue-500' // Interaction helper
+                });
+
+                const text = createSVG('text', {
+                    x: midX, y: midY, dy: '0.35em',
+                    'text-anchor': 'middle',
+                    class: 'font-mono font-bold text-sm fill-slate-500 pointer-events-none select-none',
+                    id: `w-text-${e.id}`
+                });
+                text.textContent = e.w;
+
+                // Interaction Area for Edge (Invisible thick line)
+                const hitArea = createSVG('line', {
+                    x1: n1.x, y1: n1.y, x2: n2.x, y2: n2.y,
+                    stroke: 'transparent', 'stroke-width': 20,
+                    class: 'cursor-pointer'
+                });
+                hitArea.onclick = () => handleEdgeClick(e.id);
+                rect.onclick = () => handleEdgeClick(e.id);
+
+                g.append(line, hitArea, rect, text);
+                el.lEdges.appendChild(g);
+            });
+
+            // Draw Nodes
+            state.nodes.forEach(n => {
+                const g = createSVG('g', { class: 'group-node', 'data-id': n.id });
+                
+                const circle = createSVG('circle', {
+                    cx: n.x, cy: n.y, r: CONFIG.nodeRadius,
+                    class: 'node-base',
+                    fill: '#ffffff', stroke: CONFIG.colors.strokeDefault, 'stroke-width': 3,
+                    id: `node-${n.id}`
+                });
+
+                // Cost Text
+                const text = createSVG('text', {
+                    x: n.x, y: n.y, dy: '0.35em',
+                    'text-anchor': 'middle',
+                    class: 'font-mono font-bold fill-slate-700 pointer-events-none',
+                    'font-size': CONFIG.fontSize,
+                    id: `text-${n.id}`
+                });
+                text.textContent = n.dist === Infinity ? '∞' : n.dist;
+
+                // Events
+                g.onclick = (e) => handleNodeClick(n.id, e);
+                g.oncontextmenu = (e) => { e.preventDefault(); setStartNode(n.id); };
+
+                g.append(circle, text);
+                el.lNodes.appendChild(g);
+                
+                updateNodeVisual(n.id); // Set initial state colors
+            });
+        }
+
+        function createSVG(tag, attrs) {
+            const elem = document.createElementNS("http://www.w3.org/2000/svg", tag);
+            for(let k in attrs) elem.setAttribute(k, attrs[k]);
+            return elem;
+        }
+
+        function updateNodeVisual(id) {
+            const n = state.nodes[id];
+            const circle = document.getElementById(`node-${id}`);
+            const text = document.getElementById(`text-${id}`);
+            
+            // Reset basic classes
+            circle.setAttribute('class', 'node-base');
+            
+            if (n.isWall) {
+                circle.classList.add('state-wall');
+                text.textContent = '';
+                return;
+            }
+
+            if (id === state.startNodeId) {
+                circle.classList.add('state-start');
+                text.textContent = '0';
+                return;
+            }
+
+            // Normal state logic handled during animation, but here resets for Edit Mode
+            if (state.mode === 'edit') {
+                circle.style.fill = '#ffffff';
+                circle.style.stroke = CONFIG.colors.strokeDefault;
+                text.style.fill = CONFIG.colors.text;
+                text.textContent = '∞';
+            }
+        }
+
+        // --- Interaction Handlers ---
+        function handleNodeClick(id, e) {
+            if (state.mode !== 'edit') return;
+            if (id === state.startNodeId) return; // Cannot wall the start
+
+            const node = state.nodes[id];
+            node.isWall = !node.isWall;
+            
+            updateNodeVisual(id);
+            showToast(node.isWall ? "壁を作成しました" : "壁を削除しました");
+        }
+
+        function handleEdgeClick(edgeId) {
+            if (state.mode !== 'edit') return;
+            
+            const edge = state.edgeObjects[edgeId];
+            edge.w = (edge.w % 10) + 1; // Cycle 1-9
+            
+            document.getElementById(`w-text-${edgeId}`).textContent = edge.w;
+            
+            // Visual feedback
+            const line = document.getElementById(`line-${edgeId}`);
+            line.style.stroke = CONFIG.colors.strokeHighlight;
+            setTimeout(() => line.style.stroke = '#cbd5e1', 300);
+        }
+
+        function setStartNode(id) {
+            if (state.mode !== 'edit') return;
+            if (state.nodes[id].isWall) return;
+
+            const oldStart = state.startNodeId;
+            state.startNodeId = id;
+            
+            updateNodeVisual(oldStart);
+            updateNodeVisual(id);
+            showToast("スタート地点を変更しました");
+        }
+
+        function switchMode(newMode) {
+            state.mode = newMode;
+            
+            // UI Toggles
+            if(newMode === 'edit') {
+                el.modeEdit.className = "flex-1 py-2 rounded-md shadow-sm bg-white text-slate-900 transition-all flex justify-center items-center gap-2 font-bold";
+                el.modeRun.className = "flex-1 py-2 rounded-md text-slate-500 hover:text-slate-700 transition-all flex justify-center items-center gap-2";
+                el.panelEdit.classList.remove('hidden');
+                el.panelRun.classList.add('hidden');
+                
+                resetAlgorithmState(); // Clear colors
+            } else {
+                el.modeRun.className = "flex-1 py-2 rounded-md shadow-sm bg-white text-slate-900 transition-all flex justify-center items-center gap-2 font-bold";
+                el.modeEdit.className = "flex-1 py-2 rounded-md text-slate-500 hover:text-slate-700 transition-all flex justify-center items-center gap-2";
+                el.panelRun.classList.remove('hidden');
+                el.panelEdit.classList.add('hidden');
+                
+                // Prepare algo
+                resetAlgorithmState();
+                prepareAlgorithm();
+            }
+        }
+
+        // --- Algorithm Implementation (Generator for Step Control) ---
+        function resetAlgorithmState() {
+            // Visual Reset
+            state.nodes.forEach(n => {
+                const c = document.getElementById(`node-${n.id}`);
+                const t = document.getElementById(`text-${n.id}`);
+                if(n.id === state.startNodeId) {
+                    c.setAttribute('class', 'node-base state-start');
+                    t.textContent = '0';
+                } else if (n.isWall) {
+                    c.setAttribute('class', 'node-base state-wall');
+                    t.textContent = '';
+                } else {
+                    c.setAttribute('class', 'node-base');
+                    c.style.fill = '#ffffff';
+                    c.style.stroke = CONFIG.colors.strokeDefault;
+                    t.textContent = '∞';
+                    t.style.fill = CONFIG.colors.text;
+                }
+            });
+
+            document.querySelectorAll('.edge-line').forEach(line => {
+                line.setAttribute('class', 'edge-line');
+                line.style.stroke = '#cbd5e1';
+                line.style.strokeWidth = 4;
+            });
+
+            el.bubble.classList.remove('show');
+            el.calcDisplay.innerHTML = '待機中...';
+            state.isAnimating = false;
+        }
+
+        let algoIterator = null;
+
+        function prepareAlgorithm() {
+            // Priority Queue & Distances
+            const pq = new MinHeap();
+            const dists = {};
+            const prev = {};
+            const visited = new Set();
+
+            state.nodes.forEach(n => {
+                dists[n.id] = Infinity;
+                prev[n.id] = null;
+            });
+            dists[state.startNodeId] = 0;
+            pq.push(state.startNodeId, 0);
+
+            // Create Generator
+            algoIterator = (function* () {
+                while (!pq.isEmpty()) {
+                    const { val: uId, priority: uDist } = pq.pop();
+
+                    if (uDist > dists[uId]) continue;
+                    if (state.nodes[uId].isWall) continue;
+
+                    // Yield: Visiting Node
+                    yield { type: 'visit', u: uId };
+
+                    visited.add(uId);
+
+                    // Check neighbors
+                    const neighbors = state.edges[uId];
+                    // Sort neighbors by ID to be deterministic
+                    neighbors.sort((a,b) => a.to - b.to);
+
+                    for (const edge of neighbors) {
+                        const vId = edge.to;
+                        const weight = edge.ref.w;
+                        
+                        if (state.nodes[vId].isWall) continue;
+                        if (visited.has(vId)) continue;
+
+                        const newDist = uDist + weight;
+                        
+                        // Yield: Checking Edge (Visualization of Math)
+                        yield { type: 'check', u: uId, v: vId, w: weight, currentDist: uDist, newDist, oldDist: dists[vId], edgeId: edge.ref.id };
+
+                        if (newDist < dists[vId]) {
+                            dists[vId] = newDist;
+                            prev[vId] = edge.ref.id; // Store edge ID
+                            pq.push(vId, newDist);
+                            
+                            // Yield: Update
+                            yield { type: 'update', v: vId, dist: newDist, parentEdge: edge.ref.id };
+                        }
+                    }
+                    
+                    // Yield: Settled
+                    yield { type: 'settled', u: uId, parentEdge: prev[uId] };
+                }
+                yield { type: 'done' };
+            })();
+        }
+
+        // --- Animation Loop ---
+        async function runStep() {
+            if(!algoIterator) return;
+            const res = algoIterator.next();
+            
+            if(res.done || res.value.type === 'done') {
+                state.isAnimating = false;
+                el.calcDisplay.innerHTML = '<span class="text-emerald-600 font-bold">完了 (Finished)</span>';
+                el.bubble.classList.remove('show');
+                return false; // Stop
+            }
+
+            const step = res.value;
+            const delay = (ms) => new Promise(r => setTimeout(r, ms / (state.speed / 5))); // Dynamic speed
+
+            if(step.type === 'visit') {
+                // Highlight Current Node
+                const node = document.getElementById(`node-${step.u}`);
+                if(step.u !== state.startNodeId) {
+                    node.classList.add('state-visiting');
+                }
+                el.calcDisplay.innerHTML = `Visiting Node <span class="font-bold">${step.u}</span> (Dist: ${state.nodes[step.u].dist === Infinity ? 0 : state.nodes[step.u].dist})`; // 0 fix for start
+            }
+            else if (step.type === 'check') {
+                // Math Visualization
+                const uNode = state.nodes[step.u];
+                const vNode = state.nodes[step.v];
+                
+                // Show Bubble near V
+                const bubbleX = vNode.x - 60;
+                const bubbleY = vNode.y - 60;
+                
+                el.bubble.style.left = `${bubbleX}px`;
+                el.bubble.style.top = `${bubbleY}px`;
+                
+                const isBetter = step.newDist < step.oldDist;
+                const colorClass = isBetter ? 'text-emerald-600' : 'text-slate-400';
+                
+                el.bubble.innerHTML = `
+                    <span class="text-slate-500">${step.currentDist}</span> + 
+                    <span class="text-blue-600">${step.w}</span> = 
+                    <span class="${colorClass} font-bold">${step.newDist}</span>
+                `;
+                el.bubble.classList.add('show');
+
+                // Highlight Edge
+                const line = document.getElementById(`line-${step.edgeId}`);
+                line.style.stroke = '#f59e0b'; // Amber
+                line.style.strokeWidth = 6;
+
+                // Panel text
+                el.calcDisplay.innerHTML = `Check ${step.u}→${step.v}: ${step.currentDist} + ${step.w} = ${step.newDist} < ${step.oldDist === Infinity ? '∞' : step.oldDist}`;
+
+                await delay(800);
+                
+                // Reset temporary highlights
+                line.style.stroke = '#cbd5e1';
+                line.style.strokeWidth = 4;
+                el.bubble.classList.remove('show');
+            }
+            else if (step.type === 'update') {
+                // Update Node V visual
+                const t = document.getElementById(`text-${step.v}`);
+                t.textContent = step.dist;
+                
+                const n = document.getElementById(`node-${step.v}`);
+                n.style.stroke = '#10b981'; // Green flash
+                n.style.fill = '#f0fdf4';
+                
+                await delay(300);
+                n.style.stroke = CONFIG.colors.strokeDefault;
+            }
+            else if (step.type === 'settled') {
+                // Finalize Node U
+                if(step.u !== state.startNodeId) {
+                    const n = document.getElementById(`node-${step.u}`);
+                    n.classList.remove('state-visiting');
+                    n.classList.add('state-settled');
+                }
+                // Color the tree edge permanently
+                if(step.parentEdge) {
+                    const line = document.getElementById(`line-${step.parentEdge}`);
+                    line.classList.add('edge-tree');
+                }
+            }
+
+            return true; // Continue
+        }
+
+        async function playLoop() {
+            if(state.isAnimating) return;
+            state.isAnimating = true;
+            
+            while(state.isAnimating) {
+                const keepGoing = await runStep();
+                if(!keepGoing) break;
+                // Base delay between steps
+                await new Promise(r => setTimeout(r, 2000 / state.speed));
+            }
+        }
+
+        // --- Helpers ---
+        function showToast(msg) {
+            el.toast.textContent = msg;
+            el.toast.style.opacity = '1';
+            el.toast.style.transform = 'translate(-50%, -10px)';
+            setTimeout(() => {
+                el.toast.style.opacity = '0';
+                el.toast.style.transform = 'translate(-50%, 0)';
+            }, 2000);
+        }
+
+        // MinHeap Class
+        class MinHeap{constructor(){this.h=[]}push(v,p){this.h.push({val:v,priority:p});this.u(this.h.length-1)}pop(){if(!this.h.length)return null;const r=this.h[0],e=this.h.pop();if(this.h.length){this.h[0]=e;this.d(0)}return r}u(i){const e=this.h[i];while(i>0){let p=Math.floor((i-1)/2),P=this.h[p];if(e.priority>=P.priority)break;this.h[p]=e;this.h[i]=P;i=p}}d(i){const l=this.h.length,e=this.h[i];while(1){let L=2*i+1,R=2*i+2,s=null,LC,RC;if(L<l){LC=this.h[L];if(LC.priority<e.priority)s=L}if(R<l){RC=this.h[R];if((s===null&&RC.priority<e.priority)||(s!==null&&RC.priority<LC.priority))s=R}if(s===null)break;this.h[i]=this.h[s];this.h[s]=e;i=s}}isEmpty(){return!this.h.length}}
+
+        // --- Event Binding ---
+        el.modeEdit.onclick = () => switchMode('edit');
+        el.modeRun.onclick = () => switchMode('run');
+        
+        el.gridSize.oninput = (e) => {
+            state.gridSize = parseInt(e.target.value);
+            el.gridSizeVal.textContent = `${state.gridSize}x${state.gridSize}`;
+            init(); // Re-gen
+        };
+
+        el.btnResetWeights.onclick = () => {
+            init();
+            showToast("重みをリセットしました");
+        };
+
+        el.btnPlay.onclick = playLoop;
+        
+        el.btnStep.onclick = async () => {
+            state.isAnimating = true; // Temporary lock
+            await runStep();
+            state.isAnimating = false;
+        };
+
+        el.speed.oninput = (e) => {
+            state.speed = parseInt(e.target.value);
+            const v = state.speed;
+            el.speedLabel.textContent = v < 10 ? '遅い' : (v > 30 ? '超速' : '普通');
+        };
+
+        // Start
+        init();
+
+    </script>
+</body>
+</html>

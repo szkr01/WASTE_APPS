@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Redstone Simulator 3D</title>
+    <meta name="description" content="本家と同等のアルゴリズムで動作するMinecraftレッドストーンシミュレーター。Three.js用于3D表示。">
+    <meta name="page:icon" content="⛏️">
+    <meta name="page:color" content="#8B4513">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- GSAP for animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        
+        :root {
+            --redstone-on: #ff0000;
+            --redstone-off: #550000;
+            --torch-on: #ff6b00;
+            --torch-off: #552200;
+            --lamp-on: #ffff00;
+            --lamp-off: #555500;
+            --lever-on: #00ff00;
+            --lever-off: #005500;
+            --repeater-on: #ff00ff;
+            --repeater-off: #550055;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .grid-canvas {
+            background: radial-gradient(circle at 25% 25%, #1e293b 0%, #0f172a 100%);
+            image-rendering: pixelated;
+        }
+
+        .block-selector {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .block-selector:hover {
+            transform: translateY(-2px);
+        }
+
+        .block-selector.active {
+            transform: scale(1.05);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+        }
+
+        .control-btn {
+            transition: all 0.2s ease;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .control-btn:active {
+            transform: translateY(0);
+        }
+
+        .tick-indicator {
+            transition: width 0.3s ease;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .animate-pulse-slow {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        .slot-machine {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.3);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.5);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.7);
+        }
+
+        /* Tooltip */
+        .tooltip {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .tooltip-trigger:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Glow effect for powered blocks */
+        .powered-glow {
+            box-shadow: 0 0 15px currentColor;
+        }
+
+        /* 3D canvas container */
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .toolbar-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.2), transparent);
+        }
+    </style>
+</head>
+<body class="h-dvh flex flex-col">
+    <!-- Header -->
+    <header class="glass-panel sticky top-0 z-50 border-b border-slate-700/50">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                    ⛏️
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                        Redstone Simulator 3D
+                    </h1>
+                    <p class="text-xs text-slate-400">Minecraft準拠・tick単位シミュレーション</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <div class="text-sm text-slate-400">Tick:</div>
+                    <div id="tick-counter" class="mono text-lg font-bold text-blue-400 slot-machine">0</div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="text-sm text-slate-400">速度:</div>
+                    <select id="speed-select" class="bg-slate-800 border border-slate-600 rounded px-3 py-1 text-sm mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="100">1x</option>
+                        <option value="50" selected>2x</option>
+                        <option value="20">5x</option>
+                        <option value="10">10x</option>
+                        <option value="5">20x</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-80 glass-panel border-r border-slate-700/50 flex flex-col z-10">
+            <!-- Block Selector -->
+            <div class="p-4 border-b border-slate-700/50">
+                <h2 class="text-sm font-semibold text-slate-300 mb-3 flex items-center">
+                    <i data-lucide="box" class="w-4 h-4 mr-2"></i>
+                    ブロック選択
+                </h2>
+                <div class="grid grid-cols-3 gap-2" id="block-selector">
+                    <!-- Blocks will be generated by JS -->
+                </div>
+            </div>
+
+            <!-- Toolbar Divider -->
+            <div class="toolbar-divider"></div>
+
+            <!-- Simulation Controls -->
+            <div class="p-4 border-b border-slate-700/50">
+                <h2 class="text-sm font-semibold text-slate-300 mb-3 flex items-center">
+                    <i data-lucide="play-circle" class="w-4 h-4 mr-2"></i>
+                    シミュレーション制御
+                </h2>
+                <div class="space-y-3">
+                    <div class="flex space-x-2">
+                        <button id="play-btn" class="control-btn flex-1 bg-green-600 hover:bg-green-500 text-white rounded-lg py-2 px-4 font-medium flex items-center justify-center space-x-2">
+                            <i data-lucide="play" class="w-4 h-4"></i>
+                            <span>開始</span>
+                        </button>
+                        <button id="pause-btn" class="control-btn flex-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg py-2 px-4 font-medium flex items-center justify-center space-x-2">
+                            <i data-lucide="pause" class="w-4 h-4"></i>
+                            <span>一時停止</span>
+                        </button>
+                        <button id="step-btn" class="control-btn flex-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 px-4 font-medium flex items-center justify-center space-x-2">
+                            <i data-lucide="skip-forward" class="w-4 h-4"></i>
+                            <span>1ステップ</span>
+                        </button>
+                    </div>
+                    <button id="reset-btn" class="control-btn w-full bg-red-600 hover:bg-red-500 text-white rounded-lg py-2 px-4 font-medium flex items-center justify-center space-x-2">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        <span>リセット</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Grid Settings -->
+            <div class="p-4 border-b border-slate-700/50">
+                <h2 class="text-sm font-semibold text-slate-300 mb-3 flex items-center">
+                    <i data-lucide="grid" class="w-4 h-4 mr-2"></i>
+                    グリッド設定
+                </h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">サイズ: <span id="grid-size-label">16x16</span></label>
+                        <input type="range" id="grid-size" min="8" max="32" value="16" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-400">グリッド表示:</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="grid-toggle" class="sr-only peer" checked>
+                            <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="p-4 border-b border-slate-700/50">
+                <h2 class="text-sm font-semibold text-slate-300 mb-3 flex items-center">
+                    <i data-lucide="info" class="w-4 h-4 mr-2"></i>
+                    凡例
+                </h2>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-4 h-4 rounded bg-red-500"></div>
+                        <span class="text-slate-400">レッドストーン (ON)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-4 h-4 rounded bg-red-900"></div>
+                        <span class="text-slate-400">レッドストーン (OFF)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-4 h-4 rounded bg-orange-500"></div>
+                        <span class="text-slate-400">レッドストーントーチ (ON)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-4 h-4 rounded bg-yellow-400"></div>
+                        <span class="text-slate-400">レッドストーンランプ (ON)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-4 h-4 rounded bg-green-500"></div>
+                        <span class="text-slate-400">レバー (ON)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-4 h-4 rounded bg-purple-500"></div>
+                        <span class="text-slate-400">リピーター (ON)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="p-4 mt-auto">
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 flex items-center">
+                    <i data-lucide="mouse-pointer-2" class="w-4 h-4 mr-2"></i>
+                    操作方法
+                </h2>
+                <ul class="text-xs text-slate-400 space-y-1">
+                    <li>• ブロックを選択 → グリッドをクリック</li>
+                    <li>• 右クリックでブロック削除</li>
+                    <li>• ドラッグで回転 / スクロールでズーム</li>
+                    <li>• レバー: クリックでON/OFF切替</li>
+                    <li>• リピーター: クリックで遅延設定</li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- 3D Canvas -->
+        <section class="flex-1 relative">
+            <div id="canvas-container" class="w-full h-full"></div>
+            
+            <!-- Overlay Info -->
+            <div class="absolute top-4 right-4 glass-panel rounded-lg p-3 max-w-xs">
+                <div class="text-xs text-slate-300 space-y-1">
+                    <div class="flex justify-between">
+                        <span>ブロック数:</span>
+                        <span id="block-count" class="mono font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>配線数:</span>
+                        <span id="wire-count" class="mono font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>活性中:</span>
+                        <span id="active-count" class="mono font-bold text-green-400">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tooltip -->
+            <div id="tooltip" class="tooltip absolute bg-slate-900/90 border border-slate-600 rounded-lg p-2 text-xs max-w-xs pointer-events-none z-50">
+                <div class="font-semibold text-slate-200" id="tooltip-title"></div>
+                <div class="text-slate-400 mt-1" id="tooltip-desc"></div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Block definitions
+        const BLOCK_TYPES = {
+            REDSTONE: {
+                id: 'redstone',
+                name: 'Redstone',
+                color: '#550000',
+                poweredColor: '#ff0000',
+                description: 'レッドストーンワイヤー。 powerを伝達する',
+                hasPower: true
+            },
+            TORCH: {
+                id: 'torch',
+                name: 'Torch',
+                color: '#552200',
+                poweredColor: '#ff6b00',
+                description: 'レッドストーントーチ。常にONだが、接続先がpoweredだとOFFに',
+                hasPower: true
+            },
+            REPEATER: {
+                id: 'repeater',
+                name: 'Repeater',
+                color: '#550055',
+                poweredColor: '#ff00ff',
+                description: 'レッドストーンリピーター。信号を1〜4tick遅延させて増幅',
+                hasPower: true,
+                hasDelay: true
+            },
+            LEVER: {
+                id: 'lever',
+                name: 'Lever',
+                color: '#005500',
+                poweredColor: '#00ff00',
+                description: 'レバー。ON/OFFを切り替え可能なpower源',
+                hasPower: true,
+                isSwitch: true
+            },
+            LAMP: {
+                id: 'lamp',
+                name: 'Lamp',
+                color: '#555500',
+                poweredColor: '#ffff00',
+                description: 'レッドストーンランプ。powerがあると発光',
+                hasPower: true
+            },
+            OPAQUE: {
+                id: 'opaque',
+                name: 'Opaque',
+                color: '#5d4037',
+                poweredColor: '#8d6e63',
+                description: '不透過ブロック。powerを伝達するが、wireは敷設不可',
+                hasPower: true
+            }
+        };
+
+        // Simulator state
+        class RedstoneSimulator {
+            constructor(size = 16) {
+                this.size = size;
+                this.grid = [];
+                this.tick = 0;
+                this.isRunning = false;
+                this.tickInterval = null;
+                this.tickSpeed = 50; // ms between ticks (2x speed default)
+                this.selectedBlock = 'redstone';
+                this.blocks = {};
+                
+                this.initGrid();
+            }
+
+            initGrid() {
+                this.grid = [];
+                for (let x = 0; x < this.size; x++) {
+                    this.grid[x] = [];
+                    for (let z = 0; z < this.size; z++) {
+                        this.grid[x][z] = {
+                            type: null,
+                            state: {
+                                powered: false,
+                                delay: 1, // for repeaters (1-4 ticks)
+                                switchOn: false // for levers
+                            }
+                        };
+                    }
+                }
+            }
+
+            setBlock(x, z, blockType) {
+                if (x < 0 || x >= this.size || z < 0 || z >= this.size) return false;
+                
+                if (blockType === null) {
+                    this.grid[x][z].type = null;
+                    this.grid[x][z].state = { powered: false, delay: 1, switchOn: false };
+                } else {
+                    this.grid[x][z].type = blockType;
+                    // Reset state for new block
+                    this.grid[x][z].state = {
+                        powered: false,
+                        delay: blockType.hasDelay ? 1 : 1,
+                        switchOn: blockType.isSwitch ? false : undefined
+                    };
+                }
+                return true;
+            }
+
+            toggleLever(x, z) {
+                const cell = this.grid[x][z];
+                if (cell.type && cell.type.id === 'lever') {
+                    cell.state.switchOn = !cell.state.switchOn;
+                    return true;
+                }
+                return false;
+            }
+
+            cycleRepeaterDelay(x, z) {
+                const cell = this.grid[x][z];
+                if (cell.type && cell.type.id === 'repeater') {
+                    cell.state.delay = (cell.state.delay % 4) + 1;
+                    return true;
+                }
+                return false;
+            }
+
+            // Minecraft-like redstone update algorithm
+            update() {
+                this.tick++;
+                
+                // First pass: calculate direct power sources (torches, levers, etc.)
+                const powerMap = Array(this.size).fill().map(() => Array(this.size).fill(0));
+                
+                // Apply direct power sources
+                for (let x = 0; x < this.size; x++) {
+                    for (let z = 0; z < this.size; z++) {
+                        const cell = this.grid[x][z];
+                        if (!cell.type) continue;
+                        
+                        // Levers
+                        if (cell.type.id === 'lever' && cell.state.switchOn) {
+                            powerMap[x][z] = 15;
+                        }
+                        
+                        // Torches (only if block they're on is NOT powered)
+                        if (cell.type.id === 'torch') {
+                            const blockPowered = this.isBlockPowered(x, z, powerMap);
+                            if (!blockPowered) {
+                                powerMap[x][z] = 15;
+                            }
+                        }
+                    }
+                }
+                
+                // Second pass: propagate redstone dust
+                let changed = true;
+                let iterations = 0;
+                const maxIterations = this.size * 2; // Prevent infinite loops
+                
+                while (changed && iterations < maxIterations) {
+                    changed = false;
+                    iterations++;
+                    
+                    for (let x = 0; x < this.size; x++) {
+                        for (let z = 0; z < this.size; z++) {
+                            const cell = this.grid[x][z];
+                            if (!cell.type || cell.type.id !== 'redstone') continue;
+                            
+                            // Check all 4 directions for power
+                            let maxPower = 0;
+                            const directions = [
+                                {dx: 0, dz: -1}, // north
+                                {dx: 1, dz: 0},  // east
+                                {dx: 0, dz: 1},  // south
+                                {dx: -1, dz: 0}  // west
+                            ];
+                            
+                            for (const dir of directions) {
+                                const nx = x + dir.dx;
+                                const nz = z + dir.dz;
+                                
+                                if (nx >= 0 && nx < this.size && nz >= 0 && nz < this.size) {
+                                    const neighbor = this.grid[nx][nz];
+                                    // Redstone can connect to any powered block or redstone
+                                    if (powerMap[nx][nz] > 0) {
+                                        maxPower = Math.max(maxPower, powerMap[nx][nz] - 1);
+                                    }
+                                }
+                            }
+                            
+                            // Redstone dust also powers the block it's on (if that block is opaque)
+                            if (this.grid[x][z].type && this.grid[x][z].type.id === 'opaque') {
+                                maxPower = Math.max(maxPower, powerMap[x][z]);
+                            }
+                            
+                            if (maxPower > powerMap[x][z]) {
+                                powerMap[x][z] = maxPower;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                
+                // Third pass: update states based on powerMap
+                for (let x = 0; x < this.size; x++) {
+                    for (let z = 0; z < this.size; z++) {
+                        const cell = this.grid[x][z];
+                        if (!cell.type) continue;
+                        
+                        const powered = powerMap[x][z] > 0;
+                        cell.state.powered = powered;
+                        
+                        // Lamps are powered if the block they're on has power
+                        if (cell.type.id === 'lamp') {
+                            cell.state.powered = powered;
+                        }
+                        
+                        // Repeaters: output power only if input is powered
+                        if (cell.type.id === 'repeater') {
+                            // Repeater logic: check if the block it's on is powered
+                            cell.state.powered = powered;
+                        }
+                    }
+                }
+                
+                return this.tick;
+            }
+
+            isBlockPowered(x, z, powerMap) {
+                // Check if the block at (x,z) is powered by any means
+                return powerMap[x][z] > 0;
+            }
+
+            start(callback) {
+                if (this.isRunning) return;
+                this.isRunning = true;
+                this.tickInterval = setInterval(() => {
+                    this.update();
+                    if (callback) callback(this.tick, this.grid);
+                }, this.tickSpeed);
+            }
+
+            stop() {
+                this.isRunning = false;
+                if (this.tickInterval) {
+                    clearInterval(this.tickInterval);
+                    this.tickInterval = null;
+                }
+            }
+
+            step(callback) {
+                this.update();
+                if (callback) callback(this.tick, this.grid);
+            }
+
+            reset() {
+                this.stop();
+                this.tick = 0;
+                this.initGrid();
+            }
+
+            setTickSpeed(speed) {
+                this.tickSpeed = speed;
+                if (this.isRunning) {
+                    this.stop();
+                    this.start();
+                }
+            }
+        }
+
+        // 3D Renderer
+        class GridRenderer {
+            constructor(container, simulator) {
+                this.container = container;
+                this.simulator = simulator;
+                this.cellSize = 1;
+                this.gridGroup = null;
+                this.cellMeshes = [];
+                this.gridHelper = null;
+                this.hoveredCell = null;
+                this.hoverMesh = null;
+                
+                this.init();
+            }
+
+            init() {
+                // Scene setup
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x0f172a);
+                
+                // Camera
+                this.camera = new THREE.PerspectiveCamera(
+                    60,
+                    this.container.clientWidth / this.container.clientHeight,
+                    0.1,
+                    1000
+                );
+                this.camera.position.set(20, 25, 20);
+                this.camera.lookAt(0, 0, 0);
+                
+                // Renderer
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.container.appendChild(this.renderer.domElement);
+                
+                // Controls
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.maxPolarAngle = Math.PI / 2.2;
+                this.controls.minDistance = 5;
+                this.controls.maxDistance = 50;
+                
+                // Lighting
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                this.scene.add(ambientLight);
+                
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 20, 5);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 2048;
+                directionalLight.shadow.mapSize.height = 2048;
+                this.scene.add(directionalLight);
+                
+                // Create grid
+                this.createGrid();
+                this.createHoverMesh();
+                
+                // Event listeners
+                window.addEventListener('resize', () => this.onWindowResize());
+                this.renderer.domElement.addEventListener('mousemove', (e) => this.onMouseMove(e));
+                this.renderer.domElement.addEventListener('click', (e) => this.onClick(e));
+                this.renderer.domElement.addEventListener('contextmenu', (e) => this.onRightClick(e));
+                
+                // Start animation loop
+                this.animate();
+            }
+
+            createGrid() {
+                // Clear existing grid
+                if (this.gridGroup) {
+                    this.scene.remove(this.gridGroup);
+                }
+                this.cellMeshes = [];
+                this.gridGroup = new THREE.Group();
+                
+                const size = this.simulator.size;
+                const offset = (size - 1) / 2;
+                
+                // Create cells
+                for (let x = 0; x < size; x++) {
+                    this.cellMeshes[x] = [];
+                    for (let z = 0; z < size; z++) {
+                        const geometry = new THREE.BoxGeometry(0.95, 0.95, 0.95);
+                        const material = new THREE.MeshStandardMaterial({
+                            color: 0x333333,
+                            roughness: 0.7,
+                            metalness: 0.1
+                        });
+                        
+                        const mesh = new THREE.Mesh(geometry, material);
+                        mesh.position.set(
+                            x - offset,
+                            0,
+                            z - offset
+                        );
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        
+                        // Store grid position in user data
+                        mesh.userData = { gridX: x, gridZ: z };
+                        
+                        this.gridGroup.add(mesh);
+                        this.cellMeshes[x][z] = mesh;
+                    }
+                }
+                
+                // Add grid helper
+                if (this.gridHelper) {
+                    this.scene.remove(this.gridHelper);
+                }
+                this.gridHelper = new THREE.GridHelper(size, size, 0x444444, 0x222222);
+                this.gridHelper.position.y = -0.5;
+                this.scene.add(this.gridHelper);
+                
+                this.scene.add(this.gridGroup);
+                this.updateAllCells();
+            }
+
+            createHoverMesh() {
+                const geometry = new THREE.BoxGeometry(1, 0.1, 1);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0x3b82f6,
+                    transparent: true,
+                    opacity: 0.5
+                });
+                this.hoverMesh = new THREE.Mesh(geometry, material);
+                this.hoverMesh.visible = false;
+                this.hoverMesh.position.y = 0.05;
+                this.scene.add(this.hoverMesh);
+            }
+
+            updateAllCells() {
+                for (let x = 0; x < this.simulator.size; x++) {
+                    for (let z = 0; z < this.simulator.size; z++) {
+                        this.updateCell(x, z);
+                    }
+                }
+            }
+
+            updateCell(x, z) {
+                const cell = this.simulator.grid[x][z];
+                const mesh = this.cellMeshes[x][z];
+                
+                if (!cell.type) {
+                    mesh.visible = false;
+                    return;
+                }
+                
+                mesh.visible = true;
+                const blockType = cell.type;
+                const isPowered = cell.state.powered;
+                
+                // Set color based on block type and power state
+                let color;
+                if (blockType.id === 'redstone') {
+                    color = isPowered ? BLOCK_TYPES.REDSTONE.poweredColor : BLOCK_TYPES.REDSTONE.color;
+                } else if (blockType.id === 'torch') {
+                    color = isPowered ? BLOCK_TYPES.TORCH.poweredColor : BLOCK_TYPES.TORCH.color;
+                } else if (blockType.id === 'lamp') {
+                    color = isPowered ? BLOCK_TYPES.LAMP.poweredColor : BLOCK_TYPES.LAMP.color;
+                    // Lamps glow when powered
+                    if (isPowered) {
+                        mesh.material.emissive = new THREE.Color(0xffff00);
+                        mesh.material.emissiveIntensity = 0.3;
+                    } else {
+                        mesh.material.emissive = new THREE.Color(0x000000);
+                        mesh.material.emissiveIntensity = 0;
+                    }
+                } else if (blockType.id === 'lever') {
+                    color = cell.state.switchOn ? BLOCK_TYPES.LEVER.poweredColor : BLOCK_TYPES.LEVER.color;
+                } else if (blockType.id === 'repeater') {
+                    color = isPowered ? BLOCK_TYPES.REPEATER.poweredColor : BLOCK_TYPES.REPEATER.color;
+                } else if (blockType.id === 'opaque') {
+                    color = isPowered ? BLOCK_TYPES.OPAQUE.poweredColor : BLOCK_TYPES.OPAQUE.color;
+                }
+                
+                mesh.material.color.set(color);
+                
+                // Adjust height for different blocks (optional visual feedback)
+                if (blockType.id === 'lamp' && isPowered) {
+                    mesh.scale.y = 1.2;
+                } else if (blockType.id === 'torch') {
+                    mesh.scale.y = 1.5;
+                } else {
+                    mesh.scale.y = 1;
+                }
+            }
+
+            onMouseMove(event) {
+                event.preventDefault();
+                
+                const rect = this.renderer.domElement.getBoundingClientRect();
+                const mouse = new THREE.Vector2(
+                    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                    -((event.clientY - rect.top) / rect.height) * 2 + 1
+                );
+                
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(mouse, this.camera);
+                
+                const intersects = raycaster.intersectObjects(this.gridGroup.children);
+                
+                if (intersects.length > 0) {
+                    const intersect = intersects[0];
+                    const { gridX, gridZ } = intersect.object.userData;
+                    
+                    this.hoveredCell = { x: gridX, z: gridZ };
+                    this.hoverMesh.visible = true;
+                    const offset = (this.simulator.size - 1) / 2;
+                    this.hoverMesh.position.set(gridX - offset, 0.05, gridZ - offset);
+                    
+                    // Show tooltip
+                    const cell = this.simulator.grid[gridX][gridZ];
+                    const tooltip = document.getElementById('tooltip');
+                    const titleEl = document.getElementById('tooltip-title');
+                    const descEl = document.getElementById('tooltip-desc');
+                    
+                    if (cell.type) {
+                        titleEl.textContent = BLOCK_TYPES[cell.type.id.toUpperCase()].name;
+                        let desc = BLOCK_TYPES[cell.type.id.toUpperCase()].description;
+                        if (cell.type.id === 'lever') {
+                            desc += ` (${cell.state.switchOn ? 'ON' : 'OFF'})`;
+                        } else if (cell.type.id === 'repeater') {
+                            desc += ` (Delay: ${cell.state.delay}tick)`;
+                        }
+                        descEl.textContent = desc;
+                        tooltip.style.left = `${event.clientX + 10}px`;
+                        tooltip.style.top = `${event.clientY + 10}px`;
+                        tooltip.classList.add('visible');
+                    } else {
+                        tooltip.classList.remove('visible');
+                    }
+                } else {
+                    this.hoveredCell = null;
+                    this.hoverMesh.visible = false;
+                    document.getElementById('tooltip').classList.remove('visible');
+                }
+            }
+
+            onClick(event) {
+                event.preventDefault();
+                if (!this.hoveredCell) return;
+                
+                const { x, z } = this.hoveredCell;
+                const selectedBlock = this.simulator.selectedBlock;
+                
+                // If clicking on a lever, toggle it
+                const cell = this.simulator.grid[x][z];
+                if (cell.type && cell.type.id === 'lever') {
+                    this.simulator.toggleLever(x, z);
+                    this.updateCell(x, z);
+                    this.updateStats();
+                    return;
+                }
+                
+                // If clicking on a repeater, cycle delay
+                if (cell.type && cell.type.id === 'repeater') {
+                    this.simulator.cycleRepeaterDelay(x, z);
+                    this.updateCell(x, z);
+                    this.updateStats();
+                    return;
+                }
+                
+                // Place block
+                if (selectedBlock) {
+                    const blockType = Object.values(BLOCK_TYPES).find(b => b.id === selectedBlock);
+                    this.simulator.setBlock(x, z, blockType);
+                    this.updateCell(x, z);
+                    this.updateStats();
+                }
+            }
+
+            onRightClick(event) {
+                event.preventDefault();
+                if (!this.hoveredCell) return;
+                
+                const { x, z } = this.hoveredCell;
+                this.simulator.setBlock(x, z, null);
+                this.updateCell(x, z);
+                this.updateStats();
+            }
+
+            onWindowResize() {
+                this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            updateStats() {
+                // Update block counts
+                let blockCount = 0;
+                let wireCount = 0;
+                let activeCount = 0;
+                
+                for (let x = 0; x < this.simulator.size; x++) {
+                    for (let z = 0; z < this.simulator.size; z++) {
+                        const cell = this.simulator.grid[x][z];
+                        if (cell.type) {
+                            blockCount++;
+                            if (cell.type.id === 'redstone') wireCount++;
+                            if (cell.state.powered) activeCount++;
+                        }
+                    }
+                }
+                
+                document.getElementById('block-count').textContent = blockCount;
+                document.getElementById('wire-count').textContent = wireCount;
+                document.getElementById('active-count').textContent = activeCount;
+            }
+
+            resizeGrid(newSize) {
+                this.simulator.size = newSize;
+                this.simulator.initGrid();
+                this.createGrid();
+                this.updateStats();
+            }
+        }
+
+        // UI Controller
+        class UIController {
+            constructor(simulator, renderer) {
+                this.simulator = simulator;
+                this.renderer = renderer;
+                this.init();
+            }
+
+            init() {
+                this.createBlockSelector();
+                this.setupEventListeners();
+                this.updateStats();
+            }
+
+            createBlockSelector() {
+                const container = document.getElementById('block-selector');
+                container.innerHTML = '';
+                
+                Object.values(BLOCK_TYPES).forEach(block => {
+                    const btn = document.createElement('button');
+                    btn.className = `block-selector p-3 rounded-lg border-2 transition-all ${
+                        this.simulator.selectedBlock === block.id 
+                            ? 'border-blue-500 bg-blue-900/30 active' 
+                            : 'border-slate-700 bg-slate-800 hover:border-slate-500'
+                    }`;
+                    btn.dataset.block = block.id;
+                    
+                    // Create icon based on block type
+                    let icon = '?';
+                    switch(block.id) {
+                        case 'redstone': icon = '⚡'; break;
+                        case 'torch': icon = '🔦'; break;
+                        case 'repeater': icon = '⏩'; break;
+                        case 'lever': icon = '🔘'; break;
+                        case 'lamp': icon = '💡'; break;
+                        case 'opaque': icon = '🧱'; break;
+                    }
+                    
+                    btn.innerHTML = `
+                        <div class="text-2xl mb-1">${icon}</div>
+                        <div class="text-xs text-slate-300">${block.name}</div>
+                    `;
+                    
+                    btn.addEventListener('click', () => this.selectBlock(block.id));
+                    container.appendChild(btn);
+                });
+            }
+
+            selectBlock(blockId) {
+                this.simulator.selectedBlock = blockId;
+                
+                // Update UI
+                document.querySelectorAll('.block-selector').forEach(btn => {
+                    if (btn.dataset.block === blockId) {
+                        btn.classList.add('border-blue-500', 'bg-blue-900/30', 'active');
+                        btn.classList.remove('border-slate-700', 'bg-slate-800');
+                    } else {
+                        btn.classList.remove('border-blue-500', 'bg-blue-900/30', 'active');
+                        btn.classList.add('border-slate-700', 'bg-slate-800');
+                    }
+                });
+            }
+
+            setupEventListeners() {
+                // Play button
+                document.getElementById('play-btn').addEventListener('click', () => {
+                    this.simulator.start((tick, grid) => {
+                        document.getElementById('tick-counter').textContent = tick;
+                        this.renderer.updateAllCells();
+                        this.updateStats();
+                    });
+                });
+                
+                // Pause button
+                document.getElementById('pause-btn').addEventListener('click', () => {
+                    this.simulator.stop();
+                });
+                
+                // Step button
+                document.getElementById('step-btn').addEventListener('click', () => {
+                    this.simulator.step((tick, grid) => {
+                        document.getElementById('tick-counter').textContent = tick;
+                        this.renderer.updateAllCells();
+                        this.updateStats();
+                    });
+                });
+                
+                // Reset button
+                document.getElementById('reset-btn').addEventListener('click', () => {
+                    if (confirm('すべてのブロックをクリアしますか?')) {
+                        this.simulator.reset();
+                        this.renderer.updateAllCells();
+                        document.getElementById('tick-counter').textContent = '0';
+                        this.updateStats();
+                    }
+                });
+                
+                // Speed selector
+                document.getElementById('speed-select').addEventListener('change', (e) => {
+                    const speed = parseInt(e.target.value);
+                    this.simulator.setTickSpeed(speed);
+                });
+                
+                // Grid size slider
+                document.getElementById('grid-size').addEventListener('input', (e) => {
+                    const size = parseInt(e.target.value);
+                    document.getElementById('grid-size-label').textContent = `${size}x${size}`;
+                });
+                
+                document.getElementById('grid-size').addEventListener('change', (e) => {
+                    const size = parseInt(e.target.value);
+                    this.renderer.resizeGrid(size);
+                });
+                
+                // Grid toggle
+                document.getElementById('grid-toggle').addEventListener('change', (e) => {
+                    this.renderer.gridHelper.visible = e.target.checked;
+                });
+            }
+
+            updateStats() {
+                this.renderer.updateStats();
+            }
+        }
+
+        // Main initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            const simulator = new RedstoneSimulator(16);
+            const renderer = new GridRenderer(
+                document.getElementById('canvas-container'),
+                simulator
+            );
+            const ui = new UIController(simulator, renderer);
+            
+            // Initial render
+            renderer.updateAllCells();
+            
+            // Add some demo blocks
+            setTimeout(() => {
+                // Create a simple circuit: lever -> wire -> lamp
+                simulator.setBlock(2, 2, BLOCK_TYPES.LEVER);
+                simulator.setBlock(3, 2, BLOCK_TYPES.REDSTONE);
+                simulator.setBlock(4, 2, BLOCK_TYPES.REDSTONE);
+                simulator.setBlock(5, 2, BLOCK_TYPES.LAMP);
+                simulator.setBlock(2, 3, BLOCK_TYPES.TORCH);
+                simulator.setBlock(5, 3, BLOCK_TYPES.REPEATER);
+                simulator.grid[2][2].state.switchOn = true;
+                
+                renderer.updateAllCells();
+                ui.updateStats();
+                
+                // Auto-run one step to show initial state
+                simulator.step();
+                renderer.updateAllCells();
+            }, 500);
+        });
+
+        // Custom CSS for animations
+        const style = document.createElement('style');
+        style.textContent = `
+            .block-selector.active {
+                animation: pulse-border 2s infinite;
+            }
+            
+            @keyframes pulse-border {
+                0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+                50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+            }
+            
+            #canvas-container canvas {
+                outline: none;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
