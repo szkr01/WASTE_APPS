@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DiT GLO Interactive Generator</title>
+    <meta name="description" content="Modern interactive latent space exploration with DDPM and Euler Ancestral samplers on local ONNX Runtime.">
+    <meta name="page:icon" content="fas fa-microchip">
+    <meta name="page:color" content="#2563eb">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'] },
+                    colors: { gray: { 50: '#f9fafb', 100: '#f3f4f6', 200: '#e5e7eb', 300: '#d1d5db', 400: '#9ca3af', 500: '#6b7280', 600: '#4b5563', 700: '#374151', 800: '#1f2937', 900: '#111827' } }
+                }
+            }
+        }
+    </script>
+    <style>
+        .slider-container::-webkit-scrollbar { width: 5px; }
+        .slider-container::-webkit-scrollbar-track { background: transparent; }
+        .slider-container::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 4px; }
+        .slider-container:hover::-webkit-scrollbar-thumb { background: #d1d5db; }
+        
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%;
+            background: #ffffff; border: 2.5px solid #3b82f6; cursor: pointer; margin-top: -7px; 
+            box-shadow: 0 2px 5px rgba(59, 130, 246, 0.2); transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3); }
+        input[type=range]::-webkit-slider-thumb:active { transform: scale(0.95); background: #eff6ff; }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 6px; cursor: pointer; background: #e5e7eb; border-radius: 3px;
+        }
+        input[type=range]:focus::-webkit-slider-runnable-track { background: #d1d5db; }
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        .canvas-container { image-rendering: pixelated; }
+        .bg-pattern {
+            background-color: #f9fafb;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .pb-safe { padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 h-screen w-screen overflow-hidden flex flex-col font-sans selection:bg-blue-100">
+
+    <header class="h-16 flex-none bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6 z-20 shadow-sm relative">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center border border-blue-100 shadow-inner">
+                <i class="fas fa-microchip text-blue-600 text-lg"></i>
+            </div>
+            <h1 class="text-xl font-extrabold text-gray-800 tracking-tight">DiT <span class="text-blue-600">GLO</span></h1>
+            <span class="hidden md:inline-block text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-500 px-2.5 py-1 rounded-md ml-2 border border-gray-200">Local ONNX</span>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <div id="status-indicator" class="hidden md:flex items-center gap-2 text-yellow-500 text-sm font-medium bg-gray-50 px-3.5 py-1.5 rounded-full border border-gray-200 transition-colors duration-300">
+                <i class="fas fa-circle text-[10px] animate-pulse"></i>
+                <span>Loading Model...</span>
+            </div>
+            <button id="mobile-settings-btn" class="md:hidden w-10 h-10 rounded-full bg-white border border-gray-200 text-gray-600 flex items-center justify-center hover:bg-gray-50 hover:text-blue-600 shadow-sm transition-all active:scale-95">
+                <i class="fas fa-sliders-h"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex flex-row overflow-hidden relative w-full">
+        
+        <div id="settings-overlay" class="fixed inset-0 bg-gray-900/30 backdrop-blur-sm z-40 opacity-0 pointer-events-none transition-opacity duration-300 md:hidden"></div>
+
+        <aside id="settings-drawer" class="fixed inset-y-0 left-0 z-50 w-full max-w-[85vw] sm:max-w-sm bg-white shadow-2xl transform -translate-x-full transition-transform duration-300 flex flex-col md:relative md:translate-x-0 md:w-[340px] md:max-w-none md:flex-none md:border-r md:border-gray-200 md:shadow-none md:z-10">
+            
+            <div class="flex justify-between items-center p-5 border-b border-gray-200 md:hidden bg-white">
+                <h2 class="text-lg font-extrabold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-sliders-h text-blue-500"></i> Parameters
+                </h2>
+                <button id="close-settings-btn" class="text-gray-400 hover:text-gray-700 transition-colors bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full w-9 h-9 flex items-center justify-center">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto slider-container bg-white pb-4">
+                
+                <div class="p-5 border-b border-gray-100">
+                    <div class="flex justify-between items-center mb-1">
+                        <h3 class="text-sm font-bold text-gray-800">Latent Vector</h3>
+                        <button id="random-btn" class="text-xs bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 hover:text-blue-600 text-gray-600 py-1.5 px-3 rounded-lg transition-colors flex items-center gap-1.5 font-medium shadow-sm">
+                            <i class="fas fa-dice"></i> Randomize
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400">8-dimensional semantic space</p>
+                </div>
+
+                <div id="sliders-wrapper" class="p-5 space-y-5">
+                </div>
+
+                <div class="p-5 border-t border-gray-100 bg-gray-50/50 space-y-6">
+                    <div class="space-y-2">
+                        <label class="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">Sampler & Steps</label>
+                        <div class="flex gap-2">
+                            <select id="sampler-select" class="flex-1 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm appearance-none">
+                                <option value="euler_a">Euler Ancestral</option>
+                                <option value="ddpm">DDPM</option>
+                            </select>
+                            <input type="number" id="steps-input" value="25" min="1" max="1000" class="w-20 bg-white border border-gray-300 text-sm font-mono text-center text-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm">
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <label class="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center">
+                            <span>Seed Generation</span>
+                            <select id="seed-mode" class="bg-transparent border-none text-xs text-blue-600 font-bold outline-none cursor-pointer p-0 text-right appearance-none hover:text-blue-700 transition-colors">
+                                <option value="random">Random Mode</option>
+                                <option value="fixed">Fixed Mode</option>
+                                <option value="increment">Sequential</option>
+                            </select>
+                        </label>
+                        <div class="flex gap-2">
+                            <input type="number" id="input-seed" value="0" class="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-700 font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm text-right">
+                            <button id="btn-roll-seed" class="w-11 bg-white border border-gray-300 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 rounded-lg text-gray-500 flex items-center justify-center transition-all shadow-sm">
+                                <i class="fas fa-dice-five text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-5 border-t border-gray-200 bg-white mt-auto">
+                <div class="flex justify-between items-center text-[11px] text-gray-500 font-bold uppercase tracking-wider px-1 mb-2.5">
+                    <span>Progress</span>
+                    <span class="step-counter text-gray-700">0 / --</span>
+                </div>
+                <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden mb-4 border border-gray-200/50">
+                    <div class="progress-bar-fill h-full bg-gradient-to-r from-blue-500 to-indigo-500 w-0 transition-all duration-100 ease-out"></div>
+                </div>
+                <button class="generate-btn w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl shadow-lg shadow-blue-500/30 font-bold text-[15px] flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-play"></i> <span>Generate</span>
+                </button>
+            </div>
+        </aside>
+
+        <section class="flex-1 bg-pattern flex flex-col items-center justify-center relative overflow-hidden w-full pt-4 pb-36 md:py-8">
+            
+            <div id="message-container" class="absolute top-6 z-10 transition-all duration-300 transform translate-y-0">
+                <p id="message-text" class="text-gray-600 text-sm font-medium bg-white/90 backdrop-blur-md px-5 py-2 rounded-full border border-gray-200 shadow-sm">Ready to explore.</p>
+            </div>
+
+            <div class="relative group mt-10 md:mt-0 transition-transform duration-500 hover:scale-[1.01]">
+                <div class="absolute -inset-4 bg-gradient-to-br from-blue-200 via-indigo-100 to-purple-100 rounded-3xl blur-2xl opacity-60 group-hover:opacity-100 transition duration-700"></div>
+                
+                <div class="relative bg-white p-2 sm:p-3 rounded-2xl shadow-xl border border-white/50 ring-1 ring-gray-900/5">
+                    <canvas id="output-canvas" width="128" height="128" class="w-[280px] h-[280px] sm:w-[320px] sm:h-[320px] md:w-[440px] md:h-[440px] lg:w-[512px] lg:h-[512px] bg-gray-100 rounded-xl canvas-container block object-cover"></canvas>
+                    
+                    <button id="download-btn" class="absolute bottom-4 right-4 md:bottom-6 md:right-6 bg-white/95 backdrop-blur border border-gray-200 text-gray-700 w-11 h-11 rounded-full shadow-lg flex items-center justify-center hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all active:scale-90 opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <i class="fas fa-download"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-8 text-center z-10 hidden md:block">
+                <p id="info-display" class="inline-flex items-center gap-3 text-gray-500 text-xs font-mono bg-white/80 backdrop-blur px-5 py-2.5 rounded-full shadow-sm border border-gray-200 opacity-0 transition-opacity duration-500">
+                </p>
+            </div>
+
+            <div class="md:hidden fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-xl border-t border-gray-200 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-20 flex flex-col gap-3 pb-safe transform transition-transform duration-300">
+                <div class="flex justify-between text-[11px] text-gray-500 font-bold uppercase tracking-wider px-1">
+                    <span>Generation Progress</span>
+                    <span class="step-counter text-gray-800">0 / --</span>
+                </div>
+                <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden border border-gray-200/50">
+                    <div class="progress-bar-fill h-full bg-gradient-to-r from-blue-500 to-indigo-500 w-0 transition-all duration-100 ease-out"></div>
+                </div>
+                <button class="generate-btn w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl shadow-lg shadow-blue-500/30 font-bold text-[16px] flex items-center justify-center gap-2 transition-all active:scale-[0.97] disabled:opacity-50 mt-1">
+                    <i class="fas fa-play"></i> <span>Generate Now</span>
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const CONFIG = {
+            modelPath: '../Assets/dit_glo.onnx',
+            imageSize: 128,
+            latentDim: 8,
+            maxTimesteps: 1000,
+            activeProvider: null
+        };
+
+        const state = {
+            session: null,
+            isGenerating: false,
+            latents: new Array(CONFIG.latentDim).fill(0),
+            stopSignal: false,
+            seed: 0
+        };
+
+        const els = {
+            status: document.getElementById('status-indicator'),
+            statusIcon: document.querySelector('#status-indicator i'),
+            statusText: document.querySelector('#status-indicator span'),
+            generateBtns: document.querySelectorAll('.generate-btn'),
+            randomBtn: document.getElementById('random-btn'),
+            downloadBtn: document.getElementById('download-btn'),
+            progressBars: document.querySelectorAll('.progress-bar-fill'),
+            stepCounters: document.querySelectorAll('.step-counter'),
+            slidersWrapper: document.getElementById('sliders-wrapper'),
+            canvas: document.getElementById('output-canvas'),
+            message: document.getElementById('message-text'),
+            inputSeed: document.getElementById('input-seed'),
+            btnRollSeed: document.getElementById('btn-roll-seed'),
+            seedMode: document.getElementById('seed-mode'),
+            infoDisplay: document.getElementById('info-display'),
+            samplerSelect: document.getElementById('sampler-select'),
+            stepsInput: document.getElementById('steps-input')
+        };
+        const ctx = els.canvas.getContext('2d');
+
+        const BETAS = linspace(1e-4, 0.02, CONFIG.maxTimesteps);
+        const ALPHAS = BETAS.map(b => 1 - b);
+        const ALPHA_HAT = cumprod(ALPHAS);
+
+        function linspace(start, stop, num) {
+            const arr = [];
+            const step = (num > 1) ? (stop - start) / (num - 1) : 0;
+            for (let i = 0; i < num; i++) arr.push(start + (step * i));
+            return arr;
+        }
+
+        function cumprod(arr) {
+            const res = [];
+            let acc = 1;
+            for (let val of arr) {
+                acc *= val;
+                res.push(acc);
+            }
+            return res;
+        }
+
+        function mulberry32(a) {
+            return function() {
+                var t = a += 0x6D2B79F5;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            }
+        }
+
+        function randn(size, rng) {
+            const data = new Float32Array(size);
+            for (let i = 0; i < size; i++) {
+                let u = 0, v = 0;
+                while(u === 0) u = rng();
+                while(v === 0) v = rng();
+                data[i] = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+            }
+            return data;
+        }
+
+        async function init() {
+            createSliders();
+            updateStatus('loading', 'Loading Model...');
+            els.inputSeed.value = Math.floor(Math.random() * 1000000);
+            
+            els.generateBtns.forEach(btn => btn.disabled = true);
+
+            try {
+                try {
+                    state.session = await ort.InferenceSession.create(CONFIG.modelPath, {
+                        executionProviders: ['webgpu'],
+                        graphOptimizationLevel: 'all'
+                    });
+                    CONFIG.activeProvider = 'webgpu';
+                } catch (e) {
+                    state.session = await ort.InferenceSession.create(CONFIG.modelPath, {
+                        executionProviders: ['wasm'],
+                        graphOptimizationLevel: 'all'
+                    });
+                    CONFIG.activeProvider = 'wasm';
+                }
+                
+                updateStatus('ready', `Ready (${CONFIG.activeProvider.toUpperCase()})`);
+                els.generateBtns.forEach(btn => btn.disabled = false);
+                fillCanvas(249); 
+
+            } catch (e) {
+                updateStatus('error', 'Error Loading Model');
+                els.message.innerText = "Model load failed.";
+            }
+        }
+
+        function createSliders() {
+            els.slidersWrapper.innerHTML = '';
+            for (let i = 0; i < CONFIG.latentDim; i++) {
+                const div = document.createElement('div');
+                div.className = "flex flex-col space-y-2.5";
+                div.innerHTML = `
+                    <div class="flex justify-between items-center text-xs text-gray-600 font-mono">
+                        <span class="font-bold text-gray-400">DIM ${i}</span>
+                        <span id="val-${i}" class="bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-md text-gray-700 w-12 text-right shadow-sm">${(0).toFixed(2)}</span>
+                    </div>
+                    <div class="relative flex items-center">
+                        <input type="range" min="-3" max="3" step="0.01" value="0" data-index="${i}" 
+                            class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-100">
+                    </div>
+                `;
+                els.slidersWrapper.appendChild(div);
+            }
+            els.slidersWrapper.addEventListener('input', (e) => {
+                if(e.target.tagName === 'INPUT') {
+                    const idx = e.target.getAttribute('data-index');
+                    const val = parseFloat(e.target.value);
+                    state.latents[idx] = val;
+                    document.getElementById(`val-${idx}`).innerText = val.toFixed(2);
+                }
+            });
+        }
+
+        function updateStatus(type, msg) {
+            els.statusText.innerText = msg;
+            els.statusIcon.className = "fas fa-circle text-[9px]";
+            els.status.className = "hidden md:flex items-center gap-2 text-sm font-bold px-3.5 py-1.5 rounded-full border transition-all duration-300 shadow-sm";
+            
+            if (type === 'loading' || type === 'busy') els.statusIcon.classList.add("animate-pulse");
+            
+            if (type === 'error') {
+                els.status.classList.add('text-red-600', 'bg-red-50', 'border-red-200');
+                els.status.classList.remove('bg-gray-50', 'border-gray-200');
+            } else if (type === 'ready') {
+                els.status.classList.add('text-emerald-600', 'bg-emerald-50', 'border-emerald-200');
+                els.status.classList.remove('bg-gray-50', 'border-gray-200');
+            } else if (type === 'busy') {
+                els.status.classList.add('text-blue-600', 'bg-blue-50', 'border-blue-200');
+                els.status.classList.remove('bg-gray-50', 'border-gray-200', 'text-emerald-600', 'bg-emerald-50', 'border-emerald-200');
+            } else {
+                els.status.classList.add('text-yellow-600', 'bg-yellow-50', 'border-yellow-200');
+            }
+        }
+
+        function updateProgress(step, total) {
+            const percent = total > 0 ? ((step) / total) * 100 : 0;
+            els.progressBars.forEach(bar => bar.style.width = `${percent}%`);
+            els.stepCounters.forEach(counter => counter.innerText = `${step} / ${total > 0 ? total : '--'}`);
+        }
+
+        function setGeneratingState(isGenerating) {
+            els.generateBtns.forEach(btn => {
+                const icon = btn.querySelector('i');
+                const span = btn.querySelector('span');
+                if (isGenerating) {
+                    icon.className = 'fas fa-stop';
+                    span.innerText = 'Stop Generation';
+                    btn.classList.replace('bg-blue-600', 'bg-red-500');
+                    btn.classList.replace('hover:bg-blue-700', 'hover:bg-red-600');
+                    btn.classList.replace('shadow-blue-500/30', 'shadow-red-500/30');
+                } else {
+                    icon.className = 'fas fa-play';
+                    span.innerText = 'Generate';
+                    btn.classList.replace('bg-red-500', 'bg-blue-600');
+                    btn.classList.replace('hover:bg-red-600', 'hover:bg-blue-700');
+                    btn.classList.replace('shadow-red-500/30', 'shadow-blue-500/30');
+                }
+            });
+        }
+
+        async function generateImage() {
+            if (state.isGenerating) {
+                state.stopSignal = true;
+                return;
+            }
+            
+            state.isGenerating = true;
+            state.stopSignal = false;
+            setGeneratingState(true);
+
+            closeSettings();
+
+            const mode = els.seedMode.value;
+            let currentSeed = parseInt(els.inputSeed.value) || 0;
+            if (mode === 'random') currentSeed = Math.floor(Math.random() * 1000000000);
+            state.seed = currentSeed;
+            els.inputSeed.value = currentSeed;
+            const rng = mulberry32(currentSeed);
+
+            const samplerType = els.samplerSelect.value;
+            let steps = parseInt(els.stepsInput.value);
+            
+            if (samplerType === 'ddpm') {
+                steps = CONFIG.maxTimesteps;
+                els.stepsInput.value = steps;
+            }
+
+            els.infoDisplay.innerHTML = `<span>Seed: <b class="text-gray-800">${currentSeed}</b></span><span class="w-1.5 h-1.5 rounded-full bg-gray-300"></span><span>Sampler: <b class="text-gray-800">${samplerType.toUpperCase()} (${steps})</b></span>`;
+            els.infoDisplay.classList.remove('opacity-0');
+            updateStatus('busy', 'Generating...');
+            els.message.innerText = "Processing...";
+
+            const totalPixels = CONFIG.imageSize * CONFIG.imageSize;
+            let x = randn(totalPixels, rng);
+            const latentTensor = new ort.Tensor('float32', Float32Array.from(state.latents), [1, CONFIG.latentDim]);
+
+            let timesteps;
+            if (samplerType === 'ddpm') {
+                timesteps = Array.from({length: CONFIG.maxTimesteps}, (_, i) => CONFIG.maxTimesteps - 1 - i);
+            } else {
+                timesteps = [];
+                const stepSize = (CONFIG.maxTimesteps - 1) / (steps - 1);
+                for (let i = 0; i < steps; i++) {
+                    timesteps.push(Math.round((CONFIG.maxTimesteps - 1) - i * stepSize));
+                }
+            }
+
+            const startTime = performance.now();
+
+            try {
+                for (let i = 0; i < timesteps.length; i++) {
+                    if (state.stopSignal) break;
+
+                    const t = timesteps[i];
+                    const prev_t = (i < timesteps.length - 1) ? timesteps[i+1] : -1;
+
+                    if (steps > 50 || i % 2 === 0 || i === 0 || i === timesteps.length - 1) {
+                        updateProgress(i + 1, steps);
+                        drawToCanvas(x);
+                        await new Promise(r => setTimeout(r, 0));
+                    }
+
+                    const xTensor = new ort.Tensor('float32', x, [1, 1, CONFIG.imageSize, CONFIG.imageSize]);
+                    const tTensor = new ort.Tensor('float32', Float32Array.from([t]), [1]);
+                    
+                    const feeds = { input_x: xTensor, input_t: tTensor, input_latent: latentTensor };
+                    const results = await state.session.run(feeds);
+                    const noise_pred = results.output_noise.data;
+
+                    if (samplerType === 'ddpm') {
+                        x = stepDDPM(x, noise_pred, t, rng);
+                    } else {
+                        x = stepEulerAncestral(x, noise_pred, t, prev_t, rng);
+                    }
+                }
+
+                for(let k=0; k<totalPixels; k++) x[k] = Math.max(-1, Math.min(1, x[k]));
+                drawToCanvas(x);
+                
+                if (!state.stopSignal) {
+                    updateProgress(steps, steps);
+                }
+                
+                const duration = ((performance.now() - startTime) / 1000).toFixed(1);
+                els.message.innerText = `Completed in ${duration}s.`;
+
+                if (mode === 'increment' && !state.stopSignal) {
+                    els.inputSeed.value = state.seed + 1;
+                }
+
+            } catch (err) {
+                els.message.innerText = "Error during generation.";
+            } finally {
+                state.isGenerating = false;
+                setGeneratingState(false);
+                updateStatus('ready', `Ready (${CONFIG.activeProvider ? CONFIG.activeProvider.toUpperCase() : 'N/A'})`);
+                if(state.stopSignal) {
+                    els.message.innerText = "Generation stopped.";
+                    updateProgress(0, steps);
+                }
+            }
+        }
+
+        function stepDDPM(x, model_output, t, rng) {
+            const alpha = ALPHAS[t];
+            const alpha_hat = ALPHA_HAT[t];
+            const beta = BETAS[t];
+            const size = x.length;
+
+            const coeff1 = 1 / Math.sqrt(alpha);
+            const coeff2 = (1 - alpha) / Math.sqrt(1 - alpha_hat);
+            const sigma = (t > 0) ? Math.sqrt(beta) : 0;
+            const z = (t > 0) ? randn(size, rng) : new Float32Array(size).fill(0);
+
+            const next_x = new Float32Array(size);
+            for (let i = 0; i < size; i++) {
+                let mean = coeff1 * (x[i] - coeff2 * model_output[i]);
+                next_x[i] = mean + sigma * z[i];
+            }
+            return next_x;
+        }
+
+        function stepEulerAncestral(x, model_output, t, prev_t, rng) {
+            const alpha_hat_t = ALPHA_HAT[t];
+            const alpha_hat_prev = (prev_t >= 0) ? ALPHA_HAT[prev_t] : 1.0;
+            const size = x.length;
+
+            const sigma_t = Math.sqrt(1 - alpha_hat_t);
+            const sigma_prev = Math.sqrt(1 - alpha_hat_prev);
+            const sqrt_alpha_hat = Math.sqrt(alpha_hat_t);
+            
+            let sigma_up = 0;
+            if (prev_t >= 0 && t > 0) {
+                sigma_up = Math.sqrt( ( (1 - alpha_hat_prev) / (1 - alpha_hat_t) ) * ( 1 - alpha_hat_t / alpha_hat_prev ) );
+            }
+            const sigma_down = Math.sqrt( Math.max(0, (1 - alpha_hat_prev) - sigma_up**2) );
+
+            const next_x = new Float32Array(size);
+            const z = randn(size, rng);
+
+            for (let i = 0; i < size; i++) {
+                const pred_original_sample = (x[i] - sigma_t * model_output[i]) / sqrt_alpha_hat;
+                next_x[i] = Math.sqrt(alpha_hat_prev) * pred_original_sample + sigma_down * model_output[i] + sigma_up * z[i];
+            }
+            return next_x;
+        }
+
+        function drawToCanvas(data) {
+            const imgData = ctx.createImageData(CONFIG.imageSize, CONFIG.imageSize);
+            const pixels = imgData.data;
+            for (let i = 0; i < data.length; i++) {
+                const val = Math.floor((data[i] + 1) * 127.5);
+                const p = i * 4;
+                pixels[p] = pixels[p + 1] = pixels[p + 2] = val;
+                pixels[p + 3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        function fillCanvas(val) {
+            ctx.fillStyle = `rgb(${val},${val},${val})`;
+            ctx.fillRect(0,0,CONFIG.imageSize, CONFIG.imageSize);
+            
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('OUTPUT AREA', CONFIG.imageSize/2, CONFIG.imageSize/2);
+        }
+
+        const overlay = document.getElementById('settings-overlay');
+        const drawer = document.getElementById('settings-drawer');
+        const openBtn = document.getElementById('mobile-settings-btn');
+        const closeBtn = document.getElementById('close-settings-btn');
+
+        function openSettings() {
+            overlay.classList.remove('opacity-0', 'pointer-events-none');
+            overlay.classList.add('opacity-100', 'pointer-events-auto');
+            drawer.classList.remove('-translate-x-full');
+            drawer.classList.add('translate-x-0');
+        }
+
+        function closeSettings() {
+            if(window.innerWidth >= 768) return; 
+            overlay.classList.remove('opacity-100', 'pointer-events-auto');
+            overlay.classList.add('opacity-0', 'pointer-events-none');
+            drawer.classList.remove('translate-x-0');
+            drawer.classList.add('-translate-x-full');
+        }
+
+        openBtn.addEventListener('click', openSettings);
+        closeBtn.addEventListener('click', closeSettings);
+        overlay.addEventListener('click', closeSettings);
+
+        els.randomBtn.addEventListener('click', () => {
+            els.slidersWrapper.querySelectorAll('input').forEach(input => {
+                input.value = (Math.random()*4-2).toFixed(2);
+                input.dispatchEvent(new Event('input', {bubbles:true}));
+            });
+        });
+
+        els.btnRollSeed.addEventListener('click', () => {
+            els.inputSeed.value = Math.floor(Math.random()*1000000000);
+        });
+
+        els.downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `dit-glo-${state.seed}.png`;
+            link.href = els.canvas.toDataURL();
+            link.click();
+        });
+
+        els.samplerSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'ddpm') {
+                els.stepsInput.value = 1000;
+                els.stepsInput.disabled = true;
+                els.stepsInput.classList.add('opacity-50', 'bg-gray-100');
+            } else {
+                els.stepsInput.value = 25; 
+                els.stepsInput.disabled = false;
+                els.stepsInput.classList.remove('opacity-50', 'bg-gray-100');
+            }
+        });
+
+        els.generateBtns.forEach(btn => btn.addEventListener('click', generateImage));
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
