@@ -3,877 +3,510 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>QR Stream Advanced</title>
-    <meta name="description" content="High-speed optical file transfer via continuous QR code display. Purely optical, no network required.">
-    <meta name="page:icon" content="fas fa-satellite-dish">
-    <meta name="page:color" content="#ffffff">
-
-    <!-- Tailwind CSS -->
+    <title>OptiDrop - Optical Data Transfer</title>
+    <meta name="description" content="Transmit files optically using sequential QR codes and web camera.">
+    <meta name="page:icon" content="fas fa-qrcode">
+    <meta name="page:color" content="#38bdf8">
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- QRious for robust QR Generation & jsQR for Reading -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
-            background-color: #f8fafc;
-            touch-action: none;
-            -webkit-font-smoothing: antialiased;
-        }
-        
-        .toggle-btn { position: relative; z-index: 10; }
-        .toggle-bg { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        
-        /* Ensure QR and Entropy map render sharply without blurring */
-        #qr-canvas, #entropy-canvas { 
-            image-rendering: pixelated; 
-            image-rendering: crisp-edges;
-        }
-        
-        /* Hide scrollbars but allow scroll in modal */
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-        .scan-line {
-            position: absolute;
-            width: 100%;
-            height: 2px;
-            background: rgba(56, 189, 248, 0.8);
-            box-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
-            animation: scan 2s linear infinite;
-        }
-
-        @keyframes scan {
-            0% { top: 0%; opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { top: 100%; opacity: 0; }
-        }
+        body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+        .glass-panel { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
     </style>
 </head>
-<body class="text-slate-800 font-sans flex flex-col h-screen w-screen">
+<body class="bg-gray-50 text-gray-900 font-sans h-screen w-screen overflow-hidden flex flex-col selection:bg-sky-200">
 
-    <!-- App Header -->
-    <header class="flex justify-between items-center px-4 py-3 border-b border-slate-200 bg-white z-20 flex-shrink-0 shadow-sm">
-        <div class="flex items-center space-x-2.5">
-            <div class="bg-slate-900 text-white p-1.5 rounded-lg flex items-center justify-center shadow-md">
-                <i class="fas fa-satellite-dish text-base"></i>
-            </div>
-            <h1 class="text-lg font-extrabold tracking-tight text-slate-900">QR Stream</h1>
+    <header class="flex-none bg-white border-b border-gray-200 px-4 sm:px-6 py-3 flex justify-between items-center z-20">
+        <div class="flex items-center gap-2 text-sky-500">
+            <i class="fas fa-qrcode text-xl sm:text-2xl"></i>
+            <h1 class="font-bold text-lg sm:text-xl tracking-tight text-gray-900">OptiDrop</h1>
         </div>
-        
-        <div class="flex items-center space-x-3">
-            <!-- Mode Toggle Switch -->
-            <div class="relative flex bg-slate-100 border border-slate-200 rounded-full p-1 cursor-pointer w-[140px] shadow-inner" id="mode-toggle">
-                <div id="toggle-indicator" class="absolute top-1 left-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-full shadow toggle-bg"></div>
-                <button id="btn-mode-tx" class="flex-1 text-center py-1 text-sm font-bold toggle-btn text-slate-900">Send</button>
-                <button id="btn-mode-rx" class="flex-1 text-center py-1 text-sm font-bold toggle-btn text-slate-400">Receive</button>
+        <div class="flex items-center gap-3 sm:gap-5">
+            <div class="flex items-center bg-gray-100 rounded-full p-1 cursor-pointer select-none" id="mode-toggle">
+                <div id="btn-tx" class="px-3 sm:px-5 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors bg-white shadow text-gray-900">Send</div>
+                <div id="btn-rx" class="px-3 sm:px-5 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors text-gray-500">Receive</div>
             </div>
-            
-            <!-- Settings Button -->
-            <button id="btn-settings" class="text-slate-500 hover:text-slate-900 transition-colors w-9 h-9 flex items-center justify-center rounded-full bg-slate-50 border border-slate-200 shadow-sm hover:bg-slate-100">
-                <i class="fas fa-sliders-h"></i>
+            <button id="btn-settings" class="text-gray-400 hover:text-gray-800 transition-colors p-1">
+                <i class="fas fa-sliders-h text-lg sm:text-xl"></i>
             </button>
         </div>
     </header>
 
-    <!-- Main Workspace -->
-    <main class="flex-1 relative w-full max-w-md mx-auto flex flex-col items-center justify-center p-4 min-h-0 overflow-hidden">
-        
-        <!-- ================= SEND (TX) VIEW ================= -->
-        <div id="view-tx" class="flex flex-col items-center justify-center w-full h-full space-y-5">
-            
-            <!-- Dynamic QR Code Display -->
-            <div class="relative w-full aspect-square bg-white border-[3px] border-dashed border-slate-300 rounded-3xl flex flex-col items-center justify-center overflow-hidden shadow-sm group transition-all duration-300" id="qr-container">
-                <input type="file" id="file-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" title="Select a file to send">
-                
-                <div id="tx-placeholder" class="flex flex-col items-center text-slate-400 group-hover:text-slate-700 transition-colors pointer-events-none">
-                    <div class="w-20 h-20 bg-slate-50 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center mb-4 group-hover:-translate-y-1 transition-transform duration-300">
-                        <i class="fas fa-file-upload text-3xl text-slate-300 group-hover:text-blue-500 transition-colors"></i>
-                    </div>
-                    <span class="font-bold text-lg">Tap to select file</span>
-                    <span class="text-xs mt-1.5 text-slate-400 font-medium px-6 text-center">Large files are split into optical chunks automatically.</span>
-                </div>
+    <main class="flex-1 relative flex items-center justify-center p-4">
+        <div class="w-full max-w-md lg:max-w-lg aspect-square bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden relative flex flex-col items-center justify-center">
 
-                <!-- White background ensures maximum contrast for scanner -->
-                <div class="absolute inset-0 bg-white hidden flex items-center justify-center p-3 pointer-events-none" id="qr-canvas-wrapper">
-                    <canvas id="qr-canvas" class="w-full h-full object-contain"></canvas>
-                </div>
-            </div>
-
-            <!-- TX Control Panel -->
-            <div class="w-full bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col space-y-4">
-                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <div class="flex flex-col overflow-hidden pr-3">
-                        <span id="tx-filename" class="font-bold text-sm truncate text-slate-800">No file selected</span>
-                        <span id="tx-progress" class="text-[11px] text-slate-500 font-mono mt-0.5 tracking-tight">0 bytes • 0 chunks</span>
+            <div id="view-tx" class="absolute inset-0 flex flex-col items-center justify-center w-full h-full p-4 transition-opacity duration-300 z-10">
+                <div id="tx-initial" class="flex flex-col items-center justify-center text-center w-full h-full">
+                    <div class="w-20 h-20 sm:w-24 sm:h-24 bg-sky-50 text-sky-400 rounded-full flex items-center justify-center mb-6 border-4 border-sky-100 shadow-sm">
+                        <i class="fas fa-arrow-up-from-bracket text-3xl sm:text-4xl"></i>
                     </div>
-                    <div id="tx-status-icon" class="w-10 h-10 rounded-full bg-white border border-slate-200 text-slate-300 flex items-center justify-center flex-shrink-0 shadow-sm">
-                        <i class="fas fa-circle-notch"></i>
-                    </div>
-                </div>
-                
-                <button id="btn-start-tx" disabled class="w-full py-3.5 rounded-xl font-bold text-white shadow-md bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-all flex items-center justify-center space-x-2 hover:bg-slate-900 active:scale-[0.98]">
-                    <i class="fas fa-broadcast-tower"></i>
-                    <span id="btn-tx-text">Begin Transmission</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- ================= RECEIVE (RX) VIEW ================= -->
-        <div id="view-rx" class="hidden flex-col items-center justify-start w-full h-full space-y-4 pt-1">
-            
-            <!-- Scanner Camera Viewport -->
-            <div class="relative w-full aspect-square bg-black rounded-3xl overflow-hidden shadow-xl flex-shrink-0 border-4 border-slate-800">
-                <video id="camera-video" class="absolute inset-0 w-full h-full object-cover scale-[1.02]" playsinline autoplay muted></video>
-                <canvas id="camera-canvas" class="hidden"></canvas>
-                
-                <!-- Scanner UI Elements -->
-                <div class="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-                    <!-- Targeting Box -->
-                    <div class="w-3/4 h-3/4 border-2 border-white/40 border-dashed rounded-xl relative">
-                        <!-- Corner markers -->
-                        <div class="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-blue-500 rounded-tl-lg"></div>
-                        <div class="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-blue-500 rounded-tr-lg"></div>
-                        <div class="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-blue-500 rounded-bl-lg"></div>
-                        <div class="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-blue-500 rounded-br-lg"></div>
-                        <div class="scan-line hidden" id="scanner-line"></div>
-                    </div>
-                </div>
-
-                <!-- Overlay Status HUD -->
-                <div class="absolute top-4 left-4 right-4 flex justify-between items-start z-20 pointer-events-none">
-                    <div class="bg-black/60 backdrop-blur-md text-white text-xs px-3 py-1.5 rounded-lg font-mono font-bold shadow border border-white/10" id="rx-scan-status">
-                        Initializing Optics...
-                    </div>
-                    <div class="bg-black/60 backdrop-blur-md text-emerald-400 text-xs px-3 py-1.5 rounded-lg font-mono font-bold shadow border border-white/10 hidden" id="rx-fps-counter">
-                        -- fps
-                    </div>
-                </div>
-
-                <!-- Error Fallback Overlay -->
-                <div id="camera-error-overlay" class="hidden absolute inset-0 bg-slate-900/95 backdrop-blur z-30 flex flex-col items-center justify-center text-center p-6">
-                    <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4 border border-red-500/30">
-                        <i class="fas fa-video-slash text-red-500 text-2xl"></i>
-                    </div>
-                    <p class="text-white text-lg font-bold mb-2">Camera Access Denied</p>
-                    <p class="text-slate-400 text-xs mb-6 leading-relaxed">Ensure browser permissions are granted. Local environments may require a localhost server or HTTPS to access media devices.</p>
-                    <button id="btn-retry-camera" class="bg-white text-slate-900 hover:bg-slate-100 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-transform active:scale-95">
-                        Retry Connection
+                    <h2 class="text-base sm:text-lg font-semibold mb-2">Select File to Transmit</h2>
+                    <p class="text-xs sm:text-sm text-gray-400 mb-8 px-6">Data is chunked and repeatedly broadcasted via continuous QR codes.</p>
+                    <button id="btn-select-file" class="bg-gray-900 hover:bg-gray-800 text-white px-8 py-3 rounded-full text-sm font-medium transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                        Browse Files
                     </button>
-                </div>
-            </div>
-
-            <!-- Receiver HUD & Entropy Map -->
-            <div class="w-full flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl p-3 shadow-sm min-h-0 relative">
-                <div class="flex justify-between items-center mb-2.5 flex-shrink-0 px-1">
-                    <div class="flex items-center space-x-2">
-                        <i class="fas fa-layer-group text-slate-400 text-sm"></i>
-                        <span class="text-[11px] font-black text-slate-700 uppercase tracking-widest">Data Matrix</span>
-                    </div>
-                    <span id="rx-progress-pct" class="text-sm font-black text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded border border-blue-100">0.0%</span>
-                </div>
-                
-                <!-- Visual Map of received chunks -->
-                <div class="flex-1 w-full relative bg-slate-50 rounded-xl overflow-hidden border border-slate-200 shadow-inner" id="entropy-container">
-                    <div class="absolute inset-0 flex items-center justify-center text-slate-300 font-bold text-sm tracking-widest" id="entropy-placeholder">AWAITING SYNC</div>
-                    <canvas id="entropy-canvas" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-500"></canvas>
+                    <input type="file" id="file-input" class="hidden">
                 </div>
 
-                <div class="mt-3 flex justify-between items-center flex-shrink-0 h-10 px-1">
-                    <div class="flex flex-col overflow-hidden pr-3 w-full">
-                        <span class="text-sm font-bold text-slate-800 truncate" id="rx-filename">Standby...</span>
-                        <div class="w-full bg-slate-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                            <div class="bg-blue-500 h-full w-0 transition-all duration-200 rounded-full" id="rx-progress-bar"></div>
+                <div id="tx-active" class="hidden flex-col items-center justify-center w-full h-full relative">
+                    <canvas id="tx-canvas" class="w-full aspect-square object-contain max-w-[92%] rounded-xl"></canvas>
+                    <div class="absolute bottom-3 left-3 right-3 glass-panel border border-white rounded-xl p-3 shadow-lg flex justify-between items-center">
+                        <div class="flex flex-col overflow-hidden pr-2">
+                            <span id="tx-filename" class="text-sm font-semibold truncate text-gray-800"></span>
+                            <span id="tx-stats" class="text-[10px] sm:text-xs text-gray-500 font-mono mt-0.5"></span>
                         </div>
+                        <button id="btn-stop-tx" class="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-red-50 text-red-500 rounded-full hover:bg-red-100 transition-colors focus:outline-none">
+                            <i class="fas fa-stop"></i>
+                        </button>
                     </div>
-                    <button id="btn-download" class="hidden flex-shrink-0 bg-slate-900 hover:bg-black text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 flex items-center space-x-2">
-                        <i class="fas fa-save"></i>
-                        <span>Save</span>
-                    </button>
                 </div>
             </div>
-            
+
+            <div id="view-rx" class="absolute inset-0 w-full h-full flex flex-col hidden opacity-0 transition-opacity duration-300 bg-gray-900 z-0">
+                <video id="rx-video" class="absolute inset-0 w-full h-full object-cover" playsinline muted autoplay></video>
+                
+                <canvas id="rx-canvas" class="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-90"></canvas>
+                
+                <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div class="w-[85%] aspect-square border-2 border-white/20 rounded-xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]">
+                        <div class="absolute -top-0.5 -left-0.5 w-6 sm:w-10 h-6 sm:h-10 border-t-4 border-l-4 border-sky-400 rounded-tl-xl"></div>
+                        <div class="absolute -top-0.5 -right-0.5 w-6 sm:w-10 h-6 sm:h-10 border-t-4 border-r-4 border-sky-400 rounded-tr-xl"></div>
+                        <div class="absolute -bottom-0.5 -left-0.5 w-6 sm:w-10 h-6 sm:h-10 border-b-4 border-l-4 border-sky-400 rounded-bl-xl"></div>
+                        <div class="absolute -bottom-0.5 -right-0.5 w-6 sm:w-10 h-6 sm:h-10 border-b-4 border-r-4 border-sky-400 rounded-br-xl"></div>
+                    </div>
+                </div>
+
+                <div class="absolute bottom-3 left-3 right-3 glass-panel border border-white/50 rounded-xl p-3 sm:p-4 shadow-xl flex flex-col gap-2 sm:gap-3">
+                    <div class="flex justify-between items-end">
+                        <div class="flex flex-col overflow-hidden pr-2">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="relative flex h-2 w-2">
+                                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                                  <span class="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                                </span>
+                                <span class="text-[10px] font-bold text-sky-500 uppercase tracking-wider">Listening</span>
+                            </div>
+                            <span id="rx-filename" class="text-xs sm:text-sm font-semibold truncate text-gray-800">Waiting for optical signal...</span>
+                        </div>
+                        <span id="rx-percentage" class="text-base sm:text-lg font-bold text-gray-900 font-mono">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200/80 h-2 sm:h-2.5 rounded-full overflow-hidden shadow-inner">
+                        <div id="rx-progress" class="bg-sky-400 h-full w-0 transition-all duration-300 ease-out"></div>
+                    </div>
+                    <div class="flex justify-between text-[9px] sm:text-[10px] text-gray-500 font-mono font-medium">
+                        <span id="rx-chunks">0 / 0 chunks</span>
+                        <span id="rx-errors">Missing: 0</span>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </main>
 
-    <!-- Configuration Modal -->
-    <div id="settings-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300 px-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden transform scale-95 opacity-0 transition-all duration-300 flex flex-col max-h-[85vh]" id="settings-panel">
-            
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
-                <h2 class="text-lg font-extrabold text-slate-900 flex items-center">
-                    <i class="fas fa-sliders-h mr-2.5 text-blue-500"></i> Protocol Settings
-                </h2>
-                <button id="btn-close-settings-x" class="text-slate-400 hover:text-slate-800 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors">
-                    <i class="fas fa-times text-lg"></i>
+    <div id="modal-settings" class="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col transform scale-95 transition-transform duration-300" id="modal-content">
+            <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h3 class="font-semibold text-gray-800">Configuration</h3>
+                <button id="btn-close-settings" class="text-gray-400 hover:text-gray-700 bg-white shadow-sm w-8 h-8 rounded-full flex items-center justify-center transition-colors">
+                    <i class="fas fa-times"></i>
                 </button>
             </div>
-            
-            <!-- Scrollable Settings Area -->
-            <div class="p-6 space-y-7 overflow-y-auto no-scrollbar bg-slate-50/50">
-                
-                <!-- Transmission Density (Chunk Size) -->
-                <div class="space-y-3">
-                    <div class="flex justify-between items-end">
-                        <label class="text-sm font-bold text-slate-800 flex items-center">
-                            <i class="fas fa-compress-arrows-alt w-5 text-slate-400"></i> Payload Density
-                        </label>
-                        <span class="text-xs font-mono text-blue-700 font-bold bg-blue-100 px-2 py-1 rounded border border-blue-200" id="val-chunk-size">200 Bytes</span>
-                    </div>
-                    <input type="range" id="setting-chunk-size" min="50" max="400" step="10" value="200" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
-                    <p class="text-[10px] text-slate-500 font-medium leading-relaxed">Larger payloads transfer data faster but create denser QR patterns requiring higher camera resolution.</p>
-                </div>
-
-                <!-- Broadcast Rate -->
-                <div class="space-y-3">
-                    <div class="flex justify-between items-end">
-                        <label class="text-sm font-bold text-slate-800 flex items-center">
-                            <i class="fas fa-tachometer-alt w-5 text-slate-400"></i> Broadcast Rate
-                        </label>
-                        <span class="text-xs font-mono text-blue-700 font-bold bg-blue-100 px-2 py-1 rounded border border-blue-200" id="val-tx-speed">150 ms/frame</span>
-                    </div>
-                    <input type="range" id="setting-tx-speed" min="50" max="800" step="10" value="150" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" dir="rtl">
-                    <p class="text-[10px] text-slate-500 font-medium leading-relaxed">Frame interval. Faster rates (lower ms) may cause standard 30fps cameras to miss frames.</p>
-                </div>
-
-                <!-- Error Correction Level -->
-                <div class="space-y-2.5">
-                    <label class="text-sm font-bold text-slate-800 flex items-center">
-                        <i class="fas fa-shield-alt w-5 text-slate-400"></i> Error Correction Level
+            <div class="p-5 flex flex-col gap-6">
+                <div class="flex flex-col gap-2.5">
+                    <label class="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <i class="fas fa-camera text-gray-400"></i> Receiver Camera
                     </label>
                     <div class="relative">
-                        <select id="setting-ecc" class="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 shadow-sm transition-all">
-                            <option value="L">Low (~7% recovery) - Fastest</option>
-                            <option value="M" selected>Medium (~15% recovery) - Balanced</option>
-                            <option value="Q">Quartile (~25% recovery) - Robust</option>
-                            <option value="H">High (~30% recovery) - Densest</option>
+                        <select id="setting-camera" class="w-full bg-white border border-gray-200 rounded-lg pl-3 pr-8 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 appearance-none shadow-sm text-gray-700">
+                            <option value="">Default Environment</option>
                         </select>
-                        <div class="absolute inset-y-0 right-4 flex items-center pointer-events-none text-slate-400">
-                            <i class="fas fa-chevron-down text-xs"></i>
-                        </div>
+                        <i class="fas fa-chevron-down absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs pointer-events-none"></i>
                     </div>
-                    <p class="text-[10px] text-slate-500 font-medium leading-relaxed">Higher ECC increases reliability against glare and blur, but significantly increases QR complexity.</p>
                 </div>
                 
-                <!-- Optics Preference -->
-                <div class="space-y-2.5">
-                    <label class="text-sm font-bold text-slate-800 flex items-center">
-                        <i class="fas fa-camera w-5 text-slate-400"></i> Optical Sensor
+                <div class="flex flex-col gap-2">
+                    <label class="text-sm font-medium text-gray-700 flex justify-between items-center">
+                        <span class="flex items-center gap-2"><i class="fas fa-tachometer-alt text-gray-400"></i> TX Interval</span>
+                        <span id="label-speed" class="bg-sky-50 text-sky-600 px-2 py-0.5 rounded text-xs font-mono font-bold">100 ms</span>
                     </label>
-                    <div class="relative">
-                        <select id="setting-camera" class="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 shadow-sm transition-all">
-                            <option value="environment">Rear Camera (Primary)</option>
-                            <option value="user">Front Camera (Selfie)</option>
-                        </select>
-                        <div class="absolute inset-y-0 right-4 flex items-center pointer-events-none text-slate-400">
-                            <i class="fas fa-chevron-down text-xs"></i>
-                        </div>
-                    </div>
+                    <input type="range" id="setting-speed" min="30" max="500" step="10" value="100" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-sky-500">
+                    <p class="text-[10px] text-gray-400 mt-1">Lower ms = faster transfer but requires high FPS camera.</p>
                 </div>
 
-            </div>
-
-            <div class="p-5 border-t border-slate-100 bg-white sticky bottom-0">
-                <button id="btn-close-settings" class="w-full bg-slate-900 hover:bg-black text-white py-3.5 rounded-xl font-bold shadow-md transition-all active:scale-[0.98]">
-                    Apply Protocol Configuration
-                </button>
+                <div class="flex flex-col gap-2">
+                    <label class="text-sm font-medium text-gray-700 flex justify-between items-center">
+                        <span class="flex items-center gap-2"><i class="fas fa-box-open text-gray-400"></i> Chunk Size</span>
+                        <span id="label-chunk" class="bg-sky-50 text-sky-600 px-2 py-0.5 rounded text-xs font-mono font-bold">250 B</span>
+                    </label>
+                    <input type="range" id="setting-chunk" min="50" max="400" step="10" value="250" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-sky-500">
+                    <p class="text-[10px] text-gray-400 mt-1">Max bytes per frame. Higher capacity increases QR density.</p>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        /**
-         * QR Stream - Core Protocol Logic
-         * Uses heavily configured QR generation and continuous polling frame extraction.
-         */
-
-        // --- Protocol Configuration ---
-        const config = {
-            chunkSize: 200,      // Bytes per QR frame. 200 is safe for 'M' ECC level.
-            txSpeedMs: 150,      // Frame switch interval.
-            facingMode: 'environment',
-            eccLevel: 'M',       // Error Correction: L(7%), M(15%), Q(25%), H(30%)
-            qrPadding: 20,       // Quiet zone for scanner targeting
-            qrInternalSize: 800  // High internal resolution drawn to canvas
-        };
-
-        // --- State: Transmission (TX) ---
-        let txFile = null;
-        let txChunks = []; 
-        let txFileId = '';
-        let txIntervalId = null;
-        let txLoopCount = 0;
-        let txDataIndex = 0;
+        let isTxMode = true;
+        let txPackets = [];
+        let txIndex = 0;
+        let txTimer = null;
+        let txInterval = 100;
+        let txChunkSize = 250;
         let isTransmitting = false;
 
-        // --- State: Reception (RX) ---
-        let rxFileId = null;
-        let rxFileName = '';
-        let rxTotalChunks = 0;
-        let rxChunks = [];
-        let rxReceivedSet = new Set();
-        let rxAnimFrameId = null;
-        let rxLastScanTime = 0;
-        let rxFrameCount = 0;
-        let rxLastFpsTime = 0;
+        let currentFileId = -1;
+        let receivedMap = new Map();
+        let rxTotal = 0;
+        let rxMeta = null;
+        let videoStream = null;
+        let mapGridCols = 1;
+        let mapCellW = 1;
+        let mapCellH = 1;
+
+        const elBtnTx = document.getElementById('btn-tx');
+        const elBtnRx = document.getElementById('btn-rx');
+        const viewTx = document.getElementById('view-tx');
+        const viewRx = document.getElementById('view-rx');
+        const modeToggle = document.getElementById('mode-toggle');
+        const modalSettings = document.getElementById('modal-settings');
+        const modalContent = document.getElementById('modal-content');
         
-        // --- DOM Contexts ---
-        const rxVideo = document.getElementById('camera-video');
-        const rxCanvas = document.getElementById('camera-canvas');
-        const rxCtx = rxCanvas.getContext('2d', { willReadFrequently: true });
-        const entCanvas = document.getElementById('entropy-canvas');
-        const entCtx = entCanvas.getContext('2d', { alpha: false }); // Optimize for no transparency
-        let gridCols = 0, gridRows = 0;
+        const txCanvas = document.getElementById('tx-canvas');
+        const fileInput = document.getElementById('file-input');
+        
+        const rxVideo = document.getElementById('rx-video');
+        const rxCanvas = document.getElementById('rx-canvas');
+        const rxCtx = rxCanvas.getContext('2d', { alpha: true });
+        
+        const decodeCanvas = document.createElement('canvas');
+        const decodeCtx = decodeCanvas.getContext('2d', { willReadFrequently: true });
+        let isDecodingLoopActive = false;
 
-        let currentMode = 'tx';
-
-        // --- Initialization ---
-        function init() {
-            setupEventListeners();
-            updateModeUI();
-            
-            // Check API support
-            if(!window.FileReader || !window.Uint8Array) {
-                alert("Browser does not support required Binary/File APIs.");
-            }
+        function createDataPacket(fileId, index, total, chunkData) {
+            const packet = new Uint8Array(7 + chunkData.length);
+            packet[0] = 1;
+            packet[1] = (fileId >> 8) & 0xFF;
+            packet[2] = fileId & 0xFF;
+            packet[3] = (index >> 8) & 0xFF;
+            packet[4] = index & 0xFF;
+            packet[5] = (total >> 8) & 0xFF;
+            packet[6] = total & 0xFF;
+            packet.set(chunkData, 7);
+            return packet;
         }
 
-        // --- UI Binding ---
-        function setupEventListeners() {
-            // Main Mode Toggle
-            document.getElementById('mode-toggle').addEventListener('click', (e) => {
-                const rect = document.getElementById('mode-toggle').getBoundingClientRect();
-                setMode(e.clientX < rect.left + rect.width / 2 ? 'tx' : 'rx');
-            });
-
-            // TX Inputs
-            document.getElementById('file-input').addEventListener('change', handleFileSelect);
-            document.getElementById('btn-start-tx').addEventListener('click', toggleTransmission);
-
-            // Settings Modal
-            const modal = document.getElementById('settings-modal');
-            const panel = document.getElementById('settings-panel');
-            
-            const openSettings = () => {
-                modal.classList.remove('opacity-0', 'pointer-events-none');
-                panel.classList.remove('scale-95', 'opacity-0');
-            };
-            const closeSettings = () => {
-                modal.classList.add('opacity-0', 'pointer-events-none');
-                panel.classList.add('scale-95', 'opacity-0');
-                if (currentMode === 'rx') {
-                    stopCamera();
-                    setTimeout(startCamera, 300); // Give camera hardware time to reset
-                }
-            };
-
-            document.getElementById('btn-settings').addEventListener('click', openSettings);
-            document.getElementById('btn-close-settings').addEventListener('click', closeSettings);
-            document.getElementById('btn-close-settings-x').addEventListener('click', closeSettings);
-
-            // Setting Handlers
-            document.getElementById('setting-chunk-size').addEventListener('input', (e) => {
-                config.chunkSize = parseInt(e.target.value);
-                document.getElementById('val-chunk-size').textContent = `${config.chunkSize} Bytes`;
-            });
-            document.getElementById('setting-chunk-size').addEventListener('change', () => {
-                if(txFile && !isTransmitting) rechunkFile();
-            });
-
-            document.getElementById('setting-tx-speed').addEventListener('input', (e) => {
-                config.txSpeedMs = parseInt(e.target.value);
-                document.getElementById('val-tx-speed').textContent = `${config.txSpeedMs} ms/f`;
-            });
-
-            document.getElementById('setting-ecc').addEventListener('change', (e) => {
-                config.eccLevel = e.target.value;
-                if(txFile && !isTransmitting) rechunkFile();
-            });
-
-            document.getElementById('setting-camera').addEventListener('change', (e) => {
-                config.facingMode = e.target.value;
-            });
-
-            // RX Inputs
-            document.getElementById('btn-download').addEventListener('click', compileAndDownload);
-            document.getElementById('btn-retry-camera').addEventListener('click', startCamera);
-            
-            // Resize recalculation
-            window.addEventListener('resize', () => {
-                if(currentMode === 'rx' && rxTotalChunks > 0) redrawEntropyMap();
-            });
+        function createMetaPacket(fileId, total, fileName, mimeType) {
+            const textEncoder = new TextEncoder();
+            const metaBytes = textEncoder.encode(fileName + "|" + mimeType);
+            const packet = new Uint8Array(7 + metaBytes.length);
+            packet[0] = 2;
+            packet[1] = (fileId >> 8) & 0xFF;
+            packet[2] = fileId & 0xFF;
+            packet[3] = 0;
+            packet[4] = 0;
+            packet[5] = (total >> 8) & 0xFF;
+            packet[6] = total & 0xFF;
+            packet.set(metaBytes, 7);
+            return packet;
         }
 
-        // --- Mode Switching ---
-        function setMode(newMode) {
-            if (currentMode === newMode) return;
-            currentMode = newMode;
-            
-            if (currentMode === 'rx' && isTransmitting) toggleTransmission();
-            if (currentMode === 'tx') stopCamera();
-            
-            updateModeUI();
-            
-            if (currentMode === 'rx') startCamera();
-        }
+        modeToggle.addEventListener('click', (e) => {
+            const targetTx = e.target.id === 'btn-tx' || (e.target.id !== 'btn-rx' && !isTxMode);
+            if (isTxMode === targetTx) return;
+            isTxMode = targetTx;
 
-        function updateModeUI() {
-            const toggleBg = document.getElementById('toggle-indicator');
-            const btnModeTx = document.getElementById('btn-mode-tx');
-            const btnModeRx = document.getElementById('btn-mode-rx');
-            const viewTx = document.getElementById('view-tx');
-            const viewRx = document.getElementById('view-rx');
-
-            if (currentMode === 'tx') {
-                toggleBg.style.transform = 'translateX(0)';
-                btnModeTx.classList.replace('text-slate-400', 'text-slate-900');
-                btnModeRx.classList.replace('text-slate-900', 'text-slate-400');
-                
-                viewTx.classList.remove('hidden');
-                viewRx.classList.add('hidden');
-                viewRx.classList.remove('flex');
+            if (isTxMode) {
+                elBtnTx.className = "px-3 sm:px-5 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors bg-white shadow text-gray-900";
+                elBtnRx.className = "px-3 sm:px-5 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700";
+                viewRx.classList.add('opacity-0');
+                setTimeout(() => {
+                    viewRx.classList.add('hidden');
+                    viewRx.classList.remove('z-10');
+                    viewRx.classList.add('z-0');
+                    viewTx.classList.remove('hidden');
+                    viewTx.classList.remove('z-0');
+                    viewTx.classList.add('z-10');
+                    setTimeout(() => viewTx.classList.remove('opacity-0'), 20);
+                }, 300);
+                stopCamera();
+                if(isTransmitting) txLoop();
             } else {
-                toggleBg.style.transform = 'translateX(100%)';
-                btnModeRx.classList.replace('text-slate-400', 'text-slate-900');
-                btnModeTx.classList.replace('text-slate-900', 'text-slate-400');
-                
-                viewRx.classList.remove('hidden');
-                viewRx.classList.add('flex');
-                viewTx.classList.add('hidden');
+                elBtnRx.className = "px-3 sm:px-5 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors bg-white shadow text-gray-900";
+                elBtnTx.className = "px-3 sm:px-5 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors text-gray-500 hover:text-gray-700";
+                viewTx.classList.add('opacity-0');
+                setTimeout(() => {
+                    viewTx.classList.add('hidden');
+                    viewTx.classList.remove('z-10');
+                    viewTx.classList.add('z-0');
+                    viewRx.classList.remove('hidden');
+                    viewRx.classList.remove('z-0');
+                    viewRx.classList.add('z-10');
+                    setTimeout(() => viewRx.classList.remove('opacity-0'), 20);
+                }, 300);
+                clearTimeout(txTimer);
+                startCamera();
             }
-        }
+        });
 
-        // ==========================================
-        //               TRANSMISSION (TX)
-        // ==========================================
-
-        async function handleFileSelect(e) {
+        document.getElementById('btn-select-file').addEventListener('click', () => fileInput.click());
+        
+        fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            txFile = file;
+            const arrayBuffer = await file.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
             
-            // Generate short unique ID for this session
-            txFileId = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const fileId = Math.floor(Math.random() * 65535) + 1;
+            const total = Math.ceil(uint8Array.length / txChunkSize);
             
-            await rechunkFile();
+            txPackets = [];
+            const meta = createMetaPacket(fileId, total, file.name, file.type || 'application/octet-stream');
             
-            // UI Updates
-            document.getElementById('tx-placeholder').classList.add('hidden');
-            const wrapper = document.getElementById('qr-canvas-wrapper');
-            wrapper.classList.remove('hidden');
-            document.getElementById('qr-container').classList.replace('bg-white', 'bg-slate-900');
-            document.getElementById('qr-container').classList.remove('border-dashed');
+            for(let i=0; i<total; i++) {
+                const chunk = uint8Array.slice(i * txChunkSize, (i+1) * txChunkSize);
+                txPackets.push(createDataPacket(fileId, i, total, chunk));
+                if(i === 0 || i % 15 === 0) txPackets.push(meta);
+            }
+            txPackets.push(meta);
             
-            document.getElementById('btn-start-tx').disabled = false;
-        }
+            txIndex = 0;
+            isTransmitting = true;
+            document.getElementById('tx-initial').classList.add('hidden');
+            document.getElementById('tx-active').classList.remove('hidden');
+            document.getElementById('tx-active').classList.add('flex');
+            document.getElementById('tx-filename').innerText = file.name;
+            
+            txLoop();
+            fileInput.value = ''; 
+        });
 
-        async function rechunkFile() {
-            if(!txFile) return;
-            try {
-                const buffer = await txFile.arrayBuffer();
-                const bytes = new Uint8Array(buffer);
-                
-                txChunks = [];
-                // Split file into exact byte chunks
-                for (let i = 0; i < bytes.length; i += config.chunkSize) {
-                    const chunk = bytes.slice(i, i + config.chunkSize);
-                    
-                    // Convert raw binary to string for base64 encoding
-                    let binString = '';
-                    for(let j=0; j<chunk.length; j++){ 
-                        binString += String.fromCharCode(chunk[j]); 
-                    }
-                    txChunks.push(btoa(binString));
+        document.getElementById('btn-stop-tx').addEventListener('click', () => {
+            isTransmitting = false;
+            clearTimeout(txTimer);
+            document.getElementById('tx-active').classList.add('hidden');
+            document.getElementById('tx-active').classList.remove('flex');
+            document.getElementById('tx-initial').classList.remove('hidden');
+        });
+
+        function txLoop() {
+            if(!isTransmitting || !isTxMode) return;
+            const packet = txPackets[txIndex];
+            
+            QRCode.toCanvas(txCanvas, [{ data: packet, mode: 'byte' }], {
+                errorCorrectionLevel: 'L',
+                margin: 2,
+                width: 600,
+                color: { dark: '#0f172a', light: '#ffffff' }
+            }, (err) => {
+                if(!err) {
+                    document.getElementById('tx-stats').innerText = `${txIndex + 1} / ${txPackets.length} pkts • ${txInterval}ms`;
+                    txIndex = (txIndex + 1) % txPackets.length;
+                    txTimer = setTimeout(txLoop, txInterval);
+                } else {
+                    txTimer = setTimeout(txLoop, txInterval);
                 }
-                
-                // Update TX HUD
-                document.getElementById('tx-filename').textContent = txFile.name;
-                document.getElementById('tx-progress').textContent = `${formatBytes(txFile.size)} • ${txChunks.length} packets`;
-                
-                // Render initial Setup Frame
-                renderQR(`M|${txFileId}|${txChunks.length}|${txFile.name}|${txFile.size}`);
-            } catch (err) {
-                alert("Failed to read file: " + err.message);
-            }
+            });
         }
 
-        function toggleTransmission() {
-            if (!txFile) return;
-            isTransmitting = !isTransmitting;
-            
-            const btn = document.getElementById('btn-start-tx');
-            const icon = document.getElementById('tx-status-icon');
-            const btnText = document.getElementById('btn-tx-text');
-            const wrapper = document.getElementById('qr-canvas-wrapper');
-
-            if (isTransmitting) {
-                btn.classList.replace('bg-slate-800', 'bg-red-600');
-                btn.classList.replace('hover:bg-slate-900', 'hover:bg-red-700');
-                btnText.textContent = 'Halt Transmission';
-                icon.innerHTML = '<i class="fas fa-satellite-dish animate-pulse text-blue-500"></i>';
-                icon.classList.add('border-blue-200', 'bg-blue-50');
-                wrapper.classList.add('animate-pulse'); // visual feedback
-                
-                txLoopCount = 0;
-                txDataIndex = 0;
-                
-                // Recursive timeout loop for precise interval control
-                const sendFrame = () => {
-                    // Protocol: Inject Metadata frame periodically to allow late-joiners to sync
-                    // Inject every 15 frames or at the start of a full loop
-                    if (txLoopCount % 15 === 0) {
-                        renderQR(`M|${txFileId}|${txChunks.length}|${txFile.name}|${txFile.size}`);
-                        document.getElementById('tx-progress').textContent = `SYNC FRAME BROADCAST`;
-                    } else {
-                        const idx = txDataIndex % txChunks.length;
-                        // Data packet format: D | sessionID | index | base64Payload
-                        renderQR(`D|${txFileId}|${idx}|${txChunks[idx]}`);
-                        document.getElementById('tx-progress').textContent = `Transmitting: ${idx + 1} / ${txChunks.length}`;
-                        txDataIndex++;
-                    }
-                    txLoopCount++;
-                    txIntervalId = setTimeout(sendFrame, config.txSpeedMs);
-                };
-                sendFrame();
-
-            } else {
-                btn.classList.replace('bg-red-600', 'bg-slate-800');
-                btn.classList.replace('hover:bg-red-700', 'hover:bg-slate-900');
-                btnText.textContent = 'Resume Transmission';
-                icon.innerHTML = '<i class="fas fa-pause text-slate-400"></i>';
-                icon.classList.remove('border-blue-200', 'bg-blue-50');
-                wrapper.classList.remove('animate-pulse');
-                
-                clearTimeout(txIntervalId);
-                
-                // Return to static metadata display
-                renderQR(`M|${txFileId}|${txChunks.length}|${txFile.name}|${txFile.size}`);
-                document.getElementById('tx-progress').textContent = `PAUSED • ${txChunks.length} packets`;
-            }
-        }
-
-        function renderQR(payloadText) {
-            const canvas = document.getElementById('qr-canvas');
+        async function populateCameraList() {
             try {
-                // We instantiate a new QRious object every frame to ensure 
-                // strict adherence to configured constraints and avoid internal state bugs
-                new QRious({
-                    element: canvas,
-                    value: payloadText,
-                    size: config.qrInternalSize, 
-                    level: config.eccLevel,
-                    background: '#ffffff', // Maximize contrast
-                    foreground: '#000000',
-                    padding: config.qrPadding
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                const select = document.getElementById('setting-camera');
+                select.innerHTML = '<option value="">Default Environment</option>';
+                videoDevices.forEach((d, i) => {
+                    const option = document.createElement('option');
+                    option.value = d.deviceId;
+                    option.text = d.label || `Camera ${i + 1}`;
+                    select.appendChild(option);
                 });
             } catch (e) {
-                console.warn("QR Render Dropped Frame:", e);
+                console.warn("Camera enumeration failed:", e);
             }
         }
 
-
-        // ==========================================
-        //               RECEPTION (RX)
-        // ==========================================
-
-        function startCamera() {
-            const errOverlay = document.getElementById('camera-error-overlay');
-            const scanLine = document.getElementById('scanner-line');
-            errOverlay.classList.add('hidden');
-            document.getElementById('rx-scan-status').innerHTML = 'Requesting Optics...';
-            
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                // Request highest common resolution for accurate scanning of dense QR
-                const constraints = {
-                    video: { 
-                        facingMode: config.facingMode, 
-                        width: { ideal: 1920 }, 
-                        height: { ideal: 1080 } 
-                    }
-                };
-                
-                navigator.mediaDevices.getUserMedia(constraints)
-                    .then(stream => {
-                        rxVideo.srcObject = stream;
-                        // wait for video to load metadata to get actual dimensions
-                        rxVideo.onloadedmetadata = () => {
-                            rxVideo.play();
-                            scanLine.classList.remove('hidden');
-                            document.getElementById('rx-scan-status').innerHTML = '<span class="text-blue-300">Optics Active</span>';
-                            document.getElementById('rx-fps-counter').classList.remove('hidden');
-                            rxAnimFrameId = requestAnimationFrame(scanFrame);
-                        };
-                    })
-                    .catch(err => {
-                        console.error("Camera Setup Error:", err);
-                        document.getElementById('rx-scan-status').innerHTML = '<span class="text-red-400">Optics Failed</span>';
-                        errOverlay.classList.remove('hidden');
-                    });
-            } else {
-                document.getElementById('rx-scan-status').innerHTML = '<span class="text-red-400">API Offline</span>';
-                errOverlay.classList.remove('hidden');
+        async function startCamera() {
+            if (videoStream) stopCamera();
+            const deviceId = document.getElementById('setting-camera').value;
+            const constraints = {
+                video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 640 } } 
+                              : { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 640 } }
+            };
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                rxVideo.srcObject = videoStream;
+                if (!isDecodingLoopActive) {
+                    isDecodingLoopActive = true;
+                    requestAnimationFrame(scanLoop);
+                }
+            } catch (e) {
+                console.error("Camera error:", e);
+                document.getElementById('rx-filename').innerText = "Camera access denied.";
             }
         }
 
         function stopCamera() {
-            const scanLine = document.getElementById('scanner-line');
-            if (rxVideo.srcObject) {
-                rxVideo.srcObject.getTracks().forEach(t => t.stop());
-                rxVideo.srcObject = null;
+            if (videoStream) {
+                videoStream.getTracks().forEach(t => t.stop());
+                videoStream = null;
             }
-            scanLine.classList.add('hidden');
-            document.getElementById('rx-fps-counter').classList.add('hidden');
-            cancelAnimationFrame(rxAnimFrameId);
+            isDecodingLoopActive = false;
         }
 
-        function scanFrame(timestamp) {
-            if (currentMode !== 'rx') return;
-            
-            // Frame rate calculation
-            rxFrameCount++;
-            if (timestamp - rxLastFpsTime >= 1000) {
-                document.getElementById('rx-fps-counter').textContent = `${rxFrameCount} fps`;
-                rxFrameCount = 0;
-                rxLastFpsTime = timestamp;
+        function initEntropyMap(total) {
+            rxCanvas.width = 640;
+            rxCanvas.height = 640;
+            rxCtx.clearRect(0, 0, rxCanvas.width, rxCanvas.height);
+            mapGridCols = Math.ceil(Math.sqrt(total));
+            mapCellW = rxCanvas.width / mapGridCols;
+            mapCellH = rxCanvas.height / mapGridCols;
+        }
+
+        function updateEntropyMap(index) {
+            const x = (index % mapGridCols) * mapCellW;
+            const y = Math.floor(index / mapGridCols) * mapCellH;
+            const hue = (index / rxTotal) * 360;
+            rxCtx.fillStyle = `hsla(${hue}, 85%, 55%, 0.85)`;
+            rxCtx.fillRect(x, y, mapCellW + 0.5, mapCellH + 0.5);
+        }
+
+        function updateRxUI() {
+            const count = receivedMap.size;
+            const pct = rxTotal > 0 ? Math.floor((count / rxTotal) * 100) : 0;
+            document.getElementById('rx-percentage').innerText = `${pct}%`;
+            document.getElementById('rx-progress').style.width = `${pct}%`;
+            document.getElementById('rx-chunks').innerText = `${count} / ${rxTotal} chunks`;
+            document.getElementById('rx-errors').innerText = `Missing: ${rxTotal > 0 ? rxTotal - count : 0}`;
+            if(rxMeta) document.getElementById('rx-filename').innerText = rxMeta.name;
+        }
+
+        function scanLoop() {
+            if (isTxMode || !videoStream) {
+                isDecodingLoopActive = false;
+                return;
             }
-            
-            // Throttle actual QR processing to save CPU (~15-20 frames per sec is max practical for jsQR)
-            // If TX speed is 150ms, processing every 50ms ensures we don't miss frames
-            if (timestamp - rxLastScanTime > 50) {
-                if (rxVideo.readyState === rxVideo.HAVE_ENOUGH_DATA) {
-                    
-                    // Limit canvas size for jsQR processing speed
-                    const MAX_DIM = 640; 
-                    let w = rxVideo.videoWidth;
-                    let h = rxVideo.videoHeight;
-                    
-                    let scale = 1;
-                    if (w > MAX_DIM || h > MAX_DIM) {
-                        scale = Math.min(MAX_DIM / w, MAX_DIM / h);
-                    }
-                    
-                    rxCanvas.width = Math.floor(w * scale);
-                    rxCanvas.height = Math.floor(h * scale);
-                    
-                    // Draw video frame to hidden canvas
-                    rxCtx.drawImage(rxVideo, 0, 0, rxCanvas.width, rxCanvas.height);
-                    
-                    try {
-                        const imgData = rxCtx.getImageData(0, 0, rxCanvas.width, rxCanvas.height);
-                        
-                        // attemptBoth is slower but handles inverted environments. 
-                        // Since we force white bg / black fg, dontInvert is dramatically faster.
-                        const code = jsQR(imgData.data, imgData.width, imgData.height, { 
-                            inversionAttempts: "dontInvert" 
-                        });
-                        
-                        if (code && code.data) {
-                            handleRxData(code.data);
-                        }
-                    } catch (e) {
-                        // Canvas context error on rapid resize/mode switch
-                    }
-                }
-                rxLastScanTime = timestamp;
-            }
-            
-            rxAnimFrameId = requestAnimationFrame(scanFrame);
-        }
-
-        function handleRxData(text) {
-            // Protocol Parser
-            if (text.startsWith('M|')) {
-                // Metadata packet: M | fileID | totalChunks | fileName | fileSize
-                const p = text.split('|');
-                if (p.length >= 5 && rxFileId !== p[1]) {
-                    // New File Detected -> Initialize Receiver Protocol
-                    rxFileId = p[1];
-                    rxTotalChunks = parseInt(p[2]);
-                    rxFileName = p[3];
-                    
-                    // Reset State Arrays
-                    rxChunks = new Array(rxTotalChunks).fill(null);
-                    rxReceivedSet.clear();
-                    
-                    // Update UI
-                    document.getElementById('rx-filename').textContent = rxFileName;
-                    document.getElementById('rx-progress-bar').style.width = '0%';
-                    document.getElementById('btn-download').classList.add('hidden');
-                    document.getElementById('rx-scan-status').innerHTML = '<span class="text-blue-300">Target Locked</span>';
-                    
-                    initEntropyMap();
-                }
-            } else if (text.startsWith('D|')) {
-                // Data packet: D | fileID | chunkIndex | base64
-                const p = text.split('|');
-                if (p.length >= 4 && p[1] === rxFileId) {
-                    const idx = parseInt(p[2]);
-                    
-                    if (!rxReceivedSet.has(idx)) {
-                        // Novel chunk acquired
-                        rxReceivedSet.add(idx);
-                        rxChunks[idx] = p[3]; // Store base64 string directly
-                        
-                        document.getElementById('rx-scan-status').innerHTML = `<span class="text-emerald-400">Captured Pkt [${idx}]</span>`;
-                        
-                        updateEntropyMap(idx, p[3]);
-                        checkRxComplete();
-                    }
-                }
-            }
-        }
-
-        // --- Entropy (Data) Matrix Visualization ---
-
-        function initEntropyMap() {
-            const container = document.getElementById('entropy-container');
-            const placeholder = document.getElementById('entropy-placeholder');
-            
-            placeholder.classList.add('hidden');
-            entCanvas.classList.remove('opacity-0');
-            
-            // Set real pixel dimensions to match CSS dimensions
-            entCanvas.width = container.clientWidth;
-            entCanvas.height = container.clientHeight;
-            
-            // Calculate grid to form roughly square cells
-            const ratio = entCanvas.width / entCanvas.height;
-            gridCols = Math.ceil(Math.sqrt(rxTotalChunks * ratio));
-            gridRows = Math.ceil(rxTotalChunks / gridCols);
-            
-            // Initialize flat background
-            entCtx.fillStyle = '#f8fafc'; // tailwind slate-50
-            entCtx.fillRect(0, 0, entCanvas.width, entCanvas.height);
-            
-            updateRxProgress();
-        }
-
-        function redrawEntropyMap() {
-            const container = document.getElementById('entropy-container');
-            if(!container.clientWidth) return; // Prevent calc if hidden
-            
-            entCanvas.width = container.clientWidth;
-            entCanvas.height = container.clientHeight;
-            
-            entCtx.fillStyle = '#f8fafc';
-            entCtx.fillRect(0, 0, entCanvas.width, entCanvas.height);
-            
-            // Redraw all accumulated chunks
-            rxReceivedSet.forEach(idx => drawCell(idx, rxChunks[idx]));
-        }
-
-        function drawCell(idx, b64Data) {
-            if(!gridCols || !gridRows) return;
-            
-            // Calculate cell dimensions and position
-            const w = entCanvas.width / gridCols;
-            const h = entCanvas.height / gridRows;
-            const x = (idx % gridCols) * w;
-            const y = Math.floor(idx / gridCols) * h;
-            
-            // Calculate pseudo-entropy to generate a distinct color for visual tracking
-            const binStr = atob(b64Data);
-            let sum = 0;
-            // Sample a subset of bytes to keep it fast
-            const sampleRate = Math.max(1, Math.floor(binStr.length / 20));
-            for(let i=0; i<binStr.length; i+=sampleRate) {
-                sum += binStr.charCodeAt(i);
-            }
-            const avg = binStr.length > 0 ? (sum / (binStr.length/sampleRate)) : 0;
-            
-            // Map byte average (0-255) to a Hue degree (0-360)
-            const hue = Math.floor((avg / 255) * 360);
-            
-            // Draw block with full saturation
-            entCtx.fillStyle = `hsl(${hue}, 80%, 55%)`;
-            // Use ceil to overlap slightly and prevent rendering gaps
-            entCtx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(w)+1, Math.ceil(h)+1);
-        }
-
-        function updateEntropyMap(idx, b64Data) {
-            drawCell(idx, b64Data);
-            updateRxProgress();
-        }
-
-        function updateRxProgress() {
-            if(rxTotalChunks === 0) return;
-            const count = rxReceivedSet.size;
-            const pct = (count / rxTotalChunks) * 100;
-            
-            document.getElementById('rx-progress-pct').textContent = `${pct.toFixed(1)}%`;
-            document.getElementById('rx-progress-bar').style.width = `${pct}%`;
-        }
-
-        function checkRxComplete() {
-            if (rxReceivedSet.size === rxTotalChunks && rxTotalChunks > 0) {
-                document.getElementById('rx-scan-status').innerHTML = `<span class="text-white bg-emerald-500 px-2 py-0.5 rounded shadow">TRANSMISSION COMPLETE</span>`;
+            if (rxVideo.readyState === rxVideo.HAVE_ENOUGH_DATA) {
+                const w = rxVideo.videoWidth;
+                const h = rxVideo.videoHeight;
+                if(decodeCanvas.width !== w) decodeCanvas.width = w;
+                if(decodeCanvas.height !== h) decodeCanvas.height = h;
                 
-                // Show download trigger and hide scan line
-                document.getElementById('btn-download').classList.remove('hidden');
-                document.getElementById('scanner-line').classList.add('hidden');
+                decodeCtx.drawImage(rxVideo, 0, 0, w, h);
+                const imageData = decodeCtx.getImageData(0, 0, w, h);
                 
-                // Provide visual full completion flash
-                entCanvas.style.filter = 'brightness(1.2)';
-                setTimeout(()=> entCanvas.style.filter = 'none', 300);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+                
+                if (code && code.binaryData) {
+                    processRxPacket(new Uint8Array(code.binaryData));
+                }
+            }
+            if(isDecodingLoopActive) requestAnimationFrame(scanLoop);
+        }
+
+        function processRxPacket(packet) {
+            if (packet.length < 7) return;
+            const type = packet[0];
+            const fileId = (packet[1] << 8) | packet[2];
+            const index = (packet[3] << 8) | packet[4];
+            const total = (packet[5] << 8) | packet[6];
+
+            if (currentFileId !== fileId) {
+                currentFileId = fileId;
+                rxTotal = total;
+                receivedMap.clear();
+                rxMeta = null;
+                initEntropyMap(total);
+                document.getElementById('rx-filename').innerText = "Receiving...";
+            }
+
+            if (type === 1) {
+                if (!receivedMap.has(index)) {
+                    receivedMap.set(index, packet.slice(7));
+                    updateEntropyMap(index);
+                    updateRxUI();
+                    checkRxCompletion();
+                }
+            } else if (type === 2) {
+                if (!rxMeta) {
+                    const textDecoder = new TextDecoder();
+                    const metaStr = textDecoder.decode(packet.slice(7));
+                    const parts = metaStr.split('|');
+                    rxMeta = { name: parts[0], mime: parts[1] || 'application/octet-stream' };
+                    updateRxUI();
+                    checkRxCompletion();
+                }
             }
         }
 
-        // --- File Reconstruction ---
-        function compileAndDownload() {
-            try {
-                const byteArrays = [];
-                // Iterate through strictly ordered chunks
-                for (let i = 0; i < rxTotalChunks; i++) {
-                    const binStr = atob(rxChunks[i]);
-                    const arr = new Uint8Array(binStr.length);
-                    for(let j = 0; j < binStr.length; j++) {
-                        arr[j] = binStr.charCodeAt(j);
-                    }
-                    byteArrays.push(arr);
-                }
-                
-                // Construct file Blob
-                const blob = new Blob(byteArrays);
+        function checkRxCompletion() {
+            if (receivedMap.size === rxTotal && rxMeta) {
+                const chunks = [];
+                for (let i = 0; i < rxTotal; i++) chunks.push(receivedMap.get(i));
+                const blob = new Blob(chunks, { type: rxMeta.mime });
                 const url = URL.createObjectURL(blob);
-                
-                // Trigger phantom download click
                 const a = document.createElement('a');
-                a.style.display = 'none';
                 a.href = url;
-                a.download = rxFileName || `qr_data_${Math.floor(Date.now()/1000)}.bin`;
+                a.download = rxMeta.name;
                 document.body.appendChild(a);
                 a.click();
-                
-                // Cleanup
                 document.body.removeChild(a);
-                setTimeout(() => URL.revokeObjectURL(url), 2000);
-            } catch (e) {
-                alert("Decryption Error: " + e.message);
-                console.error(e);
+                URL.revokeObjectURL(url);
+                
+                document.getElementById('rx-filename').innerText = "Download Complete!";
+                document.getElementById('rx-percentage').innerText = "100%";
+                document.getElementById('rx-progress').classList.replace('bg-sky-400', 'bg-green-400');
+                
+                setTimeout(() => {
+                    currentFileId = -1;
+                    receivedMap.clear();
+                    rxMeta = null;
+                    rxTotal = 0;
+                    document.getElementById('rx-progress').classList.replace('bg-green-400', 'bg-sky-400');
+                    document.getElementById('rx-progress').style.width = '0%';
+                    document.getElementById('rx-filename').innerText = "Waiting for optical signal...";
+                    document.getElementById('rx-percentage').innerText = "0%";
+                    document.getElementById('rx-chunks').innerText = "0 / 0 chunks";
+                    document.getElementById('rx-errors').innerText = "Missing: 0";
+                    rxCtx.clearRect(0, 0, rxCanvas.width, rxCanvas.height);
+                }, 4000);
             }
         }
 
-        // --- Utility ---
-        function formatBytes(bytes, decimals = 2) {
-            if (!+bytes) return '0 B';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-        }
+        document.getElementById('btn-settings').addEventListener('click', () => {
+            modalSettings.classList.remove('hidden');
+            populateCameraList();
+            setTimeout(() => {
+                modalSettings.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+                modalContent.classList.add('scale-100');
+            }, 10);
+        });
 
-        // Boot
-        window.addEventListener('DOMContentLoaded', init);
+        document.getElementById('btn-close-settings').addEventListener('click', () => {
+            modalSettings.classList.add('opacity-0');
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-95');
+            setTimeout(() => modalSettings.classList.add('hidden'), 300);
+            
+            if(!isTxMode) startCamera();
+        });
+
+        document.getElementById('setting-camera').addEventListener('change', () => {
+            if(!isTxMode) startCamera();
+        });
+
+        document.getElementById('setting-speed').addEventListener('input', (e) => {
+            txInterval = parseInt(e.target.value);
+            document.getElementById('label-speed').innerText = `${txInterval} ms`;
+        });
+
+        document.getElementById('setting-chunk').addEventListener('input', (e) => {
+            txChunkSize = parseInt(e.target.value);
+            document.getElementById('label-chunk').innerText = `${txChunkSize} B`;
+        });
     </script>
 </body>
 </html>
