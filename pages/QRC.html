@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>QRFluX - Data Stream</title>
+    <meta name="description" content="Real-time file transmission via sequential QR codes and web camera.">
+    <meta name="page:icon" content="fas fa-satellite-dish">
+    <meta name="page:color" content="#ffffff">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>
+        body { overscroll-behavior: none; }
+        .pixelated { image-rendering: pixelated; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+        .hidden-scroll::-webkit-scrollbar { display: none; }
+        .hidden-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans h-screen w-screen overflow-hidden flex flex-col">
+
+    <header class="flex justify-between items-center px-4 py-3 bg-white shadow-sm z-10 shrink-0">
+        <h1 class="text-xl font-bold text-gray-900 flex items-center tracking-tight">
+            <i class="fas fa-satellite-dish text-indigo-600 mr-2"></i>QRFluX
+        </h1>
+        <button id="btnOpenSettings" class="text-gray-500 hover:text-indigo-600 transition p-2 rounded-full hover:bg-gray-100">
+            <i class="fas fa-cog text-lg"></i>
+        </button>
+    </header>
+
+    <main class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 min-h-0 overflow-y-auto hidden-scroll">
+        
+        <div class="flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden min-h-[300px]">
+            <div class="p-3 border-b border-gray-100 flex justify-between items-center shrink-0">
+                <span class="font-semibold text-sm text-gray-700"><i class="fas fa-camera mr-2 text-blue-500"></i>Receiver (RX)</span>
+                <span class="text-xs font-mono bg-blue-50 text-blue-600 px-2 py-1 rounded-full"><span id="rxRate">0</span> B/s</span>
+            </div>
+            <div class="flex-1 relative bg-black overflow-hidden flex items-center justify-center">
+                <video id="videoElement" class="absolute inset-0 w-full h-full object-cover" autoplay playsinline muted></video>
+                <canvas id="scanCanvas" class="hidden"></canvas>
+                <div id="scanOverlay" class="absolute inset-0 border-4 border-transparent transition-colors duration-300 pointer-events-none"></div>
+            </div>
+            <div class="p-3 bg-gray-50 shrink-0 text-xs text-gray-500 flex justify-between items-center">
+                <span id="rxStatus" class="truncate">Waiting for stream...</span>
+                <span id="rxProgressText" class="font-mono font-bold">0%</span>
+            </div>
+        </div>
+
+        <div class="flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden min-h-[300px]">
+            <div class="p-3 border-b border-gray-100 flex justify-between items-center shrink-0">
+                <span class="font-semibold text-sm text-gray-700"><i class="fas fa-qrcode mr-2 text-indigo-500"></i>Transmitter (TX)</span>
+                <span class="text-xs font-mono bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full"><span id="txRate">0</span> B/s</span>
+            </div>
+            <div class="flex-1 relative bg-gray-50 flex items-center justify-center p-4">
+                <canvas id="qrCanvas" class="max-w-full max-h-full object-contain drop-shadow-md"></canvas>
+                <div id="txIdleState" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                    <i class="fas fa-file-upload text-4xl mb-2 opacity-50"></i>
+                    <span class="text-sm">Select a file to transmit</span>
+                </div>
+            </div>
+            <div class="p-3 bg-white shrink-0 border-t border-gray-100">
+                <input type="file" id="fileInput" class="hidden" />
+                <div class="flex gap-2">
+                    <button id="btnSelectFile" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-xl shadow-sm transition flex items-center justify-center text-sm">
+                        <i class="fas fa-folder-open mr-2"></i>Select File
+                    </button>
+                    <button id="btnStopTx" class="hidden bg-rose-500 hover:bg-rose-600 text-white font-medium py-2 px-4 rounded-xl shadow-sm transition flex items-center justify-center text-sm">
+                        <i class="fas fa-stop"></i>
+                    </button>
+                </div>
+                <div class="mt-2 w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                    <div id="txProgressBar" class="bg-indigo-500 h-1.5 rounded-full w-0 transition-all duration-100"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden min-h-[300px]">
+            <div class="p-3 border-b border-gray-100 flex justify-between items-center shrink-0">
+                <span class="font-semibold text-sm text-gray-700"><i class="fas fa-chart-pie mr-2 text-emerald-500"></i>Buffer Map</span>
+                <span id="rxCountText" class="text-xs font-mono text-gray-500">0 / 0</span>
+            </div>
+            <div class="flex-1 bg-[#0f172a] relative p-2 flex items-center justify-center overflow-hidden">
+                <canvas id="entropyCanvas" class="max-w-full max-h-full object-contain pixelated rounded shadow-inner bg-black"></canvas>
+            </div>
+            <div class="p-3 bg-white shrink-0 border-t border-gray-100 flex gap-2">
+                <button id="btnDownload" disabled class="flex-1 bg-emerald-500 disabled:bg-gray-300 hover:bg-emerald-600 disabled:hover:bg-gray-300 text-white font-medium py-2 px-4 rounded-xl shadow-sm transition flex items-center justify-center text-sm">
+                    <i class="fas fa-download mr-2"></i>Save Data
+                </button>
+                <button id="btnClearBuffer" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium py-2 px-4 rounded-xl transition flex items-center justify-center text-sm">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <div id="settingsModal" class="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-200 p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform scale-95 transition-transform duration-200" id="settingsContent">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+                <h2 class="font-bold text-gray-800">Settings</h2>
+                <button id="btnCloseSettings" class="text-gray-400 hover:text-gray-700"><i class="fas fa-times text-lg"></i></button>
+            </div>
+            <div class="p-5 space-y-5">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Camera Device</label>
+                    <select id="cameraSelect" class="w-full bg-gray-50 border border-gray-200 text-gray-700 py-2 px-3 rounded-lg text-sm focus:outline-none focus:border-indigo-500"></select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
+                        <span>TX Speed (FPS)</span>
+                        <span id="fpsVal" class="text-indigo-600 font-mono">15</span>
+                    </label>
+                    <input type="range" id="fpsInput" min="1" max="30" value="15" class="w-full accent-indigo-600">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
+                        <span>Chunk Size (Bytes)</span>
+                        <span id="chunkSizeVal" class="text-indigo-600 font-mono">128</span>
+                    </label>
+                    <input type="range" id="chunkSizeInput" min="32" max="512" step="32" value="128" class="w-full accent-indigo-600">
+                    <p class="text-xs text-gray-400 mt-1">Higher values require better camera resolution.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const UI = {
+            video: document.getElementById('videoElement'),
+            scanCanvas: document.getElementById('scanCanvas'),
+            qrCanvas: document.getElementById('qrCanvas'),
+            entropyCanvas: document.getElementById('entropyCanvas'),
+            fileInput: document.getElementById('fileInput'),
+            btnSelectFile: document.getElementById('btnSelectFile'),
+            btnStopTx: document.getElementById('btnStopTx'),
+            btnDownload: document.getElementById('btnDownload'),
+            btnClearBuffer: document.getElementById('btnClearBuffer'),
+            btnOpenSettings: document.getElementById('btnOpenSettings'),
+            btnCloseSettings: document.getElementById('btnCloseSettings'),
+            settingsModal: document.getElementById('settingsModal'),
+            settingsContent: document.getElementById('settingsContent'),
+            cameraSelect: document.getElementById('cameraSelect'),
+            fpsInput: document.getElementById('fpsInput'),
+            fpsVal: document.getElementById('fpsVal'),
+            chunkSizeInput: document.getElementById('chunkSizeInput'),
+            chunkSizeVal: document.getElementById('chunkSizeVal'),
+            txIdleState: document.getElementById('txIdleState'),
+            txProgressBar: document.getElementById('txProgressBar'),
+            rxRate: document.getElementById('rxRate'),
+            txRate: document.getElementById('txRate'),
+            rxStatus: document.getElementById('rxStatus'),
+            rxProgressText: document.getElementById('rxProgressText'),
+            rxCountText: document.getElementById('rxCountText'),
+            scanOverlay: document.getElementById('scanOverlay')
+        };
+
+        const scanCtx = UI.scanCanvas.getContext('2d', { willReadFrequently: true });
+        const entropyCtx = UI.entropyCanvas.getContext('2d');
+        let qr = new QRious({ element: UI.qrCanvas, size: 500, level: 'L', value: ' ' });
+
+        let CONFIG = { fps: 15, chunkSize: 128, currentDeviceId: null };
+        let TX = { active: false, interval: null, chunks: [], index: 0, bytesSent: 0, fileMeta: null };
+        let RX = { session: null, total: 0, buffer: [], received: new Set(), bytesReceived: 0, cols: 0, rows: 0, imgData: null, active: false };
+
+        function bytesToBase64(bytes) {
+            let binary = '';
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+            return window.btoa(binary);
+        }
+
+        function base64ToBytes(base64) {
+            const binary = window.atob(base64);
+            const len = binary.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+            return bytes;
+        }
+
+        async function initCamera() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                UI.cameraSelect.innerHTML = videoDevices.map(d => `<option value="${d.deviceId}">${d.label || 'Camera'}</option>`).join('');
+                if (videoDevices.length > 0) {
+                    if(!CONFIG.currentDeviceId) CONFIG.currentDeviceId = videoDevices[videoDevices.length-1].deviceId;
+                    UI.cameraSelect.value = CONFIG.currentDeviceId;
+                    startStream(CONFIG.currentDeviceId);
+                }
+            } catch (err) {}
+        }
+
+        async function startStream(deviceId) {
+            if (UI.video.srcObject) UI.video.srcObject.getTracks().forEach(t => t.stop());
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 640 }, facingMode: "environment" }
+                });
+                UI.video.srcObject = stream;
+                UI.video.setAttribute("playsinline", true);
+                UI.video.play();
+                requestAnimationFrame(scanLoop);
+            } catch (err) {}
+        }
+
+        UI.btnSelectFile.addEventListener('click', () => UI.fileInput.click());
+        
+        UI.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const buffer = new Uint8Array(ev.target.result);
+                prepareTx(buffer, file.name, file.type);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function prepareTx(buffer, name, type) {
+            TX.active = false;
+            clearInterval(TX.interval);
+            const total = Math.ceil(buffer.length / CONFIG.chunkSize);
+            const sessionId = Date.now().toString(36).toUpperCase();
+            TX.chunks = [];
+            for (let i = 0; i < total; i++) {
+                const chunk = buffer.slice(i * CONFIG.chunkSize, (i + 1) * CONFIG.chunkSize);
+                const b64 = bytesToBase64(chunk);
+                const header = `${sessionId}-${total.toString(16)}-${i.toString(16)}-`;
+                TX.chunks.push(header + b64);
+            }
+            TX.index = 0;
+            TX.fileMeta = { name, type };
+            UI.txIdleState.classList.add('hidden');
+            UI.btnSelectFile.classList.add('hidden');
+            UI.btnStopTx.classList.remove('hidden');
+            startTxLoop();
+        }
+
+        function startTxLoop() {
+            TX.active = true;
+            TX.interval = setInterval(() => {
+                if (!TX.active || TX.chunks.length === 0) return;
+                const chunkStr = TX.chunks[TX.index];
+                qr.set({ value: chunkStr });
+                TX.bytesSent += chunkStr.length;
+                TX.index = (TX.index + 1) % TX.chunks.length;
+                UI.txProgressBar.style.width = `${(TX.index / TX.chunks.length) * 100}%`;
+            }, 1000 / CONFIG.fps);
+        }
+
+        function stopTx() {
+            TX.active = false;
+            clearInterval(TX.interval);
+            qr.set({ value: ' ' });
+            UI.txIdleState.classList.remove('hidden');
+            UI.btnSelectFile.classList.remove('hidden');
+            UI.btnStopTx.classList.add('hidden');
+            UI.txProgressBar.style.width = '0%';
+            UI.fileInput.value = '';
+        }
+
+        UI.btnStopTx.addEventListener('click', stopTx);
+
+        function scanLoop() {
+            if (UI.video.readyState === UI.video.HAVE_ENOUGH_DATA) {
+                const dim = Math.min(UI.video.videoWidth, UI.video.videoHeight, 500);
+                UI.scanCanvas.width = dim;
+                UI.scanCanvas.height = dim;
+                const sx = (UI.video.videoWidth - dim) / 2;
+                const sy = (UI.video.videoHeight - dim) / 2;
+                scanCtx.drawImage(UI.video, sx, sy, dim, dim, 0, 0, dim, dim);
+                const imgData = scanCtx.getImageData(0, 0, dim, dim);
+                const code = jsQR(imgData.data, dim, dim, { inversionAttempts: "dontInvert" });
+                if (code && code.data) {
+                    processRxData(code.data);
+                    UI.scanOverlay.classList.remove('border-transparent');
+                    UI.scanOverlay.classList.add('border-emerald-500');
+                    setTimeout(() => {
+                        UI.scanOverlay.classList.add('border-transparent');
+                        UI.scanOverlay.classList.remove('border-emerald-500');
+                    }, 100);
+                }
+            }
+            requestAnimationFrame(scanLoop);
+        }
+
+        function processRxData(dataStr) {
+            const parts = dataStr.split('-');
+            if (parts.length < 4) return;
+            const [session, totalHex, indexHex, ...rest] = parts;
+            const b64 = rest.join('-');
+            const total = parseInt(totalHex, 16);
+            const index = parseInt(indexHex, 16);
+
+            if (RX.session !== session) {
+                RX.session = session;
+                RX.total = total;
+                RX.buffer = new Array(total);
+                RX.received.clear();
+                initEntropyMap(total);
+                UI.rxStatus.innerText = `Receiving: [${session}]`;
+                UI.btnDownload.disabled = true;
+            }
+
+            if (!RX.received.has(index)) {
+                try {
+                    const bytes = base64ToBytes(b64);
+                    RX.buffer[index] = bytes;
+                    RX.received.add(index);
+                    RX.bytesReceived += bytes.byteLength;
+                    updateEntropyMap(index, bytes);
+                    updateRxUI();
+                    checkRxComplete();
+                } catch (e) {}
+            }
+        }
+
+        function initEntropyMap(total) {
+            RX.cols = Math.ceil(Math.sqrt(total));
+            RX.rows = Math.ceil(total / RX.cols);
+            UI.entropyCanvas.width = RX.cols;
+            UI.entropyCanvas.height = RX.rows;
+            entropyCtx.fillStyle = '#000000';
+            entropyCtx.fillRect(0, 0, RX.cols, RX.rows);
+            RX.imgData = entropyCtx.getImageData(0, 0, RX.cols, RX.rows);
+        }
+
+        function updateEntropyMap(index, bytes) {
+            let avg = 0;
+            for(let i=0; i<bytes.length; i++) avg += bytes[i];
+            avg = Math.floor(avg / bytes.length);
+            
+            const x = index % RX.cols;
+            const y = Math.floor(index / RX.cols);
+            const p = (y * RX.cols + x) * 4;
+            
+            RX.imgData.data[p] = avg; 
+            RX.imgData.data[p+1] = 255 - avg;
+            RX.imgData.data[p+2] = (avg * 2) % 255;
+            RX.imgData.data[p+3] = 255;
+            
+            entropyCtx.putImageData(RX.imgData, 0, 0);
+        }
+
+        function updateRxUI() {
+            const pct = ((RX.received.size / RX.total) * 100).toFixed(1);
+            UI.rxProgressText.innerText = `${pct}%`;
+            UI.rxCountText.innerText = `${RX.received.size} / ${RX.total}`;
+        }
+
+        function checkRxComplete() {
+            if (RX.received.size === RX.total) {
+                UI.rxStatus.innerText = `Complete: [${RX.session}]`;
+                UI.btnDownload.disabled = false;
+            }
+        }
+
+        UI.btnDownload.addEventListener('click', () => {
+            if(RX.received.size !== RX.total) return;
+            let totalLen = 0;
+            RX.buffer.forEach(b => totalLen += b.length);
+            const fullBuf = new Uint8Array(totalLen);
+            let offset = 0;
+            RX.buffer.forEach(b => {
+                fullBuf.set(b, offset);
+                offset += b.length;
+            });
+            const blob = new Blob([fullBuf]);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `qrflux_${RX.session}.bin`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        UI.btnClearBuffer.addEventListener('click', () => {
+            RX.session = null;
+            RX.total = 0;
+            RX.buffer = [];
+            RX.received.clear();
+            UI.entropyCanvas.width = 1;
+            UI.entropyCanvas.height = 1;
+            UI.rxStatus.innerText = 'Waiting for stream...';
+            UI.rxProgressText.innerText = '0%';
+            UI.rxCountText.innerText = '0 / 0';
+            UI.btnDownload.disabled = true;
+        });
+
+        setInterval(() => {
+            UI.txRate.innerText = TX.bytesSent;
+            UI.rxRate.innerText = RX.bytesReceived;
+            TX.bytesSent = 0;
+            RX.bytesReceived = 0;
+        }, 1000);
+
+        function openSettings() {
+            UI.settingsModal.classList.remove('hidden');
+            setTimeout(() => {
+                UI.settingsModal.classList.remove('opacity-0');
+                UI.settingsContent.classList.remove('scale-95');
+            }, 10);
+        }
+        
+        function closeSettings() {
+            UI.settingsModal.classList.add('opacity-0');
+            UI.settingsContent.classList.add('scale-95');
+            setTimeout(() => UI.settingsModal.classList.add('hidden'), 200);
+        }
+
+        UI.btnOpenSettings.addEventListener('click', openSettings);
+        UI.btnCloseSettings.addEventListener('click', closeSettings);
+        UI.settingsModal.addEventListener('click', (e) => { if (e.target === UI.settingsModal) closeSettings(); });
+
+        UI.fpsInput.addEventListener('input', (e) => {
+            CONFIG.fps = parseInt(e.target.value);
+            UI.fpsVal.innerText = CONFIG.fps;
+            if (TX.active) startTxLoop();
+        });
+
+        UI.chunkSizeInput.addEventListener('input', (e) => {
+            CONFIG.chunkSize = parseInt(e.target.value);
+            UI.chunkSizeVal.innerText = CONFIG.chunkSize;
+        });
+
+        UI.cameraSelect.addEventListener('change', (e) => {
+            CONFIG.currentDeviceId = e.target.value;
+            startStream(CONFIG.currentDeviceId);
+        });
+
+        initCamera();
+    </script>
+</body>
+</html>
