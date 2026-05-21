@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>OptoComm | Optical Data Transmission</title>
+    <meta name="description" content="Transmit files optically using sequential QR codes and real-time visualization.">
+    <meta name="page:icon" content="🟦">
+    <meta name="page:color" content="#09090b">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        zinc: {
+                            900: '#18181b',
+                            950: '#09090b',
+                        }
+                    },
+                    keyframes: {
+                        scan: {
+                            '0%, 100%': { transform: 'translateY(-100%)' },
+                            '50%': { transform: 'translateY(100%)' },
+                        }
+                    },
+                    animation: {
+                        'scan': 'scan 3s ease-in-out infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+    <style>
+        html, body {
+            overflow: hidden;
+            overscroll-behavior: none;
+            touch-action: none;
+        }
+        .rendering-pixelated {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-dvh w-screen bg-zinc-950 text-zinc-100 font-sans select-none overflow-hidden">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between px-3 py-2 md:px-4 md:py-3 bg-zinc-900 border-b border-zinc-800 shrink-0 shadow-sm z-20 h-12 md:h-14">
+        <div class="flex items-center gap-2">
+            <i data-lucide="cpu" class="w-5 h-5 text-emerald-500"></i>
+            <h1 class="text-sm md:text-base font-bold tracking-tight">OptoComm</h1>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button id="modeToggle" class="relative inline-flex h-7 w-[120px] md:h-8 md:w-[140px] items-center rounded-full bg-zinc-950 p-1 transition-colors border border-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500" aria-label="Toggle Mode">
+                <span id="slider" class="absolute h-5 w-[56px] md:h-6 md:w-[66px] rounded-full bg-emerald-500 transition-all duration-300 ease-out translate-x-0 shadow-sm"></span>
+                <span class="relative z-10 flex-1 text-center text-[9px] md:text-[10px] font-bold tracking-wider text-white transition-colors duration-200" id="recvText">RECEIVE</span>
+                <span class="relative z-10 flex-1 text-center text-[9px] md:text-[10px] font-bold tracking-wider text-zinc-500 transition-colors duration-200" id="sendText">SEND</span>
+            </button>
+
+            <button id="settingsBtn" class="p-1 hover:bg-zinc-800 rounded-md transition-colors text-zinc-400 hover:text-white hidden focus:outline-none" aria-label="Settings">
+                <i data-lucide="settings" class="w-4 h-4 md:w-5 md:h-5"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative z-10 w-full h-[calc(100dvh-3rem)]">
+        
+        <!-- Surface 1: Optical Interface (Camera / QR) -->
+        <section class="flex-1 min-h-0 flex flex-col p-2 border-b md:border-b-0 md:border-r border-zinc-800 relative bg-zinc-900/30">
+            <div class="w-full flex-1 relative flex items-center justify-center bg-black rounded-lg border border-zinc-800 overflow-hidden shadow-inner min-h-0">
+                
+                <video id="videoElement" class="absolute inset-0 w-full h-full object-cover" playsinline autoplay muted></video>
+                
+                <div id="scannerOverlay" class="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+                    <div class="w-full max-w-[200px] md:max-w-[300px] aspect-square border-2 border-emerald-500/50 rounded-2xl relative overflow-hidden transition-all duration-150">
+                        <div class="absolute top-0 left-0 w-6 h-6 md:w-8 md:h-8 border-t-4 border-l-4 border-emerald-500 rounded-tl-xl"></div>
+                        <div class="absolute top-0 right-0 w-6 h-6 md:w-8 md:h-8 border-t-4 border-r-4 border-emerald-500 rounded-tr-xl"></div>
+                        <div class="absolute bottom-0 left-0 w-6 h-6 md:w-8 md:h-8 border-b-4 border-l-4 border-emerald-500 rounded-bl-xl"></div>
+                        <div class="absolute bottom-0 right-0 w-6 h-6 md:w-8 md:h-8 border-b-4 border-r-4 border-emerald-500 rounded-br-xl"></div>
+                        <div class="absolute left-0 right-0 h-[2px] bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.6)] animate-scan"></div>
+                    </div>
+                </div>
+
+                <canvas id="qrDisplay" class="max-w-[90%] max-h-[90%] object-contain hidden bg-white p-2 md:p-4 rounded-xl shadow-lg"></canvas>
+            </div>
+            
+            <div class="h-4 shrink-0 mt-1 flex justify-between items-center text-[9px] md:text-[10px] font-mono text-zinc-500 uppercase tracking-wider px-1">
+                <span id="opticalStatus">Camera Active</span>
+                <span id="fpsCounter">0 FPS</span>
+            </div>
+        </section>
+
+        <!-- Surface 2: Data Visualization -->
+        <section class="flex-1 min-h-0 flex flex-col p-2 relative bg-zinc-950">
+            <div class="w-full flex-1 relative flex items-center justify-center rounded-lg border border-zinc-800 overflow-hidden bg-black shadow-inner min-h-0">
+                
+                <canvas id="rgbCanvas" class="w-full h-full object-contain rendering-pixelated opacity-50 transition-opacity duration-500"></canvas>
+
+                <div id="dataOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-sm transition-all duration-300 z-10 p-2 overflow-y-auto">
+                    
+                    <!-- Send Setup -->
+                    <div id="sendSetupUI" class="text-center hidden flex-col items-center gap-2 p-4 w-full max-w-xs">
+                        <div class="w-10 h-10 md:w-16 md:h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                            <i data-lucide="file-up" class="w-5 h-5 md:w-8 md:h-8 text-blue-500"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-sm md:text-lg font-bold text-zinc-100">Select File</h2>
+                            <p class="text-[9px] md:text-xs text-zinc-400 text-balance leading-tight mt-1">Data will be converted to RGB blocks.</p>
+                        </div>
+                        <input type="file" id="fileInput" class="hidden">
+                        <button id="selectFileBtn" class="mt-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs md:text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-blue-900/20">
+                            Browse Files
+                        </button>
+                    </div>
+
+                    <!-- Receive Setup -->
+                    <div id="receiveSetupUI" class="text-center flex flex-col items-center gap-2 p-4 w-full max-w-xs">
+                        <div class="w-10 h-10 md:w-16 md:h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center relative">
+                            <i data-lucide="radio-receiver" class="w-5 h-5 md:w-8 md:h-8 text-emerald-500"></i>
+                            <span class="absolute top-1 right-1 w-2 h-2 bg-emerald-400 rounded-full animate-ping"></span>
+                        </div>
+                        <div>
+                            <h2 class="text-sm md:text-lg font-bold text-zinc-100">Awaiting Signal</h2>
+                            <p class="text-[9px] md:text-xs text-zinc-400 text-balance leading-tight mt-1">Point camera at sender's metadata QR.</p>
+                        </div>
+                    </div>
+
+                    <!-- Action Card -->
+                    <div id="actionContainer" class="hidden w-full max-w-xs flex-col gap-3 bg-zinc-950/95 backdrop-blur-xl p-4 rounded-2xl border border-zinc-800 shadow-2xl z-20">
+                        <div class="text-center border-b border-zinc-800/50 pb-2">
+                            <p id="fileNameDisplay" class="text-xs md:text-sm font-semibold text-zinc-100 truncate w-full">filename.ext</p>
+                            <p id="fileSizeDisplay" class="text-[9px] md:text-[10px] text-zinc-400 font-mono mt-0.5 flex items-center justify-center gap-2">
+                                <span>0 MB</span>
+                                <span class="text-zinc-700">|</span>
+                                <span id="fileIdDisplay" class="text-zinc-500">ID: ----</span>
+                            </p>
+                        </div>
+                        
+                        <div class="relative w-full">
+                            <div class="flex justify-between text-[10px] font-bold mb-1 font-mono">
+                                <span id="progressText" class="text-emerald-400">0.0%</span>
+                                <span id="chunkText" class="text-zinc-500">0 / 0</span>
+                            </div>
+                            <div class="w-full h-2 bg-black rounded-full overflow-hidden border border-zinc-800 shadow-inner">
+                                <div id="progressBar" class="h-full bg-emerald-500 w-0 transition-all duration-75 ease-linear"></div>
+                            </div>
+                        </div>
+
+                        <!-- Sender Controls -->
+                        <div id="senderControls" class="flex flex-col gap-2 hidden mt-1">
+                            <button id="startSendBtn" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2">
+                                <i data-lucide="play" class="w-3 h-3 fill-current"></i> Start Sync
+                            </button>
+                            <button id="stopSendBtn" class="w-full px-4 py-1.5 bg-transparent hover:bg-zinc-900 text-zinc-400 hover:text-white rounded-lg text-[10px] font-bold transition-colors">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Complete State -->
+                    <div id="completeUI" class="text-center hidden flex-col items-center gap-2 p-5 bg-zinc-950/95 backdrop-blur-xl rounded-2xl border border-zinc-800 shadow-2xl w-full max-w-xs z-30">
+                        <div class="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 mb-1">
+                            <i data-lucide="check-circle-2" class="w-8 h-8"></i>
+                        </div>
+                        <h2 class="text-sm font-bold text-white">Complete</h2>
+                        <button id="downloadBtn" class="mt-1 px-5 py-2 bg-zinc-100 hover:bg-white text-zinc-900 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2">
+                            <i data-lucide="download" class="w-4 h-4"></i> Save File
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+            
+            <div class="h-4 shrink-0 mt-1 flex justify-between items-center text-[9px] md:text-[10px] font-mono text-zinc-500 uppercase tracking-wider px-1">
+                <span>RGB Buffer Mapping</span>
+                <span id="canvasRes">0x0 px</span>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-200 p-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-xs overflow-hidden transform scale-95 transition-transform duration-200" id="settingsContent">
+            <div class="flex items-center justify-between p-3 border-b border-zinc-800 bg-zinc-900/50">
+                <h3 class="text-xs font-bold flex items-center gap-2"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i> Settings</h3>
+                <button id="closeSettings" class="text-zinc-500 hover:text-white transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-4 flex flex-col gap-5">
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-semibold text-zinc-300">Payload Size (Bytes)</label>
+                        <span id="chunkSizeVal" class="text-[10px] font-mono text-blue-400">250</span>
+                    </div>
+                    <input type="range" id="chunkSizeInput" min="64" max="512" step="2" value="250" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                </div>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-semibold text-zinc-300">Display Rate (FPS)</label>
+                        <span id="fpsVal" class="text-[10px] font-mono text-blue-400">15fps / 67ms</span>
+                    </div>
+                    <input type="range" id="fpsInput" min="5" max="60" step="1" value="15" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-semibold text-zinc-300 block mb-1">Camera Resolution</label>
+                    <select id="cameraResSelect" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-[10px] font-mono text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="640x480">640x480</option>
+                        <option value="1280x720" selected>1280x720</option>
+                        <option value="1920x1080">1920x1080</option>
+                    </select>
+                    <p class="text-[9px] text-zinc-500 leading-tight">Receive mode requests this resolution at 60fps.</p>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-semibold text-zinc-300 block mb-1">Error Correction</label>
+                    <div class="grid grid-cols-4 gap-1.5">
+                        <button class="ecl-btn p-1.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 transition-colors border border-transparent" data-val="L">L</button>
+                        <button class="ecl-btn p-1.5 rounded bg-blue-500/20 text-[10px] font-bold text-blue-400 border border-blue-500/50 transition-colors" data-val="M">M</button>
+                        <button class="ecl-btn p-1.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 transition-colors border border-transparent" data-val="Q">Q</button>
+                        <button class="ecl-btn p-1.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 transition-colors border border-transparent" data-val="H">H</button>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-semibold text-zinc-300 block mb-1">Reed-Solomon Redundancy</label>
+                    <div class="grid grid-cols-5 gap-1.5">
+                        <button class="rs-btn p-1.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 transition-colors border border-transparent" data-val="0">OFF</button>
+                        <button class="rs-btn p-1.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 transition-colors border border-transparent" data-val="10">10%</button>
+                        <button class="rs-btn p-1.5 rounded bg-blue-500/20 text-[10px] font-bold text-blue-400 border border-blue-500/50 transition-colors" data-val="20">20%</button>
+                        <button class="rs-btn p-1.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 transition-colors border border-transparent" data-val="33">33%</button>
+                        <button class="rs-btn p-1.5 rounded bg-zinc-800 text-[10px] font-bold text-zinc-400 hover:bg-zinc-700 transition-colors border border-transparent" data-val="50">50%</button>
+                    </div>
+                    <p class="text-[9px] text-zinc-500 leading-tight">Adds parity chunks to recover fully dropped QR frames.</p>
+                </div>
+            </div>
+            <div class="p-3 border-t border-zinc-800 bg-zinc-950 flex justify-end">
+                <button id="applySettings" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded transition-colors">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Canvas for Parsing -->
+    <canvas id="frameCanvas" class="hidden"></canvas>
+
+    <script>
+        lucide.createIcons();
+
+        // --- 1. Web Worker for jsQR (keeps main thread free) ---
+        const workerScript = `
+            importScripts('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js');
+            self.onmessage = function(e) {
+                const { id, imageData } = e.data;
+                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+                if (code && code.binaryData && code.binaryData.length > 0) {
+                    const result = new Uint8Array(code.binaryData);
+                    self.postMessage({ id, result }, [result.buffer]);
+                } else {
+                    self.postMessage({ id, result: null });
+                }
+            };
+        `;
+        const qrWorker = new Worker(URL.createObjectURL(new Blob([workerScript], { type: 'application/javascript' })));
+
+        // --- 2. Global State ---
+        let state = {
+            mode: 'receive',
+            isTransmitting: false,
+            fileMeta: null,
+            fileBuffer: null,
+            receivedMask: null,
+            receivedShards: null,
+            parityShards: null,
+            rsPlan: null,
+            rsDecodedBlocks: null,
+            currentChunk: 0,
+            t0: 0,          // absolute timestamp (Date.now()) when transmission starts
+            fd: 67,         // frame duration ms
+            sendTimer: null,
+            sendSlot: 0,
+            settings: {
+                chunkSize: 250,
+                displayFps: 15,
+                fd: 67,
+                ecl: 'M',
+                rsPct: 20,
+                cameraWidth: 1280,
+                cameraHeight: 720
+            }
+        };
+
+        // --- 3. DOM Elements ---
+        const els = {
+            toggleBtn: document.getElementById('modeToggle'),
+            slider: document.getElementById('slider'),
+            recvText: document.getElementById('recvText'),
+            sendText: document.getElementById('sendText'),
+            settingsBtn: document.getElementById('settingsBtn'),
+            video: document.getElementById('videoElement'),
+            scannerOverlay: document.getElementById('scannerOverlay'),
+            qrCanvas: document.getElementById('qrDisplay'),
+            opticalStatus: document.getElementById('opticalStatus'),
+            fpsCounter: document.getElementById('fpsCounter'),
+            
+            frameCanvas: document.getElementById('frameCanvas'),
+            frameCtx: document.getElementById('frameCanvas').getContext('2d', { willReadFrequently: true }),
+            rgbCanvas: document.getElementById('rgbCanvas'),
+            rgbCtx: document.getElementById('rgbCanvas').getContext('2d', { alpha: false }),
+            canvasRes: document.getElementById('canvasRes'),
+            
+            dataOverlay: document.getElementById('dataOverlay'),
+            sendSetupUI: document.getElementById('sendSetupUI'),
+            receiveSetupUI: document.getElementById('receiveSetupUI'),
+            actionContainer: document.getElementById('actionContainer'),
+            senderControls: document.getElementById('senderControls'),
+            startSendBtn: document.getElementById('startSendBtn'),
+            stopSendBtn: document.getElementById('stopSendBtn'),
+            completeUI: document.getElementById('completeUI'),
+            
+            fileInput: document.getElementById('fileInput'),
+            selectFileBtn: document.getElementById('selectFileBtn'),
+            downloadBtn: document.getElementById('downloadBtn'),
+            
+            fileName: document.getElementById('fileNameDisplay'),
+            fileSize: document.getElementById('fileSizeDisplay'),
+            fileId: document.getElementById('fileIdDisplay'),
+            progressText: document.getElementById('progressText'),
+            chunkText: document.getElementById('chunkText'),
+            progressBar: document.getElementById('progressBar'),
+            
+            modal: document.getElementById('settingsModal'),
+            modalContent: document.getElementById('settingsContent'),
+            closeSettings: document.getElementById('closeSettings'),
+            applySettings: document.getElementById('applySettings'),
+            chunkSizeInput: document.getElementById('chunkSizeInput'),
+            chunkSizeVal: document.getElementById('chunkSizeVal'),
+            fpsInput: document.getElementById('fpsInput'),
+            fpsVal: document.getElementById('fpsVal'),
+            cameraResSelect: document.getElementById('cameraResSelect'),
+            eclBtns: document.querySelectorAll('.ecl-btn'),
+            rsBtns: document.querySelectorAll('.rs-btn')
+        };
+
+        let rgbImageData = null;
+        let videoStream = null;
+        let captureRafId = null;
+        let decodeRafId = null;
+        let videoFrameCallbackId = null;
+        let decoderBusy = false;
+        let workerJobId = 0;
+        let latestFrame = null;
+        let latestFrameId = 0;
+        let lastPostedFrameId = 0;
+        let cameraFpsCount = 0;
+        let decodeFpsCount = 0;
+        let lastFpsTs = 0;
+        const DECODE_SIZE = 320;
+
+        // --- 4. Protocol Helpers (Binary Big-Endian) ---
+        function buildMetaPacket(fileId, metaObj) {
+            const json = JSON.stringify(metaObj);
+            const payload = new TextEncoder().encode(json);
+            const pkt = new Uint8Array(1 + 4 + 4 + payload.length);
+            pkt[0] = 0x00;
+            const dv = new DataView(pkt.buffer);
+            dv.setUint32(1, fileId, false);
+            dv.setInt32(5, -1, false); // seq = -1 marks meta
+            pkt.set(payload, 9);
+            return pkt;
+        }
+
+        function buildDataPacket(fileId, seq, chunkData) {
+            const pkt = new Uint8Array(1 + 4 + 4 + chunkData.length);
+            pkt[0] = 0x01;
+            const dv = new DataView(pkt.buffer);
+            dv.setUint32(1, fileId, false);
+            dv.setUint32(5, seq, false);
+            pkt.set(chunkData, 9);
+            return pkt;
+        }
+
+        function parsePacket(bytes) {
+            if (bytes.length < 9) return null;
+            const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            return {
+                type: bytes[0],
+                fileId: dv.getUint32(1, false),
+                seq: dv.getInt32(5, false),
+                payload: bytes.slice(9)
+            };
+        }
+
+        function formatBytes(b) {
+            if (b === 0) return '0 B';
+            const k = 1024, sizes = ['B','KB','MB','GB'];
+            const i = Math.floor(Math.log(b) / Math.log(k));
+            return parseFloat((b / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // --- 4b. Reed-Solomon Erasure Coding (systematic GF(256)) ---
+        // QR ECL handles damage inside one QR frame. This layer handles whole dropped chunks.
+        const RS_BLOCK_DATA = 16;
+        const GF_EXP = new Uint8Array(512);
+        const GF_LOG = new Uint8Array(256);
+        const rsMatrixCache = new Map();
+
+        (function initGaloisField() {
+            let x = 1;
+            for (let i = 0; i < 255; i++) {
+                GF_EXP[i] = x;
+                GF_LOG[x] = i;
+                x <<= 1;
+                if (x & 0x100) x ^= 0x11d;
+            }
+            for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+        })();
+
+        function gfMul(a, b) {
+            if (a === 0 || b === 0) return 0;
+            return GF_EXP[GF_LOG[a] + GF_LOG[b]];
+        }
+
+        function gfInv(a) {
+            if (a === 0) throw new Error('GF inverse of zero');
+            return GF_EXP[255 - GF_LOG[a]];
+        }
+
+        function gfPow(a, n) {
+            if (n === 0) return 1;
+            if (a === 0) return 0;
+            return GF_EXP[(GF_LOG[a] * n) % 255];
+        }
+
+        function identityMatrix(n) {
+            const out = Array.from({ length: n }, () => new Uint8Array(n));
+            for (let i = 0; i < n; i++) out[i][i] = 1;
+            return out;
+        }
+
+        function multiplyMatrices(a, b) {
+            const rows = a.length;
+            const inner = b.length;
+            const cols = b[0].length;
+            const out = Array.from({ length: rows }, () => new Uint8Array(cols));
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    let v = 0;
+                    for (let i = 0; i < inner; i++) {
+                        v ^= gfMul(a[r][i], b[i][c]);
+                    }
+                    out[r][c] = v;
+                }
+            }
+            return out;
+        }
+
+        function invertMatrix(matrix) {
+            const n = matrix.length;
+            const a = matrix.map(row => Uint8Array.from(row));
+            const inv = identityMatrix(n);
+
+            for (let col = 0; col < n; col++) {
+                if (a[col][col] === 0) {
+                    let swap = -1;
+                    for (let r = col + 1; r < n; r++) {
+                        if (a[r][col] !== 0) {
+                            swap = r;
+                            break;
+                        }
+                    }
+                    if (swap < 0) throw new Error('RS matrix is singular');
+                    [a[col], a[swap]] = [a[swap], a[col]];
+                    [inv[col], inv[swap]] = [inv[swap], inv[col]];
+                }
+
+                const pivot = a[col][col];
+                if (pivot !== 1) {
+                    const scale = gfInv(pivot);
+                    for (let c = 0; c < n; c++) {
+                        a[col][c] = gfMul(a[col][c], scale);
+                        inv[col][c] = gfMul(inv[col][c], scale);
+                    }
+                }
+
+                for (let r = 0; r < n; r++) {
+                    if (r === col) continue;
+                    const factor = a[r][col];
+                    if (factor === 0) continue;
+                    for (let c = 0; c < n; c++) {
+                        a[r][c] ^= gfMul(factor, a[col][c]);
+                        inv[r][c] ^= gfMul(factor, inv[col][c]);
+                    }
+                }
+            }
+            return inv;
+        }
+
+        function getSystematicRsMatrix(dataShards, parityShards) {
+            const key = `${dataShards}:${parityShards}`;
+            if (rsMatrixCache.has(key)) return rsMatrixCache.get(key);
+
+            const rows = dataShards + parityShards;
+            const vandermonde = Array.from({ length: rows }, (_, r) => {
+                const row = new Uint8Array(dataShards);
+                for (let c = 0; c < dataShards; c++) row[c] = gfPow(r, c);
+                return row;
+            });
+            const top = vandermonde.slice(0, dataShards);
+            const topInv = invertMatrix(top);
+            const matrix = multiplyMatrices(vandermonde, topInv);
+            rsMatrixCache.set(key, matrix);
+            return matrix;
+        }
+
+        function combineShards(coeffs, shards, size) {
+            const out = new Uint8Array(size);
+            for (let i = 0; i < coeffs.length; i++) {
+                const coef = coeffs[i];
+                if (coef === 0) continue;
+                const shard = shards[i];
+                if (coef === 1) {
+                    for (let j = 0; j < size; j++) out[j] ^= shard[j];
+                } else {
+                    for (let j = 0; j < size; j++) out[j] ^= gfMul(coef, shard[j]);
+                }
+            }
+            return out;
+        }
+
+        function encodeParityShards(dataShards, parityCount, size) {
+            if (parityCount <= 0) return [];
+            const matrix = getSystematicRsMatrix(dataShards.length, parityCount);
+            const parity = [];
+            for (let p = 0; p < parityCount; p++) {
+                parity.push(combineShards(matrix[dataShards.length + p], dataShards, size));
+            }
+            return parity;
+        }
+
+        function decodeDataShards(selectedRows, selectedShards, dataCount, parityCount, size) {
+            const matrix = getSystematicRsMatrix(dataCount, parityCount);
+            const subMatrix = selectedRows.slice(0, dataCount).map(rowIdx => matrix[rowIdx]);
+            const decodeMatrix = invertMatrix(subMatrix);
+            const shards = selectedShards.slice(0, dataCount);
+            return decodeMatrix.map(row => combineShards(row, shards, size));
+        }
+
+        function parityCountForBlock(dataCount, redundancyPct) {
+            if (!redundancyPct || redundancyPct <= 0 || dataCount <= 0) return 0;
+            return Math.max(1, Math.min(dataCount, Math.ceil(dataCount * redundancyPct / 100)));
+        }
+
+        function buildRsPlan(dataChunks, redundancyPct, blockData = RS_BLOCK_DATA) {
+            const blocks = [];
+            let parityCursor = dataChunks;
+            for (let dataStart = 0; dataStart < dataChunks; dataStart += blockData) {
+                const k = Math.min(blockData, dataChunks - dataStart);
+                const p = parityCountForBlock(k, redundancyPct);
+                blocks.push({ dataStart, k, p, parityStart: parityCursor });
+                parityCursor += p;
+            }
+            return {
+                dataChunks,
+                redundancyPct,
+                blockData,
+                parityChunks: parityCursor - dataChunks,
+                totalChunks: parityCursor,
+                blocks
+            };
+        }
+
+        function getDataChunkLength(seq, meta = state.fileMeta) {
+            if (!meta || seq < 0 || seq >= meta.c) return 0;
+            return Math.max(0, Math.min(meta.cs, meta.s - seq * meta.cs));
+        }
+
+        function getPaddedDataShard(buffer, seq, meta) {
+            const shard = new Uint8Array(meta.cs);
+            const start = seq * meta.cs;
+            const end = Math.min(start + meta.cs, buffer.length);
+            if (end > start) shard.set(buffer.subarray(start, end));
+            return shard;
+        }
+
+        function buildParityShardsForFile(buffer, meta, plan) {
+            const parityShards = new Array(plan.parityChunks);
+            if (plan.parityChunks <= 0) return parityShards;
+
+            for (const block of plan.blocks) {
+                if (block.p <= 0) continue;
+                const dataShards = [];
+                for (let i = 0; i < block.k; i++) {
+                    dataShards.push(getPaddedDataShard(buffer, block.dataStart + i, meta));
+                }
+                const parity = encodeParityShards(dataShards, block.p, meta.cs);
+                for (let i = 0; i < block.p; i++) {
+                    parityShards[block.parityStart - plan.dataChunks + i] = parity[i];
+                }
+            }
+            return parityShards;
+        }
+
+        function countReceivedRange(start, end) {
+            if (!state.receivedMask) return 0;
+            let n = 0;
+            for (let i = start; i < end; i++) n += state.receivedMask[i] ? 1 : 0;
+            return n;
+        }
+
+        function countReceivedDataChunks() {
+            if (!state.fileMeta) return 0;
+            return countReceivedRange(0, state.fileMeta.c);
+        }
+
+        function tryRecoverBlock(block, blockIndex) {
+            if (!state.fileMeta || !state.rsPlan || !state.receivedMask || !state.receivedShards) return false;
+            if (block.p <= 0 || state.rsDecodedBlocks?.[blockIndex]) return false;
+
+            const selectedRows = [];
+            const selectedShards = [];
+
+            for (let i = 0; i < block.k; i++) {
+                const seq = block.dataStart + i;
+                if (state.receivedMask[seq] && state.receivedShards[seq]) {
+                    selectedRows.push(i);
+                    selectedShards.push(state.receivedShards[seq]);
+                }
+            }
+            for (let i = 0; i < block.p; i++) {
+                const seq = block.parityStart + i;
+                if (state.receivedMask[seq] && state.receivedShards[seq]) {
+                    selectedRows.push(block.k + i);
+                    selectedShards.push(state.receivedShards[seq]);
+                }
+            }
+
+            if (selectedRows.length < block.k) return false;
+
+            let recovered;
+            try {
+                recovered = decodeDataShards(selectedRows, selectedShards, block.k, block.p, state.fileMeta.cs);
+            } catch (err) {
+                console.warn('RS recovery failed:', err);
+                return false;
+            }
+
+            for (let i = 0; i < block.k; i++) {
+                const seq = block.dataStart + i;
+                const len = getDataChunkLength(seq);
+                state.receivedShards[seq] = recovered[i];
+                state.receivedMask[seq] = 1;
+                state.fileBuffer.set(recovered[i].subarray(0, len), seq * state.fileMeta.cs);
+                updateCanvasWithChunk(seq, recovered[i].subarray(0, len));
+            }
+            if (state.rsDecodedBlocks) state.rsDecodedBlocks[blockIndex] = 1;
+            return true;
+        }
+
+        function tryRecoverMissingChunks() {
+            if (!state.fileMeta || !state.rsPlan || state.rsPlan.parityChunks <= 0) return false;
+            let recoveredAny = false;
+            for (let i = 0; i < state.rsPlan.blocks.length; i++) {
+                recoveredAny = tryRecoverBlock(state.rsPlan.blocks[i], i) || recoveredAny;
+            }
+            return recoveredAny;
+        }
+
+        // --- 5. Mode Switching ---
+        els.toggleBtn.addEventListener('click', () => {
+            if (state.isTransmitting || els.actionContainer.classList.contains('flex')) {
+                if (!confirm("Switching modes will reset current progress. Proceed?")) return;
+                stopTransmission();
+            }
+            state.mode = state.mode === 'receive' ? 'send' : 'receive';
+            updateModeUI();
+        });
+
+        function updateModeUI() {
+            resetDataState();
+            if (state.mode === 'receive') {
+                els.slider.style.transform = 'translateX(0)';
+                els.slider.classList.replace('bg-blue-500', 'bg-emerald-500');
+                els.toggleBtn.classList.replace('focus-visible:ring-blue-500', 'focus-visible:ring-emerald-500');
+                els.recvText.classList.replace('text-zinc-500', 'text-white');
+                els.sendText.classList.replace('text-white', 'text-zinc-500');
+                els.settingsBtn.classList.remove('hidden');
+                
+                els.qrCanvas.classList.add('hidden');
+                els.video.classList.remove('hidden');
+                els.scannerOverlay.classList.remove('hidden');
+                els.opticalStatus.textContent = 'Scanner Active';
+                els.opticalStatus.className = "text-zinc-500";
+                
+                els.sendSetupUI.classList.add('hidden');
+                els.sendSetupUI.classList.remove('flex');
+                els.receiveSetupUI.classList.remove('hidden');
+                els.receiveSetupUI.classList.add('flex');
+                
+                els.dataOverlay.classList.remove('hidden', 'bg-black/20');
+                els.dataOverlay.classList.add('bg-zinc-950/80', 'backdrop-blur-sm');
+                els.rgbCanvas.classList.remove('opacity-100');
+                els.rgbCanvas.classList.add('opacity-50');
+                startCamera();
+            } else {
+                const translateVal = window.innerWidth < 768 ? '56px' : '66px';
+                els.slider.style.transform = `translateX(${translateVal})`;
+                els.slider.classList.replace('bg-emerald-500', 'bg-blue-500');
+                els.toggleBtn.classList.replace('focus-visible:ring-emerald-500', 'focus-visible:ring-blue-500');
+                els.sendText.classList.replace('text-zinc-500', 'text-white');
+                els.recvText.classList.replace('text-white', 'text-zinc-500');
+                els.settingsBtn.classList.remove('hidden');
+                
+                stopCamera();
+                els.video.classList.add('hidden');
+                els.scannerOverlay.classList.add('hidden');
+                els.qrCanvas.classList.remove('hidden');
+                els.opticalStatus.textContent = 'Emitter Idle';
+                els.opticalStatus.className = "text-zinc-500";
+                els.fpsCounter.textContent = '-';
+                
+                els.receiveSetupUI.classList.add('hidden');
+                els.receiveSetupUI.classList.remove('flex');
+                els.sendSetupUI.classList.remove('hidden');
+                els.sendSetupUI.classList.add('flex');
+                
+                els.dataOverlay.classList.remove('hidden', 'bg-black/20');
+                els.dataOverlay.classList.add('bg-zinc-950/80', 'backdrop-blur-sm');
+                els.rgbCanvas.classList.remove('opacity-100');
+                els.rgbCanvas.classList.add('opacity-50');
+            }
+        }
+
+        // --- 6. Camera ---
+        async function startCamera() {
+            stopReceiverLoops();
+
+            const constraints = {
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: state.settings.cameraWidth },
+                    height: { ideal: state.settings.cameraHeight },
+                    frameRate: { ideal: 60, max: 60 }
+                },
+                audio: false
+            };
+
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (err) {
+                console.warn('60fps/resolution camera request failed. Retrying with a relaxed constraint.', err);
+                try {
+                    videoStream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: { ideal: 'environment' },
+                            width: { ideal: state.settings.cameraWidth },
+                            height: { ideal: state.settings.cameraHeight }
+                        },
+                        audio: false
+                    });
+                } catch (fallbackErr) {
+                    console.error("Camera error:", fallbackErr);
+                    els.opticalStatus.textContent = 'Camera Error';
+                    els.opticalStatus.className = 'text-red-500';
+                    return;
+                }
+            }
+
+            els.video.srcObject = videoStream;
+            els.video.setAttribute("playsinline", true);
+            await els.video.play();
+
+            const settings = videoStream.getVideoTracks()[0]?.getSettings?.() || {};
+            const actualW = settings.width || els.video.videoWidth || state.settings.cameraWidth;
+            const actualH = settings.height || els.video.videoHeight || state.settings.cameraHeight;
+            const actualFps = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : '60fps req';
+            els.opticalStatus.textContent = `Scanner Active ${actualW}x${actualH} ${actualFps}`;
+            els.opticalStatus.className = "text-zinc-500";
+
+            lastFpsTs = performance.now();
+            cameraFpsCount = 0;
+            decodeFpsCount = 0;
+            latestFrame = null;
+            latestFrameId = 0;
+            lastPostedFrameId = 0;
+
+            startReceiverLoops();
+        }
+
+        function stopCamera() {
+            stopReceiverLoops();
+            if (videoStream) {
+                videoStream.getTracks().forEach(t => t.stop());
+                videoStream = null;
+            }
+        }
+
+        function stopReceiverLoops() {
+            if (captureRafId) {
+                cancelAnimationFrame(captureRafId);
+                captureRafId = null;
+            }
+            if (decodeRafId) {
+                cancelAnimationFrame(decodeRafId);
+                decodeRafId = null;
+            }
+            if (videoFrameCallbackId && els.video.cancelVideoFrameCallback) {
+                els.video.cancelVideoFrameCallback(videoFrameCallbackId);
+                videoFrameCallbackId = null;
+            }
+            decoderBusy = false;
+            latestFrame = null;
+        }
+
+        async function restartCamera() {
+            if (state.mode !== 'receive') return;
+            stopCamera();
+            await startCamera();
+        }
+
+        // --- 7. Receiver: independent camera acquisition and QR decode worker ---
+        function startReceiverLoops() {
+            if (els.video.requestVideoFrameCallback) {
+                scheduleVideoFrameCapture();
+            } else {
+                captureLoopFallback();
+            }
+            decodeDispatchLoop();
+        }
+
+        function scheduleVideoFrameCapture() {
+            if (state.mode !== 'receive') return;
+            videoFrameCallbackId = els.video.requestVideoFrameCallback(() => {
+                captureLatestFrame();
+                scheduleVideoFrameCapture();
+            });
+        }
+
+        function captureLoopFallback() {
+            if (state.mode !== 'receive') return;
+            captureLatestFrame();
+            captureRafId = requestAnimationFrame(captureLoopFallback);
+        }
+
+        function captureLatestFrame() {
+            const vw = els.video.videoWidth;
+            const vh = els.video.videoHeight;
+            if (!vw || !vh || els.video.readyState < els.video.HAVE_CURRENT_DATA) return;
+
+            // Camera acquisition is intentionally independent from the QR worker.
+            // If the decoder is late, this buffer is overwritten with the newest frame
+            // instead of blocking camera intake.
+            const minDim = Math.min(vw, vh);
+            const crop = Math.floor(minDim * 0.75);
+            const sx = (vw - crop) / 2;
+            const sy = (vh - crop) / 2;
+
+            if (els.frameCanvas.width !== DECODE_SIZE || els.frameCanvas.height !== DECODE_SIZE) {
+                els.frameCanvas.width = DECODE_SIZE;
+                els.frameCanvas.height = DECODE_SIZE;
+            }
+            els.frameCtx.drawImage(els.video, sx, sy, crop, crop, 0, 0, DECODE_SIZE, DECODE_SIZE);
+
+            latestFrame = {
+                id: ++latestFrameId,
+                imageData: els.frameCtx.getImageData(0, 0, DECODE_SIZE, DECODE_SIZE)
+            };
+            cameraFpsCount++;
+            updateReceiverFpsCounter();
+        }
+
+        function decodeDispatchLoop() {
+            if (state.mode !== 'receive') return;
+
+            if (!decoderBusy && latestFrame && latestFrame.id !== lastPostedFrameId) {
+                const frame = latestFrame;
+                lastPostedFrameId = frame.id;
+                decoderBusy = true;
+                const jobId = ++workerJobId;
+                qrWorker.postMessage({ id: jobId, imageData: frame.imageData }, [frame.imageData.data.buffer]);
+            }
+
+            decodeRafId = requestAnimationFrame(decodeDispatchLoop);
+        }
+
+        function updateReceiverFpsCounter() {
+            const now = performance.now();
+            if (now - lastFpsTs >= 1000) {
+                els.fpsCounter.textContent = `CAM ${cameraFpsCount} / QR ${decodeFpsCount} FPS`;
+                cameraFpsCount = 0;
+                decodeFpsCount = 0;
+                lastFpsTs = now;
+            }
+        }
+
+        qrWorker.onmessage = (e) => {
+            decoderBusy = false;
+            decodeFpsCount++;
+            updateReceiverFpsCounter();
+
+            const { result } = e.data;
+            if (!result) return;
+            const pkt = parsePacket(result);
+            if (!pkt) return;
+
+            if (pkt.type === 0x00) {
+                // Meta packet
+                try {
+                    const json = new TextDecoder().decode(pkt.payload);
+                    const meta = JSON.parse(json);
+                    if (!meta.n || !Number.isFinite(meta.s) || !Number.isFinite(meta.c) || !Number.isFinite(meta.cs) || !meta.t0 || !meta.fd) return;
+                    meta.id = pkt.fileId;
+                    meta.rp = Number.isFinite(meta.rp) ? meta.rp : 0;
+                    meta.bd = Number.isFinite(meta.bd) ? meta.bd : RS_BLOCK_DATA;
+                    const plan = buildRsPlan(meta.c, meta.rp, meta.bd);
+                    meta.pc = plan.parityChunks;
+                    meta.tc = plan.totalChunks;
+
+                    // New file or different file
+                    if (!state.fileMeta || state.fileMeta.id !== pkt.fileId) {
+                        resetDataState();
+                        initReceive(meta);
+                    } else {
+                        // Drift correction: update t0 slightly if needed
+                        state.fileMeta.t0 = meta.t0;
+                        state.fileMeta.fd = meta.fd;
+                    }
+                } catch (e) {}
+            } else if (pkt.type === 0x01 && state.fileMeta && state.fileMeta.id === pkt.fileId) {
+                const totalChunks = state.fileMeta.tc || state.fileMeta.c;
+                if (pkt.seq >= 0 && pkt.seq < totalChunks && !state.receivedMask[pkt.seq]) {
+                    const shard = new Uint8Array(state.fileMeta.cs);
+                    shard.set(pkt.payload.subarray(0, Math.min(pkt.payload.length, state.fileMeta.cs)));
+                    state.receivedShards[pkt.seq] = shard;
+                    state.receivedMask[pkt.seq] = 1;
+
+                    if (pkt.seq < state.fileMeta.c) {
+                        const offset = pkt.seq * state.fileMeta.cs;
+                        const len = getDataChunkLength(pkt.seq);
+                        state.fileBuffer.set(shard.subarray(0, len), offset);
+                        updateCanvasWithChunk(pkt.seq, shard.subarray(0, len));
+                    }
+
+                    if (countReceivedDataChunks() < state.fileMeta.c) {
+                        const recovered = tryRecoverMissingChunks();
+                        if (recovered) els.opticalStatus.textContent = 'Receiving Data / RS Recovered';
+                    }
+                    updateProgressUI();
+
+                    if (countReceivedDataChunks() >= state.fileMeta.c) {
+                        completeReceive();
+                    }
+                }
+            }
+
+            // Visual feedback on successful read
+            const overlayFrame = els.scannerOverlay.querySelector('div');
+            if (overlayFrame) {
+                overlayFrame.classList.add('border-emerald-400', 'shadow-[0_0_15px_rgba(52,211,153,0.4)]');
+                setTimeout(() => overlayFrame.classList.remove('border-emerald-400', 'shadow-[0_0_15px_rgba(52,211,153,0.4)]'), 80);
+            }
+        };
+
+        // --- 8. Canvas Visualization ---
+        function setupCanvasForSize(totalBytes) {
+            const pixelsNeeded = Math.ceil(totalBytes / 3);
+            const side = Math.ceil(Math.sqrt(pixelsNeeded));
+            els.rgbCanvas.width = side;
+            els.rgbCanvas.height = side;
+            els.canvasRes.textContent = `${side}x${side} px`;
+            els.rgbCtx.fillStyle = '#000000';
+            els.rgbCtx.fillRect(0, 0, side, side);
+            rgbImageData = els.rgbCtx.getImageData(0, 0, side, side);
+            const d = rgbImageData.data;
+            for (let i = 3; i < d.length; i += 4) d[i] = 255;
+        }
+
+        function updateCanvasWithChunk(chunkIndex, chunkData) {
+            if (!rgbImageData || !state.fileMeta) return;
+            const startByte = chunkIndex * state.fileMeta.cs;
+            const d = rgbImageData.data;
+            for (let i = 0; i < chunkData.length; i++) {
+                const globalIdx = startByte + i;
+                const px = Math.floor(globalIdx / 3);
+                const ch = globalIdx % 3;
+                const idx = (px * 4) + ch;
+                if (idx < d.length) d[idx] = chunkData[i];
+            }
+            els.rgbCtx.putImageData(rgbImageData, 0, 0);
+        }
+
+        // --- 9. Send Logic ---
+        els.selectFileBtn.addEventListener('click', () => els.fileInput.click());
+
+        els.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 20 * 1024 * 1024) return alert("File too large. Max 20MB supported.");
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const buf = new Uint8Array(evt.target.result);
+                const c = Math.ceil(buf.length / state.settings.chunkSize);
+                const id = Math.floor(Math.random() * 0xFFFFFFFF);
+                const rsPlan = buildRsPlan(c, state.settings.rsPct, RS_BLOCK_DATA);
+                
+                state.fileMeta = {
+                    id, n: file.name, s: buf.length, c,
+                    cs: state.settings.chunkSize,
+                    mime: file.type || 'application/octet-stream',
+                    rp: state.settings.rsPct,
+                    bd: RS_BLOCK_DATA,
+                    pc: rsPlan.parityChunks,
+                    tc: rsPlan.totalChunks
+                };
+                state.fileBuffer = buf;
+                state.rsPlan = rsPlan;
+                els.opticalStatus.textContent = rsPlan.parityChunks > 0 ? 'Building RS Parity' : 'Preparing File';
+                state.parityShards = buildParityShardsForFile(buf, state.fileMeta, rsPlan);
+                
+                setupCanvasForSize(buf.length);
+                // Draw full buffer preview
+                for (let i = 0; i < buf.length; i++) {
+                    const px = Math.floor(i / 3);
+                    const ch = i % 3;
+                    const idx = (px * 4) + ch;
+                    if (idx < rgbImageData.data.length) rgbImageData.data[idx] = buf[i];
+                }
+                els.rgbCtx.putImageData(rgbImageData, 0, 0);
+                
+                prepareTransmission();
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function prepareTransmission() {
+            state.isTransmitting = false;
+            state.sendSlot = 0;
+            
+            els.sendSetupUI.classList.add('hidden');
+            els.sendSetupUI.classList.remove('flex');
+            els.dataOverlay.classList.remove('bg-zinc-950/80', 'backdrop-blur-sm');
+            els.dataOverlay.classList.add('bg-black/20');
+            els.rgbCanvas.classList.remove('opacity-50');
+            els.rgbCanvas.classList.add('opacity-100');
+            
+            els.actionContainer.classList.remove('hidden');
+            els.actionContainer.classList.add('flex');
+            els.senderControls.classList.remove('hidden');
+            els.startSendBtn.classList.remove('hidden');
+            els.stopSendBtn.textContent = "Cancel";
+            
+            els.fileName.textContent = state.fileMeta.n;
+            els.fileSize.textContent = formatBytes(state.fileMeta.s);
+            els.fileId.textContent = `ID: ${state.fileMeta.id.toString(16).toUpperCase()} | RS +${state.fileMeta.pc || 0}`;
+            
+            els.opticalStatus.textContent = 'Ready to Stream';
+            els.opticalStatus.className = 'text-yellow-500';
+            els.progressBar.classList.replace('bg-emerald-500', 'bg-blue-500');
+            els.progressText.classList.replace('text-emerald-400', 'text-blue-400');
+            
+            updateProgressUI();
+            renderSlot(0, true); // Show meta immediately
+        }
+
+        els.startSendBtn.addEventListener('click', startTransmission);
+
+        function startTransmission() {
+            state.isTransmitting = true;
+            state.fd = state.settings.fd;
+            // t0 is absolute time: now + 1.2s buffer for receiver to prepare
+            state.t0 = Date.now() + 1200;
+            state.sendSlot = 0;
+            
+            els.startSendBtn.classList.add('hidden');
+            els.stopSendBtn.textContent = "Halt Stream";
+            els.opticalStatus.textContent = 'Transmitting';
+            els.opticalStatus.className = 'text-blue-500';
+            els.fpsCounter.textContent = `${state.settings.displayFps} FPS OUT`;
+            
+            senderTick();
+        }
+
+        async function senderTick() {
+            if (!state.isTransmitting) return;
+            const slot = state.sendSlot;
+            const target = state.t0 + slot * state.fd;
+            const delay = target - Date.now();
+
+            if (delay <= 0) {
+                // Keep QR drawing ordered. If rendering falls behind, scheduling resumes from the next slot.
+                await renderSlot(slot);
+                state.sendSlot++;
+                updateProgressUI();
+                const nextTarget = state.t0 + state.sendSlot * state.fd;
+                const nextDelay = Math.max(1, nextTarget - Date.now());
+                state.sendTimer = setTimeout(senderTick, nextDelay);
+            } else {
+                state.sendTimer = setTimeout(senderTick, delay);
+            }
+        }
+
+        async function renderSlot(slot, isPreview = false) {
+            const totalChunks = state.fileMeta.tc || state.fileMeta.c;
+            const cycle = totalChunks + 1; // meta every cycle
+            const localSlot = slot % cycle;
+            let packet;
+            
+            if (localSlot === 0) {
+                const meta = {
+                    n: state.fileMeta.n,
+                    s: state.fileMeta.s,
+                    c: state.fileMeta.c,
+                    cs: state.fileMeta.cs,
+                    mime: state.fileMeta.mime,
+                    t0: state.t0,
+                    fd: state.fd,
+                    rp: state.fileMeta.rp || 0,
+                    bd: state.fileMeta.bd || RS_BLOCK_DATA,
+                    pc: state.fileMeta.pc || 0,
+                    tc: totalChunks
+                };
+                packet = buildMetaPacket(state.fileMeta.id, meta);
+            } else {
+                const seq = localSlot - 1;
+                let data;
+                if (seq < state.fileMeta.c) {
+                    const start = seq * state.fileMeta.cs;
+                    const end = Math.min(start + state.fileMeta.cs, state.fileBuffer.length);
+                    data = state.fileBuffer.slice(start, end);
+                } else {
+                    data = state.parityShards?.[seq - state.fileMeta.c] || new Uint8Array(state.fileMeta.cs);
+                }
+                packet = buildDataPacket(state.fileMeta.id, seq, data);
+                
+                els.chunkText.textContent = `${seq + 1} / ${totalChunks}`;
+                els.progressBar.style.width = `${((seq + 1) / totalChunks) * 100}%`;
+            }
+            
+            try {
+                await new Promise((res, rej) => {
+                    QRCode.toCanvas(els.qrCanvas, [{ data: Array.from(packet), mode: 'byte' }], {
+                        errorCorrectionLevel: state.settings.ecl,
+                        margin: 2,
+                        width: 600,
+                        color: { dark: '#000000', light: '#ffffff' }
+                    }, (err) => err ? rej(err) : res());
+                });
+            } catch (err) {
+                console.error(err);
+                stopTransmission();
+                alert("QR generation failed. Reduce payload size.");
+            }
+        }
+
+        els.stopSendBtn.addEventListener('click', stopTransmission);
+
+        function stopTransmission() {
+            state.isTransmitting = false;
+            if (state.sendTimer) clearTimeout(state.sendTimer);
+            state.sendTimer = null;
+            
+            const ctx = els.qrCanvas.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, els.qrCanvas.width, els.qrCanvas.height);
+            
+            resetDataState();
+            
+            els.actionContainer.classList.add('hidden');
+            els.actionContainer.classList.remove('flex');
+            els.senderControls.classList.add('hidden');
+            
+            els.sendSetupUI.classList.remove('hidden');
+            els.sendSetupUI.classList.add('flex');
+            
+            els.dataOverlay.classList.remove('bg-black/20');
+            els.dataOverlay.classList.add('bg-zinc-950/80', 'backdrop-blur-sm');
+            els.rgbCanvas.classList.remove('opacity-100');
+            els.rgbCanvas.classList.add('opacity-50');
+            
+            els.opticalStatus.textContent = 'Emitter Idle';
+            els.opticalStatus.className = 'text-zinc-500';
+            els.fpsCounter.textContent = '-';
+        }
+
+        // --- 10. Receiver State Management ---
+        function initReceive(meta) {
+            state.fileMeta = meta;
+            state.fileBuffer = new Uint8Array(meta.s);
+            state.rsPlan = buildRsPlan(meta.c, meta.rp || 0, meta.bd || RS_BLOCK_DATA);
+            state.fileMeta.pc = state.rsPlan.parityChunks;
+            state.fileMeta.tc = state.rsPlan.totalChunks;
+            state.receivedMask = new Uint8Array(state.fileMeta.tc);
+            state.receivedShards = new Array(state.fileMeta.tc);
+            state.rsDecodedBlocks = new Uint8Array(state.rsPlan.blocks.length);
+            
+            setupCanvasForSize(meta.s);
+            
+            els.receiveSetupUI.classList.add('hidden');
+            els.receiveSetupUI.classList.remove('flex');
+            
+            els.dataOverlay.classList.remove('bg-zinc-950/80', 'backdrop-blur-sm');
+            els.dataOverlay.classList.add('bg-black/20');
+            els.rgbCanvas.classList.remove('opacity-50');
+            els.rgbCanvas.classList.add('opacity-100');
+            
+            els.actionContainer.classList.remove('hidden');
+            els.actionContainer.classList.add('flex');
+            
+            els.fileName.textContent = meta.n;
+            els.fileSize.textContent = formatBytes(meta.s);
+            els.fileId.textContent = `ID: ${meta.id.toString(16).toUpperCase()} | RS +${state.fileMeta.pc || 0}`;
+            
+            els.opticalStatus.textContent = 'Receiving Data';
+            els.opticalStatus.className = 'text-emerald-500';
+            
+            els.progressBar.classList.replace('bg-blue-500', 'bg-emerald-500');
+            els.progressText.classList.replace('text-blue-400', 'text-emerald-400');
+            
+            updateProgressUI();
+        }
+
+        function updateProgressUI() {
+            if (!state.fileMeta) return;
+            const dataTotal = state.fileMeta.c;
+            const totalChunks = state.fileMeta.tc || dataTotal;
+            let current;
+            let label;
+
+            if (state.mode === 'send') {
+                current = Math.min(totalChunks, state.sendSlot % (totalChunks + 1));
+                label = `${current} / ${totalChunks}`;
+                const pct = totalChunks > 0 ? (current / totalChunks) * 100 : 0;
+                els.progressText.textContent = `${pct.toFixed(1)}%`;
+                els.chunkText.textContent = label;
+                els.progressBar.style.width = `${pct}%`;
+                return;
+            }
+
+            if (!state.receivedMask) return;
+            current = countReceivedDataChunks();
+            const parityGot = countReceivedRange(dataTotal, totalChunks);
+            const pct = dataTotal > 0 ? (current / dataTotal) * 100 : 0;
+            els.progressText.textContent = `${pct.toFixed(1)}%`;
+            els.chunkText.textContent = state.fileMeta.pc > 0
+                ? `${current} / ${dataTotal} (+${parityGot} RS)`
+                : `${current} / ${dataTotal}`;
+            els.progressBar.style.width = `${pct}%`;
+        }
+
+        function completeReceive() {
+            state.isTransmitting = false;
+            els.actionContainer.classList.add('hidden');
+            els.actionContainer.classList.remove('flex');
+            els.completeUI.classList.remove('hidden');
+            els.completeUI.classList.add('flex');
+            els.dataOverlay.classList.remove('bg-black/20');
+            els.dataOverlay.classList.add('bg-black/60', 'backdrop-blur-md');
+            els.opticalStatus.textContent = 'Reception Complete';
+        }
+
+        els.downloadBtn.addEventListener('click', () => {
+            if (!state.fileBuffer || !state.fileMeta) return;
+            const blob = new Blob([state.fileBuffer], { type: state.fileMeta.mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = state.fileMeta.n;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            setTimeout(() => {
+                resetDataState();
+                els.completeUI.classList.add('hidden');
+                els.completeUI.classList.remove('flex');
+                els.receiveSetupUI.classList.remove('hidden');
+                els.receiveSetupUI.classList.add('flex');
+                
+                els.dataOverlay.classList.remove('bg-black/60', 'backdrop-blur-md');
+                els.dataOverlay.classList.add('bg-zinc-950/80', 'backdrop-blur-sm');
+                els.rgbCanvas.classList.add('opacity-50');
+                els.rgbCanvas.classList.remove('opacity-100');
+                
+                els.opticalStatus.textContent = 'Scanner Active';
+                els.opticalStatus.className = 'text-zinc-500';
+            }, 500);
+        });
+
+        function resetDataState() {
+            state.fileMeta = null;
+            state.fileBuffer = null;
+            state.receivedMask = null;
+            state.receivedShards = null;
+            state.parityShards = null;
+            state.rsPlan = null;
+            state.rsDecodedBlocks = null;
+            state.currentChunk = 0;
+            state.isTransmitting = false;
+            state.sendSlot = 0;
+            state.t0 = 0;
+            
+            els.rgbCtx.clearRect(0, 0, els.rgbCanvas.width, els.rgbCanvas.height);
+            els.canvasRes.textContent = "0x0 px";
+            els.progressBar.style.width = '0%';
+            els.progressText.textContent = '0.0%';
+            els.chunkText.textContent = '0 / 0';
+            els.fileId.textContent = 'ID: ----';
+            els.fileInput.value = '';
+        }
+
+        // --- 11. Settings Logic ---
+        els.settingsBtn.addEventListener('click', () => {
+            els.modal.classList.remove('hidden');
+            setTimeout(() => {
+                els.modal.classList.remove('opacity-0');
+                els.modalContent.classList.remove('scale-95');
+            }, 10);
+        });
+
+        function closeSettingsModal() {
+            els.modal.classList.add('opacity-0');
+            els.modalContent.classList.add('scale-95');
+            setTimeout(() => els.modal.classList.add('hidden'), 200);
+        }
+
+        els.closeSettings.addEventListener('click', closeSettingsModal);
+        els.applySettings.addEventListener('click', () => {
+            closeSettingsModal();
+            if (state.mode === 'receive') restartCamera();
+        });
+
+        els.chunkSizeInput.addEventListener('input', (e) => {
+            els.chunkSizeVal.textContent = e.target.value;
+            state.settings.chunkSize = parseInt(e.target.value);
+        });
+
+        els.fpsInput.addEventListener('input', (e) => {
+            const fps = parseInt(e.target.value, 10);
+            state.settings.displayFps = fps;
+            state.settings.fd = Math.max(1, Math.round(1000 / fps));
+            els.fpsVal.textContent = `${fps}fps / ${state.settings.fd}ms`;
+        });
+
+        els.cameraResSelect.addEventListener('change', (e) => {
+            const [w, h] = e.target.value.split('x').map(v => parseInt(v, 10));
+            state.settings.cameraWidth = w;
+            state.settings.cameraHeight = h;
+        });
+
+        els.eclBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                els.eclBtns.forEach(b => {
+                    b.classList.remove('bg-blue-500/20', 'text-blue-400', 'border-blue-500/50');
+                    b.classList.add('bg-zinc-800', 'text-zinc-400', 'border-transparent');
+                });
+                const t = e.currentTarget;
+                t.classList.remove('bg-zinc-800', 'text-zinc-400', 'border-transparent');
+                t.classList.add('bg-blue-500/20', 'text-blue-400', 'border-blue-500/50');
+                state.settings.ecl = t.dataset.val;
+            });
+        });
+
+        els.rsBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                els.rsBtns.forEach(b => {
+                    b.classList.remove('bg-blue-500/20', 'text-blue-400', 'border-blue-500/50');
+                    b.classList.add('bg-zinc-800', 'text-zinc-400', 'border-transparent');
+                });
+                const t = e.currentTarget;
+                t.classList.remove('bg-zinc-800', 'text-zinc-400', 'border-transparent');
+                t.classList.add('bg-blue-500/20', 'text-blue-400', 'border-blue-500/50');
+                state.settings.rsPct = parseInt(t.dataset.val, 10);
+            });
+        });
+
+        // --- 12. Init ---
+        window.addEventListener('resize', () => {
+            if (state.mode === 'send') {
+                const tv = window.innerWidth < 768 ? '56px' : '66px';
+                els.slider.style.transform = `translateX(${tv})`;
+            }
+        });
+        updateModeUI();
+    </script>
+</body>
+</html>
