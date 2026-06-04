@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Giant JSONL DataSheet</title>
+    <meta name="description" content="Local giant JSONL file viewer with resizable columns and in-page sorting.">
+    <meta name="page:icon" content="📊">
+    <meta name="page:color" content="#ffffff">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        /* カスタムスクロールバー */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #f8fafc; border: 1px solid #e2e8f0; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; border: 2px solid #f8fafc; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        ::-webkit-scrollbar-corner { background: #f8fafc; }
+
+        /* モーダルアニメーション */
+        dialog::backdrop {
+            background: rgba(15, 23, 42, 0.5);
+            backdrop-filter: blur(4px);
+            animation: fadeIn 0.2s ease-out;
+        }
+        dialog[open] {
+            animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+        /* セル内省略表示 */
+        .ds-truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* リサイズハンドルのホバー領域拡張 */
+        .resize-handle::after {
+            content: '';
+            position: absolute;
+            top: 0; bottom: 0; left: -3px; right: -3px;
+        }
+        
+        /* リサイズ中のカーソル固定 */
+        body.is-resizing {
+            cursor: col-resize !important;
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-white text-slate-900 h-dvh flex flex-col overflow-hidden font-sans selection:bg-blue-200">
+
+    <!-- ヘッダー -->
+    <header class="flex-none border-b border-slate-200 bg-white z-30 px-4 py-3 flex items-center justify-between safe-area-inset-top shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-blue-50 text-blue-600 rounded-md border border-blue-100">
+                <i class="ph ph-table text-xl leading-none"></i>
+            </div>
+            <div>
+                <h1 class="font-semibold text-slate-800 text-balance leading-tight text-sm">JSONL DataSheet Viewer</h1>
+                <p id="file-info" class="text-[11px] text-slate-500 tabular-nums truncate max-w-md mt-0.5">ファイルが選択されていません</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button id="btn-open" class="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 shadow-sm">
+                <i class="ph ph-folder-open text-lg"></i>
+                ファイルを開く
+            </button>
+        </div>
+    </header>
+
+    <!-- タブナビゲーション -->
+    <nav class="flex-none border-b border-slate-200 bg-slate-50/80 px-4 flex gap-6 z-20" id="tabs" style="display: none;">
+        <button data-tab="viewer" class="py-2.5 text-sm font-medium border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 transition-colors relative top-[1px]">
+            <i class="ph ph-list-numbers"></i> シートビューア
+        </button>
+        <button data-tab="search" class="py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 transition-colors relative top-[1px]">
+            <i class="ph ph-magnifying-glass"></i> グローバル検索
+        </button>
+    </nav>
+
+    <!-- メイン領域 -->
+    <main class="flex-1 relative overflow-hidden flex flex-col bg-slate-50">
+        
+        <!-- 空状態 -->
+        <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 z-40 bg-white">
+            <div class="w-16 h-16 bg-slate-50 rounded-xl flex items-center justify-center mb-4 border border-slate-200 shadow-sm">
+                <i class="ph ph-table text-3xl text-slate-400"></i>
+            </div>
+            <h2 class="text-base font-semibold text-slate-700 mb-2">巨大データをシート形式で表示</h2>
+            <p class="text-slate-500 text-sm max-w-[400px] text-pretty leading-relaxed">
+                20GBを超えるファイルでもメモリを消費せず自動展開します。<br>
+                <span class="text-blue-600 font-medium">NEW:</span> 列幅のドラッグ変更、ヘッダークリックでのページ内ソート（テキストは長さ、数値はスカラー比較）に対応しました。
+            </p>
+        </div>
+
+        <!-- ビューア タブ -->
+        <div id="tab-viewer" class="hidden flex-col h-full absolute inset-0 bg-white">
+            <div class="flex-none flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-white shadow-sm z-10">
+                <div class="flex items-center gap-1.5">
+                    <button id="btn-prev" disabled class="p-1.5 rounded-md text-slate-600 hover:bg-slate-100 border border-transparent hover:border-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-transparent transition-all" aria-label="前のページ">
+                        <i class="ph ph-caret-left"></i>
+                    </button>
+                    <div class="px-3 py-1 text-xs font-semibold tabular-nums text-slate-700 bg-slate-50 border border-slate-200 rounded shadow-inner flex items-center gap-2 w-32 justify-center">
+                        <span>PAGE <span id="current-page-display" class="text-blue-600">1</span></span>
+                        <i id="page-loading-indicator" class="ph ph-spinner animate-spin text-blue-500 hidden"></i>
+                    </div>
+                    <button id="btn-next" disabled class="p-1.5 rounded-md text-slate-600 hover:bg-slate-100 border border-transparent hover:border-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-transparent transition-all" aria-label="次のページ">
+                        <i class="ph ph-caret-right"></i>
+                    </button>
+                </div>
+                <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider flex gap-4">
+                    <span>クリックで詳細</span>
+                    <span>ヘッダーでソート</span>
+                </div>
+            </div>
+            <div id="viewer-container" class="flex-1 overflow-auto bg-white relative"></div>
+        </div>
+
+        <!-- 検索 タブ -->
+        <div id="tab-search" class="hidden flex-col h-full absolute inset-0 bg-white">
+            <div class="flex-none p-3 border-b border-slate-200 bg-slate-50/50 z-10 shadow-sm flex flex-col gap-3">
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" id="search-input" placeholder="検索キーワードを入力" class="w-full pl-9 pr-4 py-1.5 bg-white border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow">
+                    </div>
+                    <button id="btn-search-start" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors shadow-sm w-24">検索</button>
+                    <button id="btn-search-stop" disabled class="px-4 py-1.5 bg-white hover:bg-red-50 text-red-600 border border-slate-300 hover:border-red-200 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 w-24">停止</button>
+                </div>
+                <div class="flex items-center gap-4 px-1">
+                    <div class="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                        <div id="search-progress-bar" class="h-full bg-blue-500 transition-all duration-300 ease-out" style="width: 0%"></div>
+                    </div>
+                    <div class="flex items-center gap-3 text-[11px] font-medium tabular-nums w-48 justify-end">
+                        <span id="search-status" class="text-blue-600">待機中</span>
+                        <span id="search-count" class="text-slate-500">0 rows</span>
+                    </div>
+                </div>
+            </div>
+            <div id="search-container" class="flex-1 overflow-auto bg-white relative"></div>
+        </div>
+
+    </main>
+
+    <!-- レコード詳細モーダル -->
+    <dialog id="detail-modal" class="bg-white rounded-lg shadow-2xl border border-slate-200 p-0 max-w-3xl w-[90vw] max-h-[85vh] overflow-hidden m-auto">
+        <div class="flex flex-col h-full">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+                <h3 class="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                    <i class="ph ph-brackets-curly text-blue-600 text-lg"></i> Row Details (Raw JSON)
+                </h3>
+                <button id="btn-close-modal" class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors" aria-label="閉じる">
+                    <i class="ph ph-x text-lg"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto bg-slate-900 flex-1">
+                <pre id="detail-content" class="whitespace-pre-wrap break-all tabular-nums text-pretty text-sm font-mono text-emerald-400"></pre>
+            </div>
+        </div>
+    </dialog>
+
+
+    <script>
+        // ==========================================
+        // 1. Web Worker (チャンク読込・検索)
+        // ==========================================
+        const workerCode = `
+            let fileHandle = null, file = null;
+            const PAGE_SIZE = 5000, CHUNK_SIZE = 1024 * 1024 * 16;
+            let pageOffsets = [0], currentSearchId = null;
+
+            self.onmessage = async (e) => {
+                const { type, payload } = e.data;
+                try {
+                    if (type === 'INIT') {
+                        file = payload.file; pageOffsets = [0];
+                        self.postMessage({ type: 'INIT_DONE', payload: { size: file.size, name: file.name } });
+                    } else if (type === 'GET_PAGE') {
+                        await getPage(payload.page);
+                    } else if (type === 'SEARCH') {
+                        currentSearchId = payload.searchId;
+                        await performSearch(payload.query, payload.searchId);
+                    } else if (type === 'STOP_SEARCH') {
+                        currentSearchId = null;
+                    }
+                } catch (err) {
+                    self.postMessage({ type: 'ERROR', payload: { message: err.message } });
+                }
+            };
+
+            function readChunk(start, size) {
+                return new Promise((resolve, reject) => {
+                    const slice = file.slice(start, start + size);
+                    const reader = new FileReader();
+                    reader.onload = e => resolve(new Uint8Array(e.target.result));
+                    reader.onerror = reject;
+                    reader.readAsArrayBuffer(slice);
+                });
+            }
+
+            async function getPage(targetPage) {
+                let startPage = targetPage;
+                while (startPage > 0 && pageOffsets[startPage] === undefined) startPage--;
+
+                let offset = pageOffsets[startPage], linesToSkip = (targetPage - startPage) * PAGE_SIZE;
+                let lines = [], leftover = new Uint8Array(0);
+                const decoder = new TextDecoder('utf-8');
+
+                while (offset < file.size) {
+                    const chunk = await readChunk(offset, CHUNK_SIZE);
+                    let chunkOffset = 0;
+
+                    while (chunkOffset < chunk.length) {
+                        let nlIndex = chunk.indexOf(10, chunkOffset);
+                        if (nlIndex === -1) {
+                            const newLeftover = new Uint8Array(leftover.length + (chunk.length - chunkOffset));
+                            newLeftover.set(leftover, 0); newLeftover.set(chunk.subarray(chunkOffset), leftover.length);
+                            leftover = newLeftover; break;
+                        }
+
+                        if (linesToSkip > 0) {
+                            linesToSkip--; leftover = new Uint8Array(0);
+                        } else {
+                            const lineBytes = new Uint8Array(leftover.length + (nlIndex - chunkOffset));
+                            lineBytes.set(leftover, 0); lineBytes.set(chunk.subarray(chunkOffset, nlIndex), leftover.length);
+                            const lineStr = decoder.decode(lineBytes).trim();
+                            if (lineStr) {
+                                try { lines.push(JSON.parse(lineStr)); } catch(e) { lines.push({ _error: true, _raw: lineStr }); }
+                            }
+                            leftover = new Uint8Array(0);
+
+                            if (lines.length === PAGE_SIZE) {
+                                offset = offset + nlIndex + 1; pageOffsets[targetPage + 1] = offset;
+                                self.postMessage({ type: 'PAGE_DATA', payload: { page: targetPage, lines, hasNext: offset < file.size } });
+                                return;
+                            }
+                        }
+                        chunkOffset = nlIndex + 1;
+                    }
+                    offset += CHUNK_SIZE;
+                }
+
+                if (leftover.length > 0 && linesToSkip === 0) {
+                    const lineStr = decoder.decode(leftover).trim();
+                    if (lineStr) { try { lines.push(JSON.parse(lineStr)); } catch(e) { lines.push({ _error: true, _raw: lineStr }); } }
+                }
+                pageOffsets[targetPage + 1] = file.size;
+                self.postMessage({ type: 'PAGE_DATA', payload: { page: targetPage, lines, hasNext: false } });
+            }
+
+            async function performSearch(query, searchId) {
+                let offset = 0, leftover = new Uint8Array(0);
+                const decoder = new TextDecoder('utf-8'), qLower = query.toLowerCase();
+                let matchCount = 0;
+
+                while (offset < file.size) {
+                    if (currentSearchId !== searchId) {
+                        self.postMessage({ type: 'SEARCH_ABORTED', payload: { searchId } }); return;
+                    }
+                    const chunk = await readChunk(offset, CHUNK_SIZE);
+                    let chunkOffset = 0, batchResults = [];
+
+                    while (chunkOffset < chunk.length) {
+                        let nlIndex = chunk.indexOf(10, chunkOffset);
+                        if (nlIndex === -1) {
+                            const newLeftover = new Uint8Array(leftover.length + (chunk.length - chunkOffset));
+                            newLeftover.set(leftover, 0); newLeftover.set(chunk.subarray(chunkOffset), leftover.length);
+                            leftover = newLeftover; break;
+                        }
+                        const lineBytes = new Uint8Array(leftover.length + (nlIndex - chunkOffset));
+                        lineBytes.set(leftover, 0); lineBytes.set(chunk.subarray(chunkOffset, nlIndex), leftover.length);
+                        const lineStr = decoder.decode(lineBytes);
+
+                        if (lineStr.toLowerCase().includes(qLower)) {
+                            const trimmed = lineStr.trim();
+                            if(trimmed) {
+                                try { batchResults.push(JSON.parse(trimmed)); } catch(e) { batchResults.push({ _error: true, _raw: trimmed }); }
+                                matchCount++;
+                            }
+                        }
+                        leftover = new Uint8Array(0); chunkOffset = nlIndex + 1;
+                    }
+
+                    const progress = Math.min(100, Math.round((offset / file.size) * 100));
+                    self.postMessage({ type: 'SEARCH_PROGRESS', payload: { searchId, progress, results: batchResults, totalFound: matchCount } });
+                    offset += CHUNK_SIZE;
+                }
+
+                if (leftover.length > 0) {
+                    const lineStr = decoder.decode(leftover);
+                    if (lineStr.toLowerCase().includes(qLower)) {
+                        const trimmed = lineStr.trim();
+                        if(trimmed) {
+                            try {
+                                const res = JSON.parse(trimmed); matchCount++;
+                                self.postMessage({ type: 'SEARCH_PROGRESS', payload: { searchId, progress: 100, results: [res], totalFound: matchCount } });
+                            } catch(e) {}
+                        }
+                    }
+                }
+                self.postMessage({ type: 'SEARCH_DONE', payload: { searchId, totalFound: matchCount } });
+            }
+        `;
+
+
+        // ==========================================
+        // 2. DataSheet 仮想スクローラー (列リサイズ・ソート対応)
+        // ==========================================
+        class DataSheetScroller {
+            constructor(containerElement, rowHeight) {
+                this.container = containerElement;
+                this.rowHeight = rowHeight;
+                this.instanceId = Math.random().toString(36).substring(2, 9);
+                
+                this.originalData = [];
+                this.data = [];
+                this.keys = [];
+                this.colWidths = [];
+                this.sortState = { key: null, direction: null }; // direction: 'asc' | 'desc' | null
+                
+                // 動的スタイルシートの準備（列幅をCSSクラスで制御し、DOM直接操作を避ける）
+                this.styleSheet = document.createElement('style');
+                document.head.appendChild(this.styleSheet);
+
+                this.header = document.createElement('div');
+                this.header.className = 'flex sticky top-0 z-20 bg-slate-100 border-b border-slate-300 w-max min-w-full shadow-sm';
+                
+                this.scrollArea = document.createElement('div');
+                this.scrollArea.style.position = 'relative';
+                this.scrollArea.style.width = 'max-content';
+                this.scrollArea.style.minWidth = '100%';
+                
+                this.content = document.createElement('div');
+                this.content.style.position = 'absolute';
+                this.content.style.top = '0';
+                this.content.style.left = '0';
+                this.content.style.width = '100%';
+                
+                this.scrollArea.appendChild(this.content);
+                this.container.appendChild(this.header);
+                this.container.appendChild(this.scrollArea);
+                
+                this.container.addEventListener('scroll', () => {
+                    if (!this.ticking) {
+                        window.requestAnimationFrame(() => { this.render(); this.ticking = false; });
+                        this.ticking = true;
+                    }
+                }, { passive: true });
+                this.ticking = false;
+            }
+
+            extractKeys() {
+                const keySet = new Set();
+                const limit = Math.min(this.data.length, 1000);
+                for (let i = 0; i < limit; i++) {
+                    const item = this.data[i];
+                    if (item && typeof item === 'object' && !item._error) {
+                        Object.keys(item).forEach(k => keySet.add(k));
+                    }
+                }
+                this.keys = Array.from(keySet);
+                // 新しいキーの幅を初期化 (デフォルト200px)
+                while (this.colWidths.length < this.keys.length) this.colWidths.push(200);
+                this.updateStyles();
+            }
+
+            updateStyles() {
+                let css = '';
+                this.keys.forEach((_, i) => {
+                    css += `.ds-col-${this.instanceId}-${i} { width: ${this.colWidths[i]}px !important; }\n`;
+                });
+                this.styleSheet.textContent = css;
+            }
+
+            // --- ソートロジック ---
+            handleSortToggle(key) {
+                if (this.sortState.key === key) {
+                    if (this.sortState.direction === 'asc') this.sortState.direction = 'desc';
+                    else if (this.sortState.direction === 'desc') {
+                        this.sortState.key = null;
+                        this.sortState.direction = null;
+                    }
+                } else {
+                    this.sortState.key = key;
+                    this.sortState.direction = 'asc';
+                }
+                this.applySort();
+            }
+
+            applySort() {
+                if (!this.sortState.key) {
+                    this.data = [...this.originalData];
+                } else {
+                    const { key, direction } = this.sortState;
+                    const dirMult = direction === 'asc' ? 1 : -1;
+                    
+                    this.data = [...this.originalData].sort((a, b) => {
+                        if (a._error || b._error) return 0;
+                        const valA = a[key], valB = b[key];
+                        
+                        const isNullA = valA === undefined || valA === null;
+                        const isNullB = valB === undefined || valB === null;
+                        if (isNullA && isNullB) return 0;
+                        if (isNullA) return 1; // null系は末尾へ
+                        if (isNullB) return -1;
+                        
+                        let res = 0;
+                        if (typeof valA === 'number' && typeof valB === 'number') {
+                            res = valA - valB; // 数値はスカラー比較
+                        } else if (typeof valA === 'string' && typeof valB === 'string') {
+                            res = valA.length - valB.length; // 文字列は長さ比較
+                        } else {
+                            // 異なる型の場合は文字列表現の長さで比較
+                            res = String(valA).length - String(valB).length;
+                        }
+                        return res * dirMult;
+                    });
+                }
+                this.renderHeader(); // ソートアイコンの更新
+                this.render();       // データの再描画
+            }
+
+            renderHeader() {
+                this.header.innerHTML = '';
+                const idxHeader = document.createElement('div');
+                idxHeader.className = 'w-16 flex-shrink-0 px-3 py-2 flex items-center justify-center font-bold text-slate-600 text-[10px] uppercase border-r border-slate-300 bg-slate-200 sticky left-0 z-30 shadow-[1px_0_0_0_#cbd5e1]';
+                idxHeader.textContent = '#';
+                this.header.appendChild(idxHeader);
+
+                if (this.keys.length === 0 && this.data.length > 0 && this.data[0]._error) {
+                    const errHeader = document.createElement('div');
+                    errHeader.className = 'w-[600px] flex-shrink-0 px-3 py-2 font-bold text-slate-600 text-[10px] uppercase border-r border-slate-300 flex items-center';
+                    errHeader.textContent = 'RAW DATA (PARSE ERROR)';
+                    this.header.appendChild(errHeader);
+                    return;
+                }
+
+                this.keys.forEach((key, i) => {
+                    const cell = document.createElement('div');
+                    cell.className = `ds-col-${this.instanceId}-${i} flex-shrink-0 px-3 py-2 font-bold text-slate-600 text-[11px] border-r border-slate-300 flex items-center justify-between relative group cursor-pointer hover:bg-slate-200 transition-colors`;
+                    
+                    // ヘッダーテキスト部（ソートイベント用）
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'ds-truncate flex-1 flex items-center gap-1';
+                    contentDiv.textContent = key;
+                    contentDiv.title = key;
+                    
+                    // ソートアイコン
+                    if (this.sortState.key === key) {
+                        const icon = document.createElement('i');
+                        icon.className = `ph ph-caret-${this.sortState.direction === 'asc' ? 'up' : 'down'} text-blue-600`;
+                        contentDiv.appendChild(icon);
+                        cell.classList.add('bg-blue-50');
+                    }
+                    
+                    cell.appendChild(contentDiv);
+                    
+                    // ソートのイベント
+                    contentDiv.addEventListener('click', () => this.handleSortToggle(key));
+
+                    // リサイズハンドル
+                    const resizer = document.createElement('div');
+                    resizer.className = 'resize-handle absolute right-0 top-0 bottom-0 w-[3px] cursor-col-resize hover:bg-blue-500 z-10 transition-colors';
+                    resizer.addEventListener('mousedown', (e) => this.initResize(e, i));
+                    cell.appendChild(resizer);
+
+                    this.header.appendChild(cell);
+                });
+            }
+
+            // --- 列リサイズ処理 ---
+            initResize(e, colIndex) {
+                e.stopPropagation();
+                e.preventDefault();
+                const startX = e.clientX;
+                const startWidth = this.colWidths[colIndex];
+                
+                document.body.classList.add('is-resizing');
+
+                const onMouseMove = (moveEvent) => {
+                    const deltaX = moveEvent.clientX - startX;
+                    const newWidth = Math.max(50, startWidth + deltaX); // 最小幅50px
+                    this.colWidths[colIndex] = newWidth;
+                    this.updateStyles(); // クラス単位で幅を即時適用（DOM再構築なし）
+                };
+
+                const onMouseUp = () => {
+                    document.body.classList.remove('is-resizing');
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            }
+
+            setData(data) {
+                this.originalData = [...data];
+                this.data = [...data];
+                this.sortState = { key: null, direction: null };
+                
+                this.extractKeys();
+                this.renderHeader();
+                this.scrollArea.style.height = `${this.data.length * this.rowHeight}px`;
+                this.container.scrollTop = 0;
+                this.container.scrollLeft = 0;
+                this.render();
+            }
+
+            appendData(newData) {
+                this.originalData = this.originalData.concat(newData);
+                
+                let newKeyAdded = false;
+                const keySet = new Set(this.keys);
+                const limit = Math.min(newData.length, 1000);
+                for (let i = 0; i < limit; i++) {
+                    const item = newData[i];
+                    if (item && typeof item === 'object' && !item._error) {
+                        Object.keys(item).forEach(k => {
+                            if (!keySet.has(k)) { keySet.add(k); newKeyAdded = true; }
+                        });
+                    }
+                }
+                
+                if (newKeyAdded) {
+                    this.keys = Array.from(keySet);
+                    while (this.colWidths.length < this.keys.length) this.colWidths.push(200);
+                    this.updateStyles();
+                    this.renderHeader();
+                }
+
+                // 検索などの順次追加時はソートを再適用して描画
+                this.applySort(); 
+                this.scrollArea.style.height = `${this.data.length * this.rowHeight}px`;
+            }
+
+            render() {
+                if (this.data.length === 0) {
+                    this.content.innerHTML = '';
+                    return;
+                }
+
+                const scrollTop = this.container.scrollTop;
+                const viewportHeight = this.container.clientHeight || 500;
+                const buffer = 15; 
+                const startIndex = Math.max(0, Math.floor(scrollTop / this.rowHeight) - buffer);
+                const endIndex = Math.min(this.data.length - 1, Math.ceil((scrollTop + viewportHeight) / this.rowHeight) + buffer);
+                
+                this.content.style.transform = `translateY(${startIndex * this.rowHeight}px)`;
+                this.content.innerHTML = ''; 
+                
+                const fragment = document.createDocumentFragment();
+                for (let i = startIndex; i <= endIndex; i++) {
+                    const item = this.data[i];
+                    
+                    const rowDiv = document.createElement('div');
+                    rowDiv.style.height = `${this.rowHeight}px`;
+                    rowDiv.className = 'flex w-max min-w-full border-b border-slate-200 hover:bg-blue-50/60 cursor-pointer transition-colors group bg-white';
+                    
+                    const idxCell = document.createElement('div');
+                    idxCell.className = 'w-16 flex-shrink-0 px-2 flex items-center justify-end text-[11px] text-slate-400 tabular-nums border-r border-slate-200 bg-slate-50 group-hover:bg-blue-100/50 sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]';
+                    // ソートされていても元のインデックスを追跡するのは難しいため、表示上の行番号とする
+                    idxCell.textContent = i + 1;
+                    rowDiv.appendChild(idxCell);
+
+                    if (item._error) {
+                        const errCell = document.createElement('div');
+                        errCell.className = 'w-[600px] flex-shrink-0 px-3 flex items-center text-xs font-mono text-red-500 border-r border-slate-200 ds-truncate';
+                        errCell.textContent = item._raw;
+                        rowDiv.appendChild(errCell);
+                    } else {
+                        this.keys.forEach((key, colIdx) => {
+                            const cell = document.createElement('div');
+                            // 動的クラスを割り当てることで幅を制御
+                            cell.className = `ds-col-${this.instanceId}-${colIdx} flex-shrink-0 px-3 flex items-center text-xs text-slate-700 border-r border-slate-200 ds-truncate`;
+                            
+                            let val = item[key];
+                            if (val === undefined || val === null) {
+                                cell.innerHTML = '<span class="text-slate-300">-</span>';
+                            } else if (typeof val === 'object') {
+                                cell.textContent = JSON.stringify(val);
+                                cell.classList.add('font-mono', 'text-[11px]', 'text-slate-500');
+                            } else {
+                                cell.textContent = String(val);
+                                if (typeof val === 'number') {
+                                    cell.classList.add('tabular-nums', 'text-blue-600', 'font-medium');
+                                } else if (typeof val === 'boolean') {
+                                    cell.classList.add('text-emerald-600', 'font-medium');
+                                }
+                            }
+                            cell.title = cell.textContent;
+                            rowDiv.appendChild(cell);
+                        });
+                    }
+                    
+                    rowDiv.addEventListener('click', () => openModal(item));
+                    fragment.appendChild(rowDiv);
+                }
+                this.content.appendChild(fragment);
+            }
+        }
+
+
+        // ==========================================
+        // 3. UI連携・イベントハンドラ
+        // ==========================================
+        const state = { worker: null, currentPage: 0, hasNextPage: false, searchId: 0, isSearching: false };
+
+        const viewerScroller = new DataSheetScroller(document.getElementById('viewer-container'), 34);
+        const searchScroller = new DataSheetScroller(document.getElementById('search-container'), 34);
+
+        function initWorker() {
+            if (state.worker) state.worker.terminate();
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            state.worker = new Worker(URL.createObjectURL(blob));
+            
+            state.worker.onmessage = (e) => {
+                const { type, payload } = e.data;
+                if (type === 'INIT_DONE') {
+                    document.getElementById('empty-state').style.display = 'none';
+                    document.getElementById('tabs').style.display = 'flex';
+                    switchTab('viewer');
+                    
+                    const sizeGb = (payload.size / (1024 * 1024 * 1024)).toFixed(3);
+                    document.getElementById('file-info').textContent = `${payload.name} (${sizeGb} GB)`;
+                    loadPage(0);
+                } 
+                else if (type === 'PAGE_DATA') {
+                    viewerScroller.setData(payload.lines);
+                    state.hasNextPage = payload.hasNext;
+                    updatePaginationUI();
+                    document.getElementById('page-loading-indicator').classList.add('hidden');
+                }
+                else if (type === 'SEARCH_PROGRESS') {
+                    if (payload.searchId === state.searchId) {
+                        document.getElementById('search-progress-bar').style.width = `${payload.progress}%`;
+                        document.getElementById('search-status').textContent = `${payload.progress}%`;
+                        document.getElementById('search-count').textContent = `${payload.totalFound.toLocaleString()} rows`;
+                        if (payload.results && payload.results.length > 0) searchScroller.appendData(payload.results);
+                    }
+                }
+                else if (type === 'SEARCH_DONE') {
+                    if (payload.searchId === state.searchId) {
+                        document.getElementById('search-status').textContent = '完了';
+                        document.getElementById('search-progress-bar').style.width = '100%';
+                        document.getElementById('btn-search-start').disabled = false;
+                        document.getElementById('btn-search-stop').disabled = true;
+                        state.isSearching = false;
+                    }
+                }
+                else if (type === 'SEARCH_ABORTED') {
+                    if (payload.searchId === state.searchId) {
+                        document.getElementById('search-status').textContent = '停止';
+                        document.getElementById('btn-search-start').disabled = false;
+                        document.getElementById('btn-search-stop').disabled = true;
+                        state.isSearching = false;
+                    }
+                }
+                else if (type === 'ERROR') {
+                    alert("エラーが発生しました: " + payload.message);
+                }
+            };
+        }
+
+        document.getElementById('btn-open').addEventListener('click', async () => {
+            try {
+                if (!window.showOpenFilePicker) return alert("お使いのブラウザはFile System Access APIをサポートしていません。");
+                const [fileHandle] = await window.showOpenFilePicker({
+                    types: [{ description: 'JSONL File', accept: { 'text/plain': ['.jsonl', '.json'] } }]
+                });
+                const file = await fileHandle.getFile();
+                initWorker();
+                state.worker.postMessage({ type: 'INIT', payload: { file } });
+                
+                searchScroller.setData([]);
+                document.getElementById('search-input').value = '';
+                document.getElementById('search-progress-bar').style.width = '0%';
+                document.getElementById('search-status').textContent = '待機中';
+                document.getElementById('search-count').textContent = '0 rows';
+            } catch (err) {
+                if (err.name !== 'AbortError') console.error(err);
+            }
+        });
+
+        function switchTab(tabName) {
+            document.querySelectorAll('#tabs button').forEach(btn => {
+                if (btn.dataset.tab === tabName) {
+                    btn.classList.add('border-blue-600', 'text-blue-600'); btn.classList.remove('border-transparent', 'text-slate-500');
+                } else {
+                    btn.classList.remove('border-blue-600', 'text-blue-600'); btn.classList.add('border-transparent', 'text-slate-500');
+                }
+            });
+            document.getElementById('tab-viewer').style.display = tabName === 'viewer' ? 'flex' : 'none';
+            document.getElementById('tab-search').style.display = tabName === 'search' ? 'flex' : 'none';
+        }
+
+        document.querySelectorAll('#tabs button').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+        function loadPage(pageIndex) {
+            state.currentPage = pageIndex;
+            document.getElementById('current-page-display').textContent = pageIndex + 1;
+            document.getElementById('page-loading-indicator').classList.remove('hidden');
+            state.worker.postMessage({ type: 'GET_PAGE', payload: { page: pageIndex } });
+        }
+
+        function updatePaginationUI() {
+            document.getElementById('btn-prev').disabled = state.currentPage === 0;
+            document.getElementById('btn-next').disabled = !state.hasNextPage;
+        }
+
+        document.getElementById('btn-prev').addEventListener('click', () => { if (state.currentPage > 0) loadPage(state.currentPage - 1); });
+        document.getElementById('btn-next').addEventListener('click', () => { if (state.hasNextPage) loadPage(state.currentPage + 1); });
+
+        document.getElementById('btn-search-start').addEventListener('click', () => {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+            state.searchId++; state.isSearching = true; searchScroller.setData([]); 
+            
+            document.getElementById('search-progress-bar').style.width = '0%';
+            document.getElementById('search-status').textContent = '0%';
+            document.getElementById('search-count').textContent = '0 rows';
+            
+            document.getElementById('btn-search-start').disabled = true;
+            document.getElementById('btn-search-stop').disabled = false;
+            state.worker.postMessage({ type: 'SEARCH', payload: { query, searchId: state.searchId } });
+        });
+
+        document.getElementById('btn-search-stop').addEventListener('click', () => {
+            if (state.isSearching) state.worker.postMessage({ type: 'STOP_SEARCH' });
+        });
+        
+        document.getElementById('search-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !document.getElementById('btn-search-start').disabled) document.getElementById('btn-search-start').click();
+        });
+
+        const detailModal = document.getElementById('detail-modal');
+        function openModal(data) {
+            const content = document.getElementById('detail-content');
+            if (data._error) content.innerHTML = `<span class="text-red-400">Parse Error:</span>\n${data._raw}`;
+            else content.textContent = JSON.stringify(data, null, 2);
+            detailModal.showModal();
+        }
+
+        document.getElementById('btn-close-modal').addEventListener('click', () => detailModal.close());
+        detailModal.addEventListener('click', (e) => {
+            const dim = detailModal.getBoundingClientRect();
+            if (e.clientX < dim.left || e.clientX > dim.right || e.clientY < dim.top || e.clientY > dim.bottom) detailModal.close();
+        });
+    </script>
+</body>
+</html>
