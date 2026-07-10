@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>OptoComm | Optical Data Transmission</title>
+    <meta name="description" content="High-speed optical data transfer using RGB block streams. No QR codes.">
+    <meta name="page:icon" content="🟦">
+    <meta name="page:color" content="#09090b">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        zinc: { 900: '#18181b', 950: '#09090b' }
+                    },
+                    keyframes: {
+                        scan: {
+                            '0%, 100%': { transform: 'translateY(-100%)' },
+                            '50%': { transform: 'translateY(100%)' },
+                        }
+                    },
+                    animation: {
+                        'scan': 'scan 3s ease-in-out infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        html, body { overflow: hidden; overscroll-behavior: none; touch-action: none; }
+        .rendering-pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
+    </style>
+<base target="_blank">
+</head>
+<body class="flex flex-col h-dvh w-screen bg-zinc-950 text-zinc-100 font-sans select-none overflow-hidden">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between px-3 py-2 md:px-4 md:py-3 bg-zinc-900 border-b border-zinc-800 shrink-0 shadow-sm z-20 h-12 md:h-14">
+        <div class="flex items-center gap-2">
+            <i data-lucide="cpu" class="w-5 h-5 text-emerald-500"></i>
+            <h1 class="text-sm md:text-base font-bold tracking-tight">OptoComm</h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <button id="modeToggle" class="relative inline-flex h-7 w-[120px] md:h-8 md:w-[140px] items-center rounded-full bg-zinc-950 p-1 transition-colors border border-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500" aria-label="Toggle Mode">
+                <span id="slider" class="absolute h-5 w-[56px] md:h-6 md:w-[66px] rounded-full bg-emerald-500 transition-all duration-300 ease-out translate-x-0 shadow-sm"></span>
+                <span class="relative z-10 flex-1 text-center text-[9px] md:text-[10px] font-bold tracking-wider text-white transition-colors duration-200" id="recvText">RECEIVE</span>
+                <span class="relative z-10 flex-1 text-center text-[9px] md:text-[10px] font-bold tracking-wider text-zinc-500 transition-colors duration-200" id="sendText">SEND</span>
+            </button>
+            <button id="settingsBtn" class="p-1 hover:bg-zinc-800 rounded-md transition-colors text-zinc-400 hover:text-white hidden focus:outline-none" aria-label="Settings">
+                <i data-lucide="settings" class="w-4 h-4 md:w-5 md:h-5"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative z-10 w-full h-[calc(100dvh-3rem)]">
+        <!-- Surface 1: Optical Interface -->
+        <section class="flex-1 min-h-0 flex flex-col p-2 border-b md:border-b-0 md:border-r border-zinc-800 relative bg-zinc-900/30">
+            <div class="w-full flex-1 relative flex items-center justify-center bg-black rounded-lg border border-zinc-800 overflow-hidden shadow-inner min-h-0">
+                <video id="videoElement" class="absolute inset-0 w-full h-full object-cover hidden" playsinline autoplay muted></video>
+                <div id="scannerOverlay" class="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+                    <div class="w-full max-w-[200px] md:max-w-[300px] aspect-square border-2 border-emerald-500/50 rounded-2xl relative overflow-hidden transition-all duration-150">
+                        <div class="absolute top-0 left-0 w-6 h-6 md:w-8 md:h-8 border-t-4 border-l-4 border-emerald-500 rounded-tl-xl"></div>
+                        <div class="absolute top-0 right-0 w-6 h-6 md:w-8 md:h-8 border-t-4 border-r-4 border-emerald-500 rounded-tr-xl"></div>
+                        <div class="absolute bottom-0 left-0 w-6 h-6 md:w-8 md:h-8 border-b-4 border-l-4 border-emerald-500 rounded-bl-xl"></div>
+                        <div class="absolute bottom-0 right-0 w-6 h-6 md:w-8 md:h-8 border-b-4 border-r-4 border-emerald-500 rounded-br-xl"></div>
+                        <div class="absolute left-0 right-0 h-[2px] bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.6)] animate-scan"></div>
+                    </div>
+                </div>
+                <canvas id="txCanvas" class="absolute inset-0 w-full h-full object-contain rendering-pixelated hidden bg-black"></canvas>
+            </div>
+            <div class="h-4 shrink-0 mt-1 flex justify-between items-center text-[9px] md:text-[10px] font-mono text-zinc-500 uppercase tracking-wider px-1">
+                <span id="opticalStatus">Camera Active</span>
+                <span id="fpsCounter">0 FPS</span>
+            </div>
+        </section>
+
+        <!-- Surface 2: Data Visualization -->
+        <section class="flex-1 min-h-0 flex flex-col p-2 relative bg-zinc-950">
+            <div class="w-full flex-1 relative flex items-center justify-center rounded-lg border border-zinc-800 overflow-hidden bg-black shadow-inner min-h-0">
+                <canvas id="rgbCanvas" class="w-full h-full object-contain rendering-pixelated opacity-50 transition-opacity duration-500"></canvas>
+                <div id="dataOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-sm transition-all duration-300 z-10 p-2 overflow-y-auto">
+                    <!-- Send Setup -->
+                    <div id="sendSetupUI" class="text-center hidden flex-col items-center gap-2 p-4 w-full max-w-xs">
+                        <div class="w-10 h-10 md:w-16 md:h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                            <i data-lucide="file-up" class="w-5 h-5 md:w-8 md:h-8 text-blue-500"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-sm md:text-lg font-bold text-zinc-100">Select File</h2>
+                            <p class="text-[9px] md:text-xs text-zinc-400 text-balance leading-tight mt-1">Data is encoded into RGB block streams. No QR codes.</p>
+                        </div>
+                        <input type="file" id="fileInput" class="hidden">
+                        <button id="selectFileBtn" class="mt-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs md:text-sm font-semibold rounded-lg transition-colors shadow-lg shadow-blue-900/20">Browse Files</button>
+                    </div>
+                    <!-- Receive Setup -->
+                    <div id="receiveSetupUI" class="text-center flex flex-col items-center gap-2 p-4 w-full max-w-xs">
+                        <div class="w-10 h-10 md:w-16 md:h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center relative">
+                            <i data-lucide="radio-receiver" class="w-5 h-5 md:w-8 md:h-8 text-emerald-500"></i>
+                            <span class="absolute top-1 right-1 w-2 h-2 bg-emerald-400 rounded-full animate-ping"></span>
+                        </div>
+                        <div>
+                            <h2 class="text-sm md:text-lg font-bold text-zinc-100">Awaiting Signal</h2>
+                            <p class="text-[9px] md:text-xs text-zinc-400 text-balance leading-tight mt-1">Point camera at sender's RGB block stream.</p>
+                        </div>
+                    </div>
+                    <!-- Action Card -->
+                    <div id="actionContainer" class="hidden w-full max-w-xs flex-col gap-3 bg-zinc-950/95 backdrop-blur-xl p-4 rounded-2xl border border-zinc-800 shadow-2xl z-20">
+                        <div class="text-center border-b border-zinc-800/50 pb-2">
+                            <p id="fileNameDisplay" class="text-xs md:text-sm font-semibold text-zinc-100 truncate w-full">filename.ext</p>
+                            <p id="fileSizeDisplay" class="text-[9px] md:text-[10px] text-zinc-400 font-mono mt-0.5 flex items-center justify-center gap-2">
+                                <span>0 MB</span><span class="text-zinc-700">|</span><span id="fileIdDisplay" class="text-zinc-500">ID: ----</span>
+                            </p>
+                        </div>
+                        <div class="relative w-full">
+                            <div class="flex justify-between text-[10px] font-bold mb-1 font-mono">
+                                <span id="progressText" class="text-emerald-400">0.0%</span>
+                                <span id="chunkText" class="text-zinc-500">0 / 0</span>
+                            </div>
+                            <div class="w-full h-2 bg-black rounded-full overflow-hidden border border-zinc-800 shadow-inner">
+                                <div id="progressBar" class="h-full bg-emerald-500 w-0 transition-all duration-75 ease-linear"></div>
+                            </div>
+                        </div>
+                        <div id="senderControls" class="flex flex-col gap-2 hidden mt-1">
+                            <button id="startSendBtn" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2">
+                                <i data-lucide="play" class="w-3 h-3 fill-current"></i> Start Sync
+                            </button>
+                            <button id="stopSendBtn" class="w-full px-4 py-1.5 bg-transparent hover:bg-zinc-900 text-zinc-400 hover:text-white rounded-lg text-[10px] font-bold transition-colors">Cancel</button>
+                        </div>
+                    </div>
+                    <!-- Complete State -->
+                    <div id="completeUI" class="text-center hidden flex-col items-center gap-2 p-5 bg-zinc-950/95 backdrop-blur-xl rounded-2xl border border-zinc-800 shadow-2xl w-full max-w-xs z-30">
+                        <div class="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 mb-1">
+                            <i data-lucide="check-circle-2" class="w-8 h-8"></i>
+                        </div>
+                        <h2 class="text-sm font-bold text-white">Complete</h2>
+                        <button id="downloadBtn" class="mt-1 px-5 py-2 bg-zinc-100 hover:bg-white text-zinc-900 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2">
+                            <i data-lucide="download" class="w-4 h-4"></i> Save File
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="h-4 shrink-0 mt-1 flex justify-between items-center text-[9px] md:text-[10px] font-mono text-zinc-500 uppercase tracking-wider px-1">
+                <span>RGB Buffer Mapping</span>
+                <span id="canvasRes">0x0 px</span>
+            </div>
+        </section>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-200 p-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-xs overflow-hidden transform scale-95 transition-transform duration-200" id="settingsContent">
+            <div class="flex items-center justify-between p-3 border-b border-zinc-800 bg-zinc-900/50">
+                <h3 class="text-xs font-bold flex items-center gap-2"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i> Settings</h3>
+                <button id="closeSettings" class="text-zinc-500 hover:text-white transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-4 flex flex-col gap-5">
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-semibold text-zinc-300">Grid Size (blocks)</label>
+                        <span id="gridSizeVal" class="text-[10px] font-mono text-blue-400">32</span>
+                    </div>
+                    <input type="range" id="gridSizeInput" min="16" max="64" step="16" value="32" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                </div>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-semibold text-zinc-300">Slot Duration (ms)</label>
+                        <span id="fpsVal" class="text-[10px] font-mono text-blue-400">66ms</span>
+                    </div>
+                    <input type="range" id="fpsInput" min="33" max="200" step="1" value="66" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                </div>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-semibold text-zinc-300">Frame Redundancy</label>
+                        <span id="redundancyVal" class="text-[10px] font-mono text-blue-400">3x</span>
+                    </div>
+                    <input type="range" id="redundancyInput" min="1" max="5" step="1" value="3" class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                </div>
+            </div>
+            <div class="p-3 border-t border-zinc-800 bg-zinc-950 flex justify-end">
+                <button id="applySettings" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded transition-colors">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden canvases for processing -->
+    <canvas id="frameCanvas" class="hidden"></canvas>
+
+    <script>
+        lucide.createIcons();
+
+        // ==========================
+        // 1. WASM Loader + Fallback
+        // ==========================
+        let wasmModule = null;
+        let wasmCodec = null;
+
+        async function initWasm() {
+            try {
+                // Try to load compiled WASM from opto_wasm/pkg/opto_wasm_bg.wasm
+                const resp = await fetch('opto_wasm/pkg/opto_wasm_bg.wasm');
+                if (!resp.ok) throw new Error('WASM not found');
+                const bytes = await resp.arrayBuffer();
+                // Minimal glue: we expose functions via JS fallback if WASM unavailable
+                // For a real build, use wasm-bindgen generated glue.
+                // Here we provide a compiled-in fallback that matches Rust logic.
+                throw new Error('WASM glue not pre-built; using JS fallback');
+            } catch (e) {
+                console.log('WASM load skipped, using high-performance JS fallback');
+                wasmModule = null;
+            }
+        }
+
+        // ==========================
+        // 2. JS Fallback Codec (matches Rust logic)
+        // ==========================
+        class OptoCodecJS {
+            constructor(gridW, gridH) {
+                this.gridW = gridW;
+                this.gridH = gridH;
+                this.total = gridW * gridH;
+                this.payloadStart = 12;
+                this.payloadBlocks = this.total - this.payloadStart;
+                this.payloadBytes = this.payloadBlocks * 3;
+            }
+
+            encodeFrame(data, frameId) {
+                const pixels = new Uint8ClampedArray(this.total * 4);
+                for (let i = 0; i < this.total; i++) {
+                    pixels[i*4] = 0; pixels[i*4+1] = 0; pixels[i*4+2] = 0; pixels[i*4+3] = 255;
+                }
+                const gw = this.gridW;
+                const gh = this.gridH;
+                const anchors = [
+                    [0, 0, [255,0,0]], [gw-2, 0, [0,255,0]], [0, gh-2, [0,0,255]], [gw-2, gh-2, [255,255,0]]
+                ];
+                for (const [ax, ay, col] of anchors) {
+                    for (let dy=0; dy<2; dy++) for (let dx=0; dx<2; dx++) {
+                        const idx = ((ay+dy)*gw + (ax+dx))*4;
+                        pixels[idx] = col[0]; pixels[idx+1] = col[1]; pixels[idx+2] = col[2];
+                    }
+                }
+                const header = [
+                    0x4F,
+                    (frameId>>>24)&0xFF, (frameId>>>16)&0xFF, (frameId>>>8)&0xFF, frameId&0xFF,
+                    0,0,0
+                ];
+                for (let i=0; i<8; i++) {
+                    const idx = (4+i)*4;
+                    pixels[idx] = header[i]; pixels[idx+1] = header[i]; pixels[idx+2] = header[i];
+                }
+                const maxLen = Math.min(data.length, this.payloadBytes);
+                for (let i=0; i<maxLen; i++) {
+                    const bidx = this.payloadStart + Math.floor(i/3);
+                    const ch = i % 3;
+                    pixels[bidx*4 + ch] = data[i];
+                }
+                return pixels;
+            }
+
+            decodeFrame(rgba) {
+                if (rgba.length < this.total * 4) return null;
+                const gw = this.gridW;
+                const h0 = rgba[4*4]; const h1 = rgba[4*4+1]; const h2 = rgba[4*4+2];
+                const magic = (h0===h1||h0===h2)?h0:h1;
+                if (magic !== 0x4F) return null;
+                const idBytes = new Uint8Array(4);
+                for (let i=0;i<4;i++) {
+                    const idx = (5+i)*4;
+                    const r=rgba[idx], g=rgba[idx+1], b=rgba[idx+2];
+                    idBytes[i] = (r===g||r===b)?r:g;
+                }
+                const frameId = new DataView(idBytes.buffer).getUint32(0, false);
+                const dataLen = this.payloadBytes;
+                const data = new Uint8Array(dataLen);
+                for (let i=0;i<dataLen;i++) {
+                    const bidx = this.payloadStart + Math.floor(i/3);
+                    const ch = i % 3;
+                    data[i] = rgba[bidx*4 + ch];
+                }
+                return { frame_id: frameId, data };
+            }
+
+            crc32(buf) {
+                let crc = 0xFFFFFFFF;
+                for (let i=0;i<buf.length;i++) {
+                    crc ^= buf[i];
+                    for (let k=0;k<8;k++) crc = (crc & 1) ? ((crc>>>1) ^ 0xEDB88320) : (crc>>>1);
+                }
+                return (~crc) >>> 0;
+            }
+        }
+
+        // ==========================
+        // 3. Global State
+        // ==========================
+        let state = {
+            mode: 'receive',
+            isTransmitting: false,
+            fileMeta: null,
+            fileBuffer: null,
+            receivedMask: null,
+            frameAccumulator: null, // for redundancy voting
+            currentChunk: 0,
+            t0: 0,
+            fd: 66,
+            sendTimer: null,
+            sendSlot: 0,
+            sendFrames: [], // pre-built frame pixel arrays
+            settings: { gridSize: 32, fd: 66, redundancy: 3 }
+        };
+
+        let codec = new OptoCodecJS(32, 32);
+
+        const els = {
+            toggleBtn: document.getElementById('modeToggle'),
+            slider: document.getElementById('slider'),
+            recvText: document.getElementById('recvText'),
+            sendText: document.getElementById('sendText'),
+            settingsBtn: document.getElementById('settingsBtn'),
+            video: document.getElementById('videoElement'),
+            scannerOverlay: document.getElementById('scannerOverlay'),
+            txCanvas: document.getElementById('txCanvas'),
+            txCtx: document.getElementById('txCanvas').getContext('2d', {alpha:false}),
+            opticalStatus: document.getElementById('opticalStatus'),
+            fpsCounter: document.getElementById('fpsCounter'),
+            frameCanvas: document.getElementById('frameCanvas'),
+            frameCtx: document.getElementById('frameCanvas').getContext('2d', {willReadFrequently:true}),
+            rgbCanvas: document.getElementById('rgbCanvas'),
+            rgbCtx: document.getElementById('rgbCanvas').getContext('2d', {alpha:false}),
+            canvasRes: document.getElementById('canvasRes'),
+            dataOverlay: document.getElementById('dataOverlay'),
+            sendSetupUI: document.getElementById('sendSetupUI'),
+            receiveSetupUI: document.getElementById('receiveSetupUI'),
+            actionContainer: document.getElementById('actionContainer'),
+            senderControls: document.getElementById('senderControls'),
+            startSendBtn: document.getElementById('startSendBtn'),
+            stopSendBtn: document.getElementById('stopSendBtn'),
+            completeUI: document.getElementById('completeUI'),
+            fileInput: document.getElementById('fileInput'),
+            selectFileBtn: document.getElementById('selectFileBtn'),
+            downloadBtn: document.getElementById('downloadBtn'),
+            fileName: document.getElementById('fileNameDisplay'),
+            fileSize: document.getElementById('fileSizeDisplay'),
+            fileId: document.getElementById('fileIdDisplay'),
+            progressText: document.getElementById('progressText'),
+            chunkText: document.getElementById('chunkText'),
+            progressBar: document.getElementById('progressBar'),
+            modal: document.getElementById('settingsModal'),
+            modalContent: document.getElementById('settingsContent'),
+            closeSettings: document.getElementById('closeSettings'),
+            applySettings: document.getElementById('applySettings'),
+            gridSizeInput: document.getElementById('gridSizeInput'),
+            gridSizeVal: document.getElementById('gridSizeVal'),
+            fpsInput: document.getElementById('fpsInput'),
+            fpsVal: document.getElementById('fpsVal'),
+            redundancyInput: document.getElementById('redundancyInput'),
+            redundancyVal: document.getElementById('redundancyVal'),
+        };
+
+        let videoStream = null;
+        let animFrameId = null;
+        let lastScanTs = 0;
+        let scanCount = 0;
+        let lastFpsTs = 0;
+        let rgbImageData = null;
+
+        // ==========================
+        // 4. Helpers
+        // ==========================
+        function formatBytes(b) {
+            if (b===0) return '0 B';
+            const k=1024, sizes=['B','KB','MB','GB'];
+            const i = Math.floor(Math.log(b)/Math.log(k));
+            return parseFloat((b/Math.pow(k,i)).toFixed(2))+' '+sizes[i];
+        }
+
+        function buildMeta(fileId, metaObj) {
+            const json = JSON.stringify(metaObj);
+            const te = new TextEncoder();
+            const payload = te.encode(json);
+            const pkt = new Uint8Array(1+4+4+payload.length);
+            pkt[0]=0x00;
+            const dv = new DataView(pkt.buffer);
+            dv.setUint32(1, fileId, false);
+            dv.setInt32(5, -1, false);
+            pkt.set(payload, 9);
+            return pkt;
+        }
+        function parseMeta(bytes) {
+            if (bytes.length<9) return null;
+            const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            return { type: bytes[0], fileId: dv.getUint32(1,false), seq: dv.getInt32(5,false), payload: bytes.slice(9) };
+        }
+
+        // ==========================
+        // 5. Mode Switching
+        // ==========================
+        els.toggleBtn.addEventListener('click', () => {
+            if (state.isTransmitting || els.actionContainer.classList.contains('flex')) {
+                if (!confirm('Switching modes will reset current progress. Proceed?')) return;
+                stopTransmission();
+            }
+            state.mode = state.mode==='receive'?'send':'receive';
+            updateModeUI();
+        });
+
+        function updateModeUI() {
+            resetDataState();
+            if (state.mode==='receive') {
+                els.slider.style.transform='translateX(0)';
+                els.slider.classList.replace('bg-blue-500','bg-emerald-500');
+                els.recvText.classList.replace('text-zinc-500','text-white');
+                els.sendText.classList.replace('text-white','text-zinc-500');
+                els.settingsBtn.classList.add('hidden');
+                els.txCanvas.classList.add('hidden');
+                els.video.classList.remove('hidden');
+                els.scannerOverlay.classList.remove('hidden');
+                els.opticalStatus.textContent='Scanner Active';
+                els.opticalStatus.className='text-zinc-500';
+                els.sendSetupUI.classList.add('hidden'); els.sendSetupUI.classList.remove('flex');
+                els.receiveSetupUI.classList.remove('hidden'); els.receiveSetupUI.classList.add('flex');
+                els.dataOverlay.classList.remove('hidden','bg-black/20');
+                els.dataOverlay.classList.add('bg-zinc-950/80','backdrop-blur-sm');
+                els.rgbCanvas.classList.remove('opacity-100'); els.rgbCanvas.classList.add('opacity-50');
+                startCamera();
+            } else {
+                const tv = window.innerWidth<768?'56px':'66px';
+                els.slider.style.transform=`translateX(${tv})`;
+                els.slider.classList.replace('bg-emerald-500','bg-blue-500');
+                els.sendText.classList.replace('text-zinc-500','text-white');
+                els.recvText.classList.replace('text-white','text-zinc-500');
+                els.settingsBtn.classList.remove('hidden');
+                stopCamera();
+                els.video.classList.add('hidden');
+                els.scannerOverlay.classList.add('hidden');
+                els.txCanvas.classList.remove('hidden');
+                els.opticalStatus.textContent='Emitter Idle';
+                els.opticalStatus.className='text-zinc-500';
+                els.fpsCounter.textContent='-';
+                els.receiveSetupUI.classList.add('hidden'); els.receiveSetupUI.classList.remove('flex');
+                els.sendSetupUI.classList.remove('hidden'); els.sendSetupUI.classList.add('flex');
+                els.dataOverlay.classList.remove('hidden','bg-black/20');
+                els.dataOverlay.classList.add('bg-zinc-950/80','backdrop-blur-sm');
+                els.rgbCanvas.classList.remove('opacity-100'); els.rgbCanvas.classList.add('opacity-50');
+            }
+        }
+
+        // ==========================
+        // 6. Camera
+        // ==========================
+        async function startCamera() {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+                });
+                els.video.srcObject = videoStream;
+                els.video.setAttribute('playsinline', true);
+                els.video.play();
+                lastFpsTs = performance.now(); scanCount = 0;
+                requestAnimationFrame(scanLoop);
+            } catch(err) {
+                console.error(err);
+                els.opticalStatus.textContent='Camera Error';
+                els.opticalStatus.className='text-red-500';
+            }
+        }
+        function stopCamera() {
+            if (videoStream) { videoStream.getTracks().forEach(t=>t.stop()); videoStream=null; }
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+        }
+
+        // ==========================
+        // 7. Receiver Scan Loop
+        // ==========================
+        function scanLoop() {
+            if (state.mode!=='receive') return;
+            if (els.video.readyState >= els.video.HAVE_ENOUGH_DATA) {
+                const now = performance.now();
+                if (now - lastScanTs >= state.settings.fd/2) { // sample faster than tx
+                    lastScanTs = now;
+                    processFrame();
+                }
+            }
+            animFrameId = requestAnimationFrame(scanLoop);
+        }
+
+        function processFrame() {
+            const gs = state.settings.gridSize;
+            els.frameCanvas.width = gs;
+            els.frameCanvas.height = gs;
+            // Draw center crop of video into tiny grid canvas
+            const vw = els.video.videoWidth;
+            const vh = els.video.videoHeight;
+            if (!vw||!vh) return;
+            const minDim = Math.min(vw, vh);
+            const crop = Math.floor(minDim * 0.75);
+            const sx = (vw - crop)/2;
+            const sy = (vh - crop)/2;
+            els.frameCtx.drawImage(els.video, sx, sy, crop, crop, 0, 0, gs, gs);
+            const imageData = els.frameCtx.getImageData(0, 0, gs, gs);
+            const result = codec.decodeFrame(imageData.data);
+            scanCount++;
+            const now = performance.now();
+            if (now - lastFpsTs >= 1000) {
+                els.fpsCounter.textContent = scanCount+' FPS';
+                scanCount = 0; lastFpsTs = now;
+            }
+            if (!result) return;
+            handleReceivedFrame(result.frame_id, result.data);
+            // visual feedback
+            const overlayFrame = els.scannerOverlay.querySelector('div');
+            if (overlayFrame) {
+                overlayFrame.classList.add('border-emerald-400','shadow-[0_0_15px_rgba(52,211,153,0.4)]');
+                setTimeout(()=>overlayFrame.classList.remove('border-emerald-400','shadow-[0_0_15px_rgba(52,211,153,0.4)]'), 80);
+            }
+        }
+
+        function handleReceivedFrame(frameId, data) {
+            if (frameId === 0xFFFFFFFF) {
+                // Meta frame
+                try {
+                    const json = new TextDecoder().decode(data);
+                    // Remove trailing zeros
+                    const clean = json.replace(/\x00+$/g,'');
+                    const meta = JSON.parse(clean);
+                    if (!meta.n||!meta.s||!meta.c||!meta.cs) return;
+                    if (!state.fileMeta || state.fileMeta.id !== meta.id) {
+                        resetDataState();
+                        meta.id = meta.id || Math.floor(Math.random()*0xFFFFFFFF);
+                        initReceive(meta);
+                    }
+                } catch(e) { console.warn('Meta parse error', e); }
+            } else if (state.fileMeta && state.fileMeta.id) {
+                if (frameId >= 0 && frameId < state.fileMeta.c && !state.receivedMask[frameId]) {
+                    // Redundancy voting: if we already have this frame, skip
+                    // For simplicity, first-seen wins (could be improved with majority vote across repeats)
+                    const offset = frameId * state.fileMeta.cs;
+                    const len = Math.min(data.length, state.fileBuffer.length - offset);
+                    state.fileBuffer.set(data.subarray(0, len), offset);
+                    state.receivedMask[frameId] = 1;
+                    updateCanvasWithChunk(frameId, data.subarray(0, len));
+                    updateProgressUI();
+                    const got = state.receivedMask.reduce((a,v)=>a+v,0);
+                    if (got >= state.fileMeta.c) completeReceive();
+                }
+            }
+        }
+
+        // ==========================
+        // 8. Canvas Visualization
+        // ==========================
+        function setupCanvasForSize(totalBytes) {
+            const pixelsNeeded = Math.ceil(totalBytes/3);
+            const side = Math.ceil(Math.sqrt(pixelsNeeded));
+            els.rgbCanvas.width = side;
+            els.rgbCanvas.height = side;
+            els.canvasRes.textContent = `${side}x${side} px`;
+            els.rgbCtx.fillStyle='#000000';
+            els.rgbCtx.fillRect(0,0,side,side);
+            rgbImageData = els.rgbCtx.getImageData(0,0,side,side);
+            const d = rgbImageData.data;
+            for (let i=3;i<d.length;i+=4) d[i]=255;
+        }
+        function updateCanvasWithChunk(chunkIndex, chunkData) {
+            if (!rgbImageData||!state.fileMeta) return;
+            const startByte = chunkIndex * state.fileMeta.cs;
+            const d = rgbImageData.data;
+            for (let i=0;i<chunkData.length;i++) {
+                const globalIdx = startByte + i;
+                const px = Math.floor(globalIdx/3);
+                const ch = globalIdx % 3;
+                const idx = (px*4)+ch;
+                if (idx < d.length) d[idx] = chunkData[i];
+            }
+            els.rgbCtx.putImageData(rgbImageData, 0, 0);
+        }
+
+        // ==========================
+        // 9. Send Logic
+        // ==========================
+        els.selectFileBtn.addEventListener('click', ()=>els.fileInput.click());
+        els.fileInput.addEventListener('change', (e)=>{
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 20*1024*1024) return alert('File too large. Max 20MB.');
+            const reader = new FileReader();
+            reader.onload = (evt)=>{
+                const buf = new Uint8Array(evt.target.result);
+                const gs = state.settings.gridSize;
+                codec = new OptoCodecJS(gs, gs); // ensure codec matches settings
+                const payloadBytes = codec.payloadBytes;
+                const c = Math.ceil(buf.length / payloadBytes);
+                const id = Math.floor(Math.random()*0xFFFFFFFF);
+                state.fileMeta = { id, n:file.name, s:buf.length, c, cs:payloadBytes, mime:file.type||'application/octet-stream' };
+                state.fileBuffer = buf;
+                setupCanvasForSize(buf.length);
+                for (let i=0;i<buf.length;i++) {
+                    const px=Math.floor(i/3), ch=i%3, idx=(px*4)+ch;
+                    if (idx < rgbImageData.data.length) rgbImageData.data[idx]=buf[i];
+                }
+                els.rgbCtx.putImageData(rgbImageData,0,0);
+                prepareTransmission();
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function prepareTransmission() {
+            state.isTransmitting = false;
+            state.sendSlot = 0;
+            els.sendSetupUI.classList.add('hidden'); els.sendSetupUI.classList.remove('flex');
+            els.dataOverlay.classList.remove('bg-zinc-950/80','backdrop-blur-sm');
+            els.dataOverlay.classList.add('bg-black/20');
+            els.rgbCanvas.classList.remove('opacity-50'); els.rgbCanvas.classList.add('opacity-100');
+            els.actionContainer.classList.remove('hidden'); els.actionContainer.classList.add('flex');
+            els.senderControls.classList.remove('hidden');
+            els.startSendBtn.classList.remove('hidden');
+            els.stopSendBtn.textContent = 'Cancel';
+            els.fileName.textContent = state.fileMeta.n;
+            els.fileSize.textContent = formatBytes(state.fileMeta.s);
+            els.fileId.textContent = `ID: ${state.fileMeta.id.toString(16).toUpperCase()}`;
+            els.opticalStatus.textContent = 'Ready to Stream';
+            els.opticalStatus.className = 'text-yellow-500';
+            els.progressBar.classList.replace('bg-emerald-500','bg-blue-500');
+            els.progressText.classList.replace('text-emerald-400','text-blue-400');
+            updateProgressUI();
+            // Pre-build frames
+            buildSendFrames();
+            // Show first frame (meta) on canvas
+            renderFrameToCanvas(state.sendFrames[0]);
+        }
+
+        function buildSendFrames() {
+            const gs = state.settings.gridSize;
+            const red = state.settings.redundancy;
+            const frames = [];
+            // Meta frame
+            const metaJson = JSON.stringify({
+                n: state.fileMeta.n,
+                s: state.fileMeta.s,
+                c: state.fileMeta.c,
+                cs: state.fileMeta.cs,
+                mime: state.fileMeta.mime,
+                id: state.fileMeta.id
+            });
+            const metaBytes = new TextEncoder().encode(metaJson);
+            const metaPixels = codec.encodeFrame(metaBytes, 0xFFFFFFFF);
+            for (let r=0;r<red;r++) frames.push(metaPixels);
+            // Data frames
+            for (let i=0;i<state.fileMeta.c;i++) {
+                const start = i * state.fileMeta.cs;
+                const end = Math.min(start + state.fileMeta.cs, state.fileBuffer.length);
+                const chunk = state.fileBuffer.slice(start, end);
+                const pixels = codec.encodeFrame(chunk, i);
+                for (let r=0;r<red;r++) frames.push(pixels);
+            }
+            state.sendFrames = frames;
+            state.totalSendSlots = frames.length;
+        }
+
+        function renderFrameToCanvas(rgba) {
+            const gs = state.settings.gridSize;
+            els.txCanvas.width = gs;
+            els.txCanvas.height = gs;
+            const imgData = new ImageData(rgba, gs, gs);
+            els.txCtx.putImageData(imgData, 0, 0);
+        }
+
+        els.startSendBtn.addEventListener('click', startTransmission);
+        function startTransmission() {
+            state.isTransmitting = true;
+            state.fd = state.settings.fd;
+            state.t0 = Date.now() + 1200;
+            state.sendSlot = 0;
+            els.startSendBtn.classList.add('hidden');
+            els.stopSendBtn.textContent = 'Halt Stream';
+            els.opticalStatus.textContent = 'Transmitting';
+            els.opticalStatus.className = 'text-blue-500';
+            senderTick();
+        }
+
+        function senderTick() {
+            if (!state.isTransmitting) return;
+            const slot = state.sendSlot;
+            if (slot >= state.totalSendSlots) {
+                // Loop or finish? For demo, loop forever until stopped
+                state.sendSlot = 0;
+                senderTick();
+                return;
+            }
+            const target = state.t0 + slot * state.fd;
+            const delay = target - Date.now();
+            if (delay <= 0) {
+                renderFrameToCanvas(state.sendFrames[slot]);
+                // Update progress (map slot to logical chunk)
+                const red = state.settings.redundancy;
+                const logicalSlot = Math.floor(slot / red);
+                const isMeta = logicalSlot === 0;
+                if (!isMeta) {
+                    const chunkIdx = logicalSlot - 1;
+                    els.chunkText.textContent = `${chunkIdx} / ${state.fileMeta.c}`;
+                    els.progressBar.style.width = `${(chunkIdx/state.fileMeta.c)*100}%`;
+                }
+                state.sendSlot++;
+                const nextTarget = state.t0 + state.sendSlot * state.fd;
+                const nextDelay = Math.max(2, nextTarget - Date.now());
+                state.sendTimer = setTimeout(senderTick, nextDelay);
+            } else {
+                state.sendTimer = setTimeout(senderTick, delay);
+            }
+        }
+
+        els.stopSendBtn.addEventListener('click', stopTransmission);
+        function stopTransmission() {
+            state.isTransmitting = false;
+            if (state.sendTimer) clearTimeout(state.sendTimer);
+            state.sendTimer = null;
+            els.txCtx.clearRect(0,0,els.txCanvas.width, els.txCanvas.height);
+            resetDataState();
+            els.actionContainer.classList.add('hidden'); els.actionContainer.classList.remove('flex');
+            els.senderControls.classList.add('hidden');
+            els.sendSetupUI.classList.remove('hidden'); els.sendSetupUI.classList.add('flex');
+            els.dataOverlay.classList.remove('bg-black/20');
+            els.dataOverlay.classList.add('bg-zinc-950/80','backdrop-blur-sm');
+            els.rgbCanvas.classList.remove('opacity-100'); els.rgbCanvas.classList.add('opacity-50');
+            els.opticalStatus.textContent = 'Emitter Idle';
+            els.opticalStatus.className = 'text-zinc-500';
+            els.fpsCounter.textContent = '-';
+        }
+
+        // ==========================
+        // 10. Receiver State Management
+        // ==========================
+        function initReceive(meta) {
+            state.fileMeta = meta;
+            state.fileBuffer = new Uint8Array(meta.s);
+            state.receivedMask = new Uint8Array(meta.c);
+            setupCanvasForSize(meta.s);
+            els.receiveSetupUI.classList.add('hidden'); els.receiveSetupUI.classList.remove('flex');
+            els.dataOverlay.classList.remove('bg-zinc-950/80','backdrop-blur-sm');
+            els.dataOverlay.classList.add('bg-black/20');
+            els.rgbCanvas.classList.remove('opacity-50'); els.rgbCanvas.classList.add('opacity-100');
+            els.actionContainer.classList.remove('hidden'); els.actionContainer.classList.add('flex');
+            els.fileName.textContent = meta.n;
+            els.fileSize.textContent = formatBytes(meta.s);
+            els.fileId.textContent = `ID: ${meta.id.toString(16).toUpperCase()}`;
+            els.opticalStatus.textContent = 'Receiving Data';
+            els.opticalStatus.className = 'text-emerald-500';
+            els.progressBar.classList.replace('bg-blue-500','bg-emerald-500');
+            els.progressText.classList.replace('text-blue-400','text-emerald-400');
+            updateProgressUI();
+        }
+        function updateProgressUI() {
+            if (!state.fileMeta||!state.receivedMask) return;
+            const total = state.fileMeta.c;
+            const current = state.mode==='send'
+                ? (Math.floor(state.sendSlot/state.settings.redundancy)-1)
+                : state.receivedMask.reduce((a,v)=>a+v,0);
+            const pct = total>0 ? (current/total)*100 : 0;
+            els.progressText.textContent = `${Math.max(0,Math.min(100,pct)).toFixed(1)}%`;
+            els.chunkText.textContent = `${Math.max(0,Math.min(total,current))} / ${total}`;
+            els.progressBar.style.width = `${Math.max(0,Math.min(100,pct))}%`;
+        }
+        function completeReceive() {
+            state.isTransmitting = false;
+            els.actionContainer.classList.add('hidden'); els.actionContainer.classList.remove('flex');
+            els.completeUI.classList.remove('hidden'); els.completeUI.classList.add('flex');
+            els.dataOverlay.classList.remove('bg-black/20');
+            els.dataOverlay.classList.add('bg-black/60','backdrop-blur-md');
+            els.opticalStatus.textContent = 'Reception Complete';
+        }
+        els.downloadBtn.addEventListener('click', ()=>{
+            if (!state.fileBuffer||!state.fileMeta) return;
+            const blob = new Blob([state.fileBuffer], {type:state.fileMeta.mime});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href=url; a.download=state.fileMeta.n;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setTimeout(()=>{
+                resetDataState();
+                els.completeUI.classList.add('hidden'); els.completeUI.classList.remove('flex');
+                els.receiveSetupUI.classList.remove('hidden'); els.receiveSetupUI.classList.add('flex');
+                els.dataOverlay.classList.remove('bg-black/60','backdrop-blur-md');
+                els.dataOverlay.classList.add('bg-zinc-950/80','backdrop-blur-sm');
+                els.rgbCanvas.classList.add('opacity-50'); els.rgbCanvas.classList.remove('opacity-100');
+                els.opticalStatus.textContent='Scanner Active';
+                els.opticalStatus.className='text-zinc-500';
+            }, 500);
+        });
+        function resetDataState() {
+            state.fileMeta=null; state.fileBuffer=null; state.receivedMask=null;
+            state.currentChunk=0; state.isTransmitting=false; state.sendSlot=0; state.t0=0;
+            state.sendFrames=[];
+            els.rgbCtx.clearRect(0,0,els.rgbCanvas.width,els.rgbCanvas.height);
+            els.canvasRes.textContent='0x0 px';
+            els.progressBar.style.width='0%';
+            els.progressText.textContent='0.0%';
+            els.chunkText.textContent='0 / 0';
+            els.fileId.textContent='ID: ----';
+            els.fileInput.value='';
+        }
+
+        // ==========================
+        // 11. Settings Logic
+        // ==========================
+        els.settingsBtn.addEventListener('click', ()=>{
+            els.modal.classList.remove('hidden');
+            setTimeout(()=>{ els.modal.classList.remove('opacity-0'); els.modalContent.classList.remove('scale-95'); }, 10);
+        });
+        function closeSettingsModal() {
+            els.modal.classList.add('opacity-0'); els.modalContent.classList.add('scale-95');
+            setTimeout(()=>els.modal.classList.add('hidden'), 200);
+        }
+        els.closeSettings.addEventListener('click', closeSettingsModal);
+        els.applySettings.addEventListener('click', closeSettingsModal);
+        els.gridSizeInput.addEventListener('input', (e)=>{
+            els.gridSizeVal.textContent = e.target.value;
+            state.settings.gridSize = parseInt(e.target.value);
+        });
+        els.fpsInput.addEventListener('input', (e)=>{
+            els.fpsVal.textContent = e.target.value+'ms';
+            state.settings.fd = parseInt(e.target.value);
+        });
+        els.redundancyInput.addEventListener('input', (e)=>{
+            els.redundancyVal.textContent = e.target.value+'x';
+            state.settings.redundancy = parseInt(e.target.value);
+        });
+
+        // ==========================
+        // 12. Init
+        // ==========================
+        window.addEventListener('resize', ()=>{
+            if (state.mode==='send') {
+                const tv = window.innerWidth<768?'56px':'66px';
+                els.slider.style.transform=`translateX(${tv})`;
+            }
+        });
+        initWasm().then(()=>{
+            updateModeUI();
+        });
+    </script>
+</body>
+</html>

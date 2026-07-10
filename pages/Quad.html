@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Quadtree Effect Painter</title>
+    <meta name="description" content="画像の一部をブラシで指定し、Quadtreeエフェクトをかけるツール">
+    <meta name="page:icon" content="grid">
+    <meta name="page:color" content="#ffffff">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            50: '#f9fafb', 100: '#f3f4f6', 200: '#e5e7eb', 300: '#d1d5db',
+                            400: '#9ca3af', 500: '#6b7280', 600: '#4b5563', 700: '#374151',
+                            800: '#1f2937', 900: '#111827',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom UI styles */
+        body { margin: 0; overflow: hidden; overscroll-behavior: none; }
+        
+        .slider-custom {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 9999px;
+            outline: none;
+        }
+        .slider-custom::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #111827;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .slider-custom::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        .slider-custom::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #111827;
+            cursor: pointer;
+            border: none;
+            transition: transform 0.1s;
+        }
+        .slider-custom::-moz-range-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        #viewport {
+            background-color: #f3f4f6;
+            background-image: radial-gradient(#d1d5db 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .tool-btn {
+            @apply flex items-center justify-center p-2 rounded-md border border-transparent text-gray-600 hover:bg-gray-100 transition-colors;
+        }
+        .tool-btn.active {
+            @apply bg-gray-900 text-white border-gray-900 hover:bg-gray-800;
+        }
+
+        /* Fixed Z-index scale */
+        .z-base { z-index: 0; }
+        .z-effect { z-index: 10; }
+        .z-mask { z-index: 20; }
+        .z-ui { z-index: 30; }
+        .z-overlay { z-index: 40; }
+    </style>
+</head>
+<body class="bg-white text-gray-900 h-dvh flex flex-col md:flex-row antialiased">
+
+    <!-- Sidebar / Controls -->
+    <aside class="w-full md:w-80 border-b md:border-b-0 md:border-r border-gray-200 flex flex-col h-auto md:h-full z-ui bg-white shadow-sm shrink-0">
+        <div class="p-5 border-b border-gray-200">
+            <h1 class="text-lg font-semibold text-balance flex items-center gap-2">
+                <i data-lucide="grid-3x3" class="w-5 h-5"></i>
+                Quadtree Mask
+            </h1>
+            <p class="text-sm text-gray-500 mt-1 text-pretty">画像の一部をブラシで指定し、部分的にQuadtreeエフェクトを適用します。</p>
+        </div>
+
+        <div class="p-5 flex-1 overflow-y-auto space-y-6">
+            <!-- File Upload -->
+            <div>
+                <label for="imageUpload" class="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                        <i data-lucide="upload-cloud" class="w-6 h-6 text-gray-500 mb-2"></i>
+                        <p class="text-sm text-gray-500 font-medium">画像をアップロード</p>
+                    </div>
+                    <input id="imageUpload" type="file" class="hidden" accept="image/*" />
+                </label>
+            </div>
+
+            <div id="controls" class="space-y-6 opacity-50 pointer-events-none transition-opacity duration-300">
+                <!-- Tool Switcher -->
+                <div class="flex gap-2 p-1 bg-gray-100 rounded-lg">
+                    <button id="btnBrush" class="tool-btn active flex-1 text-sm font-medium" aria-label="ブラシツール">
+                        <i data-lucide="pen" class="w-4 h-4 mr-2"></i> Brush
+                    </button>
+                    <button id="btnEraser" class="tool-btn flex-1 text-sm font-medium" aria-label="消しゴムツール">
+                        <i data-lucide="eraser" class="w-4 h-4 mr-2"></i> Eraser
+                    </button>
+                </div>
+
+                <!-- Sliders -->
+                <div class="space-y-5">
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <label for="brushSize" class="text-sm font-medium text-gray-700">ブラシサイズ</label>
+                            <span id="brushSizeVal" class="text-sm text-gray-500 tabular-nums">50px</span>
+                        </div>
+                        <input type="range" id="brushSize" min="5" max="200" value="50" class="slider-custom">
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <label for="intensity" class="text-sm font-medium text-gray-700">荒さ (深さ指定)</label>
+                            <span id="intensityVal" class="text-sm text-gray-500 tabular-nums">0.5</span>
+                        </div>
+                        <input type="range" id="intensity" min="0.05" max="1" step="0.05" value="0.5" class="slider-custom">
+                        <p class="text-xs text-gray-500">値が大きいほど大きな正方形（荒い）になります。</p>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <label for="jitter" class="text-sm font-medium text-gray-700">ジッター (位置のズレ)</label>
+                            <span id="jitterVal" class="text-sm text-gray-500 tabular-nums">0.0</span>
+                        </div>
+                        <input type="range" id="jitter" min="0" max="1" step="0.05" value="0" class="slider-custom">
+                    </div>
+
+                    <!-- Stroke Settings -->
+                    <div class="space-y-4 pt-4 border-t border-gray-100">
+                        <h3 class="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                            <i data-lucide="square" class="w-4 h-4 text-gray-500"></i>
+                            縁取り設定
+                        </h3>
+                        
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <label for="strokeWidth" class="text-sm font-medium text-gray-700">縁取りの太さ</label>
+                                <span id="strokeWidthVal" class="text-sm text-gray-500 tabular-nums">1px</span>
+                            </div>
+                            <input type="range" id="strokeWidth" min="0" max="10" step="1" value="1" class="slider-custom">
+                        </div>
+
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <label for="strokeThreshold" class="text-sm font-medium text-gray-700">縁取り無効サイズ</label>
+                                <span id="strokeThresholdVal" class="text-sm text-gray-500 tabular-nums">16px</span>
+                            </div>
+                            <input type="range" id="strokeThreshold" min="0" max="128" step="1" value="16" class="slider-custom">
+                            <p class="text-xs text-gray-500 text-pretty">このサイズ以下の正方形には縁取りを描画しません。0ですべてに描画します。</p>
+                        </div>
+
+                        <div class="flex items-center justify-between">
+                            <label for="strokeColor" class="text-sm font-medium text-gray-700">縁取りの色</label>
+                            <div class="relative w-8 h-8 rounded-full overflow-hidden border border-gray-300 shadow-sm cursor-pointer hover:scale-110 transition-transform">
+                                <input type="color" id="strokeColor" value="#000000" class="absolute -top-2 -left-2 w-12 h-12 cursor-pointer border-0 p-0">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="pt-4 border-t border-gray-200 space-y-3">
+                    <button id="btnRedraw" class="w-full flex items-center justify-center py-2.5 px-4 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-gray-900">
+                        <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+                        エフェクトを再描画
+                    </button>
+                    
+                    <button id="btnToggleMask" class="w-full flex items-center justify-center py-2 px-4 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
+                        <i data-lucide="eye" class="w-4 h-4 mr-2"></i>
+                        マスクを表示/非表示
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="p-5 border-t border-gray-200 bg-gray-50">
+            <button id="btnExport" disabled class="w-full flex items-center justify-center py-2 px-4 border border-gray-300 shadow-sm text-gray-700 bg-white rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                画像を保存
+            </button>
+        </div>
+    </aside>
+
+    <!-- Canvas Workspace -->
+    <main class="flex-1 relative overflow-hidden" id="viewport">
+        <!-- Empty State -->
+        <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 z-ui pointer-events-none">
+            <i data-lucide="image-plus" class="w-16 h-16 mb-4 opacity-50"></i>
+            <p class="text-lg font-medium text-gray-600">画像をアップロードして開始</p>
+            <p class="text-sm mt-2">Spaceキーを押しながらドラッグで移動</p>
+        </div>
+
+        <!-- Transform Layer -->
+        <div id="workspace" class="absolute top-0 left-0 origin-top-left hidden shadow-2xl">
+            <!-- Original Image Base -->
+            <canvas id="baseCanvas" class="absolute top-0 left-0 z-base"></canvas>
+            <!-- Rendered Quadtree Effect -->
+            <canvas id="effectCanvas" class="absolute top-0 left-0 z-effect"></canvas>
+            <!-- User Mask Drawing Area -->
+            <canvas id="maskCanvas" class="absolute top-0 left-0 z-mask mix-blend-multiply opacity-50 touch-none"></canvas>
+        </div>
+        
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="absolute inset-0 bg-white/80 backdrop-blur-sm z-overlay hidden items-center justify-center">
+            <div class="flex flex-col items-center">
+                <i data-lucide="loader-2" class="w-8 h-8 text-gray-900 animate-spin mb-3"></i>
+                <span class="text-sm font-medium text-gray-900">処理中...</span>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // --- DOM Elements ---
+        const imageUpload = document.getElementById('imageUpload');
+        const controls = document.getElementById('controls');
+        const btnExport = document.getElementById('btnExport');
+        const emptyState = document.getElementById('emptyState');
+        
+        const viewport = document.getElementById('viewport');
+        const workspace = document.getElementById('workspace');
+        const baseCanvas = document.getElementById('baseCanvas');
+        const effectCanvas = document.getElementById('effectCanvas');
+        const maskCanvas = document.getElementById('maskCanvas');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+
+        const baseCtx = baseCanvas.getContext('2d', { willReadFrequently: true });
+        const effectCtx = effectCanvas.getContext('2d');
+        const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+
+        // Tool Elements
+        const btnBrush = document.getElementById('btnBrush');
+        const btnEraser = document.getElementById('btnEraser');
+        const brushSizeSlider = document.getElementById('brushSize');
+        const intensitySlider = document.getElementById('intensity');
+        const jitterSlider = document.getElementById('jitter');
+        const strokeWidthSlider = document.getElementById('strokeWidth');
+        const strokeThresholdSlider = document.getElementById('strokeThreshold');
+        const strokeColorPicker = document.getElementById('strokeColor');
+        const btnRedraw = document.getElementById('btnRedraw');
+        const btnToggleMask = document.getElementById('btnToggleMask');
+
+        // Text Values
+        const brushSizeVal = document.getElementById('brushSizeVal');
+        const intensityVal = document.getElementById('intensityVal');
+        const jitterVal = document.getElementById('jitterVal');
+        const strokeWidthVal = document.getElementById('strokeWidthVal');
+        const strokeThresholdVal = document.getElementById('strokeThresholdVal');
+
+        // --- State ---
+        let imgWidth = 0;
+        let imgHeight = 0;
+        let isImageLoaded = false;
+        
+        // Transform State
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        
+        // Interaction State
+        let isPanning = false;
+        let isDrawing = false;
+        let currentTool = 'brush'; // 'brush' | 'eraser'
+        let showMask = true;
+        let spacePressed = false;
+
+        // Constants
+        const MIN_QUAD_SIZE = 4;
+
+        // --- Event Listeners: UI Controls ---
+
+        imageUpload.addEventListener('change', handleImageUpload);
+
+        brushSizeSlider.addEventListener('input', (e) => { brushSizeVal.textContent = e.target.value + 'px'; });
+        intensitySlider.addEventListener('input', (e) => { intensityVal.textContent = parseFloat(e.target.value).toFixed(2); });
+        jitterSlider.addEventListener('input', (e) => { jitterVal.textContent = parseFloat(e.target.value).toFixed(2); });
+        strokeWidthSlider.addEventListener('input', (e) => { strokeWidthVal.textContent = e.target.value + 'px'; });
+        strokeThresholdSlider.addEventListener('input', (e) => { strokeThresholdVal.textContent = e.target.value + 'px'; });
+
+        btnBrush.addEventListener('click', () => setTool('brush'));
+        btnEraser.addEventListener('click', () => setTool('eraser'));
+
+        btnToggleMask.addEventListener('click', () => {
+            showMask = !showMask;
+            maskCanvas.style.opacity = showMask ? '0.5' : '0';
+        });
+
+        btnRedraw.addEventListener('click', generateQuadtreeEffect);
+        
+        btnExport.addEventListener('click', exportImage);
+
+        // --- Logic: Image Handling ---
+
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    initCanvases(img);
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function initCanvases(img) {
+            imgWidth = img.width;
+            imgHeight = img.height;
+
+            [baseCanvas, effectCanvas, maskCanvas].forEach(canvas => {
+                canvas.width = imgWidth;
+                canvas.height = imgHeight;
+            });
+
+            // Draw base image
+            baseCtx.drawImage(img, 0, 0);
+            
+            // Clear others
+            effectCtx.clearRect(0, 0, imgWidth, imgHeight);
+            maskCtx.clearRect(0, 0, imgWidth, imgHeight);
+
+            isImageLoaded = true;
+            controls.classList.remove('opacity-50', 'pointer-events-none');
+            btnExport.disabled = false;
+            emptyState.classList.add('hidden');
+            workspace.classList.remove('hidden');
+
+            // Reset Transform to fit screen
+            fitToScreen();
+        }
+
+        function fitToScreen() {
+            const vpRect = viewport.getBoundingClientRect();
+            const padding = 40;
+            const scaleX = (vpRect.width - padding * 2) / imgWidth;
+            const scaleY = (vpRect.height - padding * 2) / imgHeight;
+            
+            scale = Math.min(scaleX, scaleY, 1); // Don't scale up past 1x initially
+            panX = (vpRect.width - (imgWidth * scale)) / 2;
+            panY = (vpRect.height - (imgHeight * scale)) / 2;
+            
+            updateTransform();
+        }
+
+        function updateTransform() {
+            workspace.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        }
+
+        // --- Logic: Interaction (Pan/Zoom/Draw) ---
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                spacePressed = true;
+                viewport.style.cursor = 'grab';
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                spacePressed = false;
+                viewport.style.cursor = 'crosshair';
+            }
+        });
+
+        viewport.addEventListener('wheel', (e) => {
+            if (!isImageLoaded) return;
+            e.preventDefault();
+
+            const zoomIntensity = 0.002;
+            const wheel = e.deltaY < 0 ? 1 : -1;
+            const zoomFactor = Math.exp(wheel * zoomIntensity * Math.abs(e.deltaY));
+            
+            let newScale = scale * zoomFactor;
+            // Limits
+            newScale = Math.max(0.05, Math.min(newScale, 20));
+
+            const rect = viewport.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Zoom towards mouse pointer
+            panX = mouseX - (mouseX - panX) * (newScale / scale);
+            panY = mouseY - (mouseY - panY) * (newScale / scale);
+            scale = newScale;
+
+            updateTransform();
+        });
+
+        viewport.addEventListener('pointerdown', (e) => {
+            if (!isImageLoaded) return;
+            
+            if (spacePressed || e.button === 1) { // Space or Middle click
+                isPanning = true;
+                viewport.style.cursor = 'grabbing';
+            } else if (e.button === 0) { // Left click
+                isDrawing = true;
+                if (!showMask) {
+                    showMask = true;
+                    maskCanvas.style.opacity = '0.5';
+                }
+                drawOnMask(e);
+            }
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isImageLoaded) return;
+
+            if (isPanning) {
+                panX += e.movementX;
+                panY += e.movementY;
+                updateTransform();
+            } else if (isDrawing) {
+                drawOnMask(e);
+            }
+        });
+
+        window.addEventListener('pointerup', () => {
+            isPanning = false;
+            isDrawing = false;
+            if (isImageLoaded) {
+                 viewport.style.cursor = spacePressed ? 'grab' : 'crosshair';
+            }
+            // Reset path for smooth continuous lines next time
+            lastDrawPoint = null;
+        });
+
+        function setTool(tool) {
+            currentTool = tool;
+            btnBrush.classList.toggle('active', tool === 'brush');
+            btnEraser.classList.toggle('active', tool === 'eraser');
+        }
+
+        let lastDrawPoint = null;
+        function drawOnMask(e) {
+            const rect = viewport.getBoundingClientRect();
+            // Map viewport coordinates to canvas coordinates
+            const x = (e.clientX - rect.left - panX) / scale;
+            const y = (e.clientY - rect.top - panY) / scale;
+
+            const size = parseInt(brushSizeSlider.value);
+            const intensity = parseFloat(intensitySlider.value);
+
+            maskCtx.lineCap = 'round';
+            maskCtx.lineJoin = 'round';
+            maskCtx.lineWidth = size;
+
+            if (currentTool === 'brush') {
+                maskCtx.globalCompositeOperation = 'source-over';
+                // Using red color with alpha for visual feedback and data storage
+                maskCtx.strokeStyle = `rgba(255, 0, 0, ${intensity})`;
+            } else {
+                maskCtx.globalCompositeOperation = 'destination-out';
+                maskCtx.strokeStyle = `rgba(0, 0, 0, 1)`;
+            }
+
+            maskCtx.beginPath();
+            if (lastDrawPoint) {
+                maskCtx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
+                maskCtx.lineTo(x, y);
+            } else {
+                maskCtx.moveTo(x, y);
+                maskCtx.lineTo(x, y); // Draw dot if single click
+            }
+            maskCtx.stroke();
+
+            lastDrawPoint = { x, y };
+        }
+
+        // --- Logic: Quadtree Processing ---
+
+        async function generateQuadtreeEffect() {
+            if (!isImageLoaded) return;
+
+            // Auto-hide mask during rendering for better view
+            showMask = false;
+            maskCanvas.style.opacity = '0';
+
+            loadingOverlay.classList.remove('hidden');
+            loadingOverlay.classList.add('flex');
+            
+            // Allow UI to update
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const start = performance.now();
+
+            // Clear previous effect
+            effectCtx.clearRect(0, 0, imgWidth, imgHeight);
+
+            // Get image data
+            const imgDataObj = baseCtx.getImageData(0, 0, imgWidth, imgHeight);
+            const imgData = imgDataObj.data;
+            const maskDataObj = maskCtx.getImageData(0, 0, imgWidth, imgHeight);
+            const maskData = maskDataObj.data;
+
+            const jitterValParsed = parseFloat(jitterSlider.value);
+            const strokeWidthParsed = parseInt(strokeWidthSlider.value);
+            const strokeThresholdParsed = parseInt(strokeThresholdSlider.value);
+            const strokeColorVal = strokeColorPicker.value;
+            
+            // Calculate starting quad size (power of 2 covering image)
+            let maxSize = 1;
+            const maxDim = Math.max(imgWidth, imgHeight);
+            while (maxSize < maxDim) maxSize *= 2;
+
+            // Helper to calculate stats for a region
+            function getStats(x, y, size) {
+                let m_sum = 0;
+                let m_min = 255, m_max = 0;
+                let count = 0;
+
+                const endX = Math.min(x + size, imgWidth);
+                const endY = Math.min(y + size, imgHeight);
+
+                for (let iy = y; iy < endY; iy++) {
+                    const rowOffset = iy * imgWidth;
+                    for (let ix = x; ix < endX; ix++) {
+                        const idx = (rowOffset + ix) * 4;
+                        
+                        // Use Alpha channel from mask (drawn with rgba)
+                        const m = maskData[idx+3]; 
+                        m_sum += m;
+                        if (m < m_min) m_min = m;
+                        if (m > m_max) m_max = m;
+                        
+                        count++;
+                    }
+                }
+
+                if (count === 0) return null;
+
+                // 色は元の画像の正方形の中心の色をとる
+                const cx = Math.min(x + Math.floor(size / 2), imgWidth - 1);
+                const cy = Math.min(y + Math.floor(size / 2), imgHeight - 1);
+                const centerIdx = (cy * imgWidth + cx) * 4;
+
+                return {
+                    r: imgData[centerIdx],
+                    g: imgData[centerIdx+1],
+                    b: imgData[centerIdx+2],
+                    m_avg: (m_sum / count) / 255.0,
+                    m_min: m_min / 255.0,
+                    m_max: m_max / 255.0
+                };
+            }
+
+            function drawSquare(x, y, size, r, g, b) {
+                const jitterAmt = jitterValParsed * size;
+                const dx = (Math.random() - 0.5) * jitterAmt;
+                const dy = (Math.random() - 0.5) * jitterAmt;
+
+                const drawSize = jitterValParsed > 0 ? size + 0.5 : size;
+                const px = Math.round(x + dx);
+                const py = Math.round(y + dy);
+
+                // Fill
+                effectCtx.fillStyle = `rgb(${r},${g},${b})`;
+                effectCtx.fillRect(px, py, drawSize, drawSize);
+
+                // Stroke (閾値より大きい場合のみ描画)
+                if (strokeWidthParsed > 0 && size > strokeThresholdParsed) {
+                    effectCtx.strokeStyle = strokeColorVal;
+                    effectCtx.lineWidth = strokeWidthParsed;
+                    // Reset lineJoin/lineCap for crisp rect borders
+                    effectCtx.lineJoin = 'miter';
+                    effectCtx.strokeRect(px, py, drawSize, drawSize);
+                }
+            }
+
+            // Recursive processor
+            function processNode(x, y, size) {
+                // Out of bounds check
+                if (x >= imgWidth || y >= imgHeight) return;
+
+                const stats = getStats(x, y, size);
+                if (!stats) return;
+
+                // Optimization: If completely outside the painted mask area, do nothing (shows base image)
+                if (stats.m_max === 0) return;
+
+                // The target size dictated by the average mask value in this region
+                // Map m_avg [0...1] -> [0...maxSize]
+                const targetSize = stats.m_avg * maxSize;
+
+                // Decision: Do we split further?
+                // 1. If current size is larger than desired target size, we need more detail -> Split.
+                // 2. If this block touches a 0-mask area (m_min == 0), we MUST split to prevent bleeding into untouched areas.
+                let shouldSplit = (size > targetSize) || (stats.m_min === 0);
+
+                if (size <= MIN_QUAD_SIZE) {
+                    shouldSplit = false; // Cap minimum size
+                }
+
+                if (!shouldSplit) {
+                    // Region is fully inside a valid mask, and size is small enough
+                    drawSquare(x, y, size, stats.r, stats.g, stats.b);
+                } else {
+                    // We are splitting.
+                    // Key feature: "ちいさいものが上から塗値つぶしていく" (smaller overwrites larger).
+                    // If this block is completely inside the mask (m_min > 0), draw it first as a background layer.
+                    // This fills gaps when children are jittered, creating a cohesive look.
+                    if (stats.m_min > 0) {
+                        drawSquare(x, y, size, stats.r, stats.g, stats.b);
+                    }
+
+                    // Recurse into children
+                    const half = Math.floor(size / 2);
+                    if (half >= 1) {
+                        processNode(x, y, half);
+                        processNode(x + half, y, half);
+                        processNode(x, y + half, half);
+                        processNode(x + half, y + half, half);
+                    }
+                }
+            }
+
+            // Start processing from the root
+            processNode(0, 0, maxSize);
+
+            const end = performance.now();
+            console.log(`Quadtree processed in ${Math.round(end - start)}ms`);
+
+            loadingOverlay.classList.remove('flex');
+            loadingOverlay.classList.add('hidden');
+        }
+
+        // --- Logic: Export ---
+        
+        function exportImage() {
+            if (!isImageLoaded) return;
+
+            // Create a temporary canvas to composite base + effect
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = imgWidth;
+            exportCanvas.height = imgHeight;
+            const expCtx = exportCanvas.getContext('2d');
+
+            // Draw base
+            expCtx.drawImage(baseCanvas, 0, 0);
+            // Draw effect over it
+            expCtx.drawImage(effectCanvas, 0, 0);
+
+            // Export
+            const dataUrl = exportCanvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `quadtree_effect_${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // Initialize cursor
+        viewport.style.cursor = 'crosshair';
+    </script>
+</body>
+</html>

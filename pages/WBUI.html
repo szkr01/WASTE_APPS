@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ComfyUI Mobile Controller</title>
+    <meta name="description" content="Mobile-optimized frontend for local ComfyUI generation.">
+    <meta name="page:icon" content="fas fa-magic">
+    <meta name="page:color" content="#3b82f6">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Custom Styles & Utilities */
+        :root {
+            --app-height: 100vh;
+        }
+        body {
+            height: var(--app-height);
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #ffffff;
+            color: #1e293b;
+            touch-action: pan-x pan-y;
+        }
+
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+
+        /* TikTok Style Timeline */
+        .snap-container {
+            scroll-snap-type: y mandatory;
+            overflow-y: scroll;
+            height: 100%;
+        }
+        .snap-item {
+            scroll-snap-align: start;
+            height: 100%;
+            width: 100%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f8fafc;
+        }
+
+        /* Autocomplete Dropdown */
+        .autocomplete-dropdown {
+            position: absolute;
+            z-index: 50;
+            width: 100%;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.375rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+        .autocomplete-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.875rem;
+        }
+        .autocomplete-item:hover {
+            background-color: #f8fafc;
+        }
+        .tag-cat-0 { color: #3b82f6; } /* General */
+        .tag-cat-1 { color: #ef4444; } /* Artist */
+        .tag-cat-3 { color: #a855f7; } /* Copyright */
+        .tag-cat-4 { color: #22c55e; } /* Character */
+        .tag-cat-5 { color: #eab308; } /* Meta */
+
+        /* Form Elements */
+        .input-base {
+            width: 100%;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-base:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 1px #3b82f6;
+        }
+        .label-base {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+        }
+
+        /* Toggle Switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #3b82f6;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(2px);
+        }
+
+        /* Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e2e8f0;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <!-- Main Content Area -->
+    <main class="flex-1 relative overflow-hidden bg-white pb-16" id="main-content">
+        
+        <!-- Tab 1: Timeline -->
+        <div id="tab-timeline" class="tab-pane h-full w-full hidden">
+            <div class="snap-container no-scrollbar" id="timeline-container">
+                <div class="h-full flex items-center justify-center text-slate-400 flex-col gap-4">
+                    <i class="fas fa-images text-4xl"></i>
+                    <p>生成された画像がここに表示されます</p>
+                </div>
+            </div>
+            
+            <!-- Image Details Modal -->
+            <div id="image-modal" class="hidden absolute inset-0 z-50 flex flex-col bg-white">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 class="font-bold">画像情報</h3>
+                    <button onclick="closeImageModal()" class="p-2 text-slate-500 hover:text-slate-800"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4 space-y-4 text-sm" id="image-modal-content">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Prefix -->
+        <div id="tab-prefix" class="tab-pane h-full w-full hidden overflow-y-auto p-4">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">プレフィックス設定</h2>
+            <div class="space-y-4 relative">
+                <div>
+                    <label class="label-base">共通プロンプト (Node: 29)</label>
+                    <div class="relative">
+                        <textarea id="input-prefix" class="input-base h-32 resize-none" placeholder="全体に適用するタグを入力..."></textarea>
+                        <div id="auto-prefix" class="autocomplete-dropdown"></div>
+                    </div>
+                </div>
+                <div>
+                    <label class="label-base">プリセット</label>
+                    <div class="flex flex-wrap gap-2" id="prefix-presets">
+                        <button class="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-sm hover:bg-slate-200" data-val="score_9, score_8_up, score_7_up, high quality, masterpiece">高品質アニメ</button>
+                        <button class="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-sm hover:bg-slate-200" data-val="score_8, year 2025, newest, steam">新しめ高スコア</button>
+                        <button class="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-sm hover:bg-slate-200" data-val="cinematic lighting, intricate detail, depth of field">シネマティック</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Character -->
+        <div id="tab-character" class="tab-pane h-full w-full hidden overflow-y-auto p-4">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">キャラクター設定</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="label-base">現在選択中のキャラクター (Node: 28)</label>
+                    <div class="relative">
+                        <input type="text" id="input-character" class="input-base" placeholder="例: shigure_ui_(vtuber) solo">
+                        <div id="auto-character" class="autocomplete-dropdown"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="label-base mb-0">保存済み候補</label>
+                        <button id="btn-add-char" class="text-blue-500 text-sm"><i class="fas fa-plus"></i> 追加</button>
+                    </div>
+                    <ul id="char-list" class="space-y-2">
+                        <!-- Populated via JS -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 4: Situation -->
+        <div id="tab-situation" class="tab-pane h-full w-full hidden overflow-y-auto p-4">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">シチュエーション設定</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="label-base">現在のシチュエーション (Node: 27)</label>
+                    <div class="relative">
+                        <textarea id="input-situation" class="input-base h-24 resize-none" placeholder="背景や構図などを入力..."></textarea>
+                        <div id="auto-situation" class="autocomplete-dropdown"></div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
+                    <div>
+                        <span class="font-bold text-sm block">ランダム選択モード</span>
+                        <span class="text-xs text-slate-500">生成時に下部の候補から1つランダムに選びます</span>
+                    </div>
+                    <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" name="toggle" id="toggle-random-situ" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 z-10"/>
+                        <label for="toggle-random-situ" class="toggle-label block overflow-hidden h-5 rounded-full bg-slate-300 cursor-pointer transition-colors duration-300"></label>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="label-base">候補プリセット (タップで追加/選択)</label>
+                    <div class="flex flex-wrap gap-2" id="situ-presets">
+                        <button class="situ-preset px-3 py-1 bg-white border border-slate-300 rounded-full text-sm text-slate-700" data-val="classroom, desk, window">classroom</button>
+                        <button class="situ-preset px-3 py-1 bg-white border border-slate-300 rounded-full text-sm text-slate-700" data-val="night city, neon lights, raining">night city</button>
+                        <button class="situ-preset px-3 py-1 bg-white border border-slate-300 rounded-full text-sm text-slate-700" data-val="cafe, coffee cup, table">cafe</button>
+                        <button class="situ-preset px-3 py-1 bg-white border border-slate-300 rounded-full text-sm text-slate-700" data-val="beach, ocean, clear sky, summer">beach</button>
+                        <button class="situ-preset px-3 py-1 bg-white border border-slate-300 rounded-full text-sm text-slate-700" data-val="rainy day, umbrella, wet clothes">rainy day</button>
+                        <button class="situ-preset px-3 py-1 bg-white border border-slate-300 rounded-full text-sm text-slate-700" data-val="photo studio, simple background">studio</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 5: Model -->
+        <div id="tab-model" class="tab-pane h-full w-full hidden overflow-y-auto p-4 pb-20">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">モデル・パラメータ設定</h2>
+            
+            <div class="space-y-6">
+                <!-- Base Models -->
+                <section>
+                    <h3 class="font-bold text-slate-700 mb-2"><i class="fas fa-cube w-5"></i>ベースモデル</h3>
+                    <div class="grid grid-cols-1 gap-3">
+                        <div>
+                            <label class="label-base">UNET (Node 5)</label>
+                            <input type="text" id="model-unet" class="input-base py-1.5" value="anima-preview3-base.safetensors">
+                        </div>
+                        <div>
+                            <label class="label-base">CLIP (Node 2)</label>
+                            <input type="text" id="model-clip" class="input-base py-1.5" value="qwen_3_06b_base.safetensors">
+                        </div>
+                        <div>
+                            <label class="label-base">VAE (Node 1)</label>
+                            <input type="text" id="model-vae" class="input-base py-1.5" value="qwen_image_vae.safetensors">
+                        </div>
+                        <div>
+                            <label class="label-base">Upscaler (Node 4)</label>
+                            <input type="text" id="model-upscale" class="input-base py-1.5" value="2x-AnimeSharpV4_Fast_RCAN_PU.safetensors">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Size -->
+                <section>
+                    <h3 class="font-bold text-slate-700 mb-2"><i class="fas fa-crop-simple w-5"></i>サイズ (Node 9)</h3>
+                    <div class="flex gap-2">
+                        <div class="flex-1">
+                            <label class="label-base">Width</label>
+                            <input type="number" id="size-w" class="input-base py-1.5" value="824">
+                        </div>
+                        <div class="flex-1">
+                            <label class="label-base">Height</label>
+                            <input type="number" id="size-h" class="input-base py-1.5" value="1216">
+                        </div>
+                        <div class="w-16">
+                            <label class="label-base">Batch</label>
+                            <input type="number" id="size-b" class="input-base py-1.5" value="1" min="1" max="4">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- KSampler -->
+                <section>
+                    <h3 class="font-bold text-slate-700 mb-2"><i class="fas fa-sliders w-5"></i>サンプラー (Node 13)</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="label-base flex justify-between">
+                                Seed
+                                <span class="text-blue-500 font-normal cursor-pointer" id="btn-random-seed"><i class="fas fa-dice"></i> Randomize</span>
+                            </label>
+                            <div class="flex gap-2">
+                                <input type="number" id="sampler-seed" class="input-base py-1.5 flex-1">
+                                <div class="flex items-center gap-1 text-xs">
+                                    <input type="checkbox" id="auto-seed" checked>
+                                    <label for="auto-seed">Auto</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="label-base">Steps</label>
+                                <input type="number" id="sampler-steps" class="input-base py-1.5" value="8">
+                            </div>
+                            <div>
+                                <label class="label-base">CFG</label>
+                                <input type="number" id="sampler-cfg" class="input-base py-1.5" value="1" step="0.5">
+                            </div>
+                            <div>
+                                <label class="label-base">Sampler</label>
+                                <input type="text" id="sampler-name" class="input-base py-1.5" value="er_sde">
+                            </div>
+                            <div>
+                                <label class="label-base">Scheduler</label>
+                                <input type="text" id="sampler-scheduler" class="input-base py-1.5" value="simple">
+                            </div>
+                            <div>
+                                <label class="label-base">Denoise</label>
+                                <input type="number" id="sampler-denoise" class="input-base py-1.5" value="1" step="0.1" max="1">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- LoRA -->
+                <section>
+                    <h3 class="font-bold text-slate-700 mb-2"><i class="fas fa-layer-group w-5"></i>LoRA (Node 30)</h3>
+                    <div id="lora-container" class="space-y-2 border border-slate-200 rounded-lg p-2 bg-slate-50">
+                        <!-- Populated by JS -->
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Tab 6: Other (Control) -->
+        <div id="tab-other" class="tab-pane h-full w-full hidden overflow-y-auto p-4 flex flex-col">
+            <h2 class="text-xl font-bold mb-4 border-b pb-2">システム・実行</h2>
+            
+            <div class="space-y-4 mb-auto">
+                <!-- Connection -->
+                <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <label class="label-base">ComfyUI Base URL</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="comfy-url" class="input-base" value="http://127.0.0.1:8188">
+                        <button id="btn-connect" class="bg-slate-200 px-4 rounded font-bold text-slate-700 hover:bg-slate-300 transition">更新</button>
+                    </div>
+                    <div class="mt-2 text-sm flex items-center gap-2">
+                        <span>状態:</span>
+                        <span id="status-indicator" class="w-3 h-3 rounded-full bg-slate-400"></span>
+                        <span id="status-text" class="font-bold text-slate-600">未接続</span>
+                    </div>
+                </div>
+
+                <!-- Loop Settings -->
+                <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 flex items-center justify-between">
+                    <span class="font-bold text-sm">連続生成枚数</span>
+                    <select id="loop-count" class="input-base w-auto py-1">
+                        <option value="1">1枚</option>
+                        <option value="4">4枚</option>
+                        <option value="10">10枚</option>
+                        <option value="-1">無制限</option>
+                    </select>
+                </div>
+                
+                <!-- Progress & Preview -->
+                <div class="border border-slate-200 rounded-lg overflow-hidden flex flex-col h-64 bg-slate-100 relative">
+                    <div id="live-preview-container" class="flex-1 flex items-center justify-center relative overflow-hidden bg-checkered">
+                        <img id="live-preview-img" class="object-contain max-h-full max-w-full hidden">
+                        <span id="preview-placeholder" class="text-slate-400 text-sm absolute">Preview</span>
+                    </div>
+                    <div class="h-10 bg-white border-t px-3 flex flex-col justify-center">
+                        <div class="flex justify-between text-xs text-slate-500 mb-1">
+                            <span id="progress-node">待機中...</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5">
+                            <div id="progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="mt-4 flex gap-3 pb-6">
+                <button id="btn-stop" class="flex-1 py-4 bg-red-100 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-200 active:scale-95 transition-transform disabled:opacity-50">
+                    <i class="fas fa-stop mr-2"></i>停止
+                </button>
+                <button id="btn-generate" class="flex-[2] py-4 bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 hover:bg-blue-600 active:scale-95 transition-transform disabled:opacity-50">
+                    <i class="fas fa-play mr-2"></i>生成開始
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="bg-white border-t border-slate-200 fixed bottom-0 w-full z-40 pb-safe">
+        <div class="flex justify-around items-center h-16">
+            <button class="nav-btn flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-blue-500 data-[active=true]:text-blue-500 transition-colors" data-target="tab-timeline">
+                <i class="fas fa-layer-group text-xl mb-1"></i>
+                <span class="text-[10px] font-bold">タイムライン</span>
+            </button>
+            <button class="nav-btn flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-blue-500 data-[active=true]:text-blue-500 transition-colors" data-target="tab-prefix">
+                <i class="fas fa-quote-left text-xl mb-1"></i>
+                <span class="text-[10px] font-bold">プレフィックス</span>
+            </button>
+            <button class="nav-btn flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-blue-500 data-[active=true]:text-blue-500 transition-colors" data-target="tab-character">
+                <i class="fas fa-user text-xl mb-1"></i>
+                <span class="text-[10px] font-bold">キャラ</span>
+            </button>
+            <button class="nav-btn flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-blue-500 data-[active=true]:text-blue-500 transition-colors" data-target="tab-situation">
+                <i class="fas fa-image text-xl mb-1"></i>
+                <span class="text-[10px] font-bold">シチュ</span>
+            </button>
+            <button class="nav-btn flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-blue-500 data-[active=true]:text-blue-500 transition-colors" data-target="tab-model">
+                <i class="fas fa-sliders text-xl mb-1"></i>
+                <span class="text-[10px] font-bold">モデル</span>
+            </button>
+            <button class="nav-btn flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-blue-500 data-[active=true]:text-blue-500 transition-colors" data-target="tab-other">
+                <i class="fas fa-gear text-xl mb-1"></i>
+                <span class="text-[10px] font-bold">その他</span>
+            </button>
+        </div>
+    </nav>
+
+    <script>
+        // --- 1. Constants & Template ---
+        
+        // CSS specific hacks
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+            .bg-checkered {
+                background-image: linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+                background-size: 20px 20px;
+                background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Adjust app height for mobile browsers
+        const appHeight = () => document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+        window.addEventListener('resize', appHeight);
+        appHeight();
+
+        const WORKFLOW_TEMPLATE = {
+            "1": {"inputs": {"vae_name": "qwen_image_vae.safetensors"}, "class_type": "VAELoader"},
+            "2": {"inputs": {"clip_name": "qwen_3_06b_base.safetensors", "type": "stable_diffusion", "device": "default"}, "class_type": "CLIPLoader"},
+            "3": {"inputs": {"samples": ["13", 0], "vae": ["1", 0]}, "class_type": "VAEDecode"},
+            "4": {"inputs": {"model_name": "2x-AnimeSharpV4_Fast_RCAN_PU.safetensors"}, "class_type": "UpscaleModelLoader"},
+            "5": {"inputs": {"unet_name": "anima-preview3-base.safetensors", "weight_dtype": "default"}, "class_type": "UNETLoader"},
+            "7": {"inputs": {"upscale_model": ["4", 0], "image": ["3", 0]}, "class_type": "ImageUpscaleWithModel"},
+            "8": {"inputs": {"filename_prefix": "MobileGen/_UI", "discord_target_index": 0, "images": ["7", 0]}, "class_type": "SaveWebpAndSendDiscord"},
+            "9": {"inputs": {"width": 824, "height": 1216, "batch_size": 1}, "class_type": "EmptyLatentImage"},
+            "10": {"inputs": {"text": ["15", 0], "clip": ["2", 0]}, "class_type": "CLIPTextEncode"},
+            "11": {"inputs": {"images": ["7", 0]}, "class_type": "PreviewImage"},
+            "12": {"inputs": {"text": "worst quality, low quality, score_1, score_2, score_3, artist name,english_text, ", "clip": ["2", 0]}, "class_type": "CLIPTextEncode"},
+            "13": {"inputs": {"seed": 536, "steps": 8, "cfg": 1, "sampler_name": "er_sde", "scheduler": "simple", "denoise": 1, "model": ["30", 0], "positive": ["10", 0], "negative": ["12", 0], "latent_image": ["9", 0]}, "class_type": "KSampler"},
+            "15": {"inputs": {"find1": "_", "replace1": " ", "find2": "score ", "replace2": "score_", "find3": "", "replace3": "", "text": ["26", 0]}, "class_type": "CR Text Replace"},
+            "16": {"inputs": {"prompt": ["22", 0]}, "class_type": "PromptUtilCharacterTagFilter"},
+            "19": {"inputs": {"separator": ",", "text1": ["29", 0], "text2": ["20", 0]}, "class_type": "CR Text Concatenate"},
+            "20": {"inputs": {"separator": ",", "text1": ["21", 3], "text2": ["23", 0]}, "class_type": "CR Text Concatenate"},
+            "21": {"inputs": {"tagQuery": ["28", 0], "Prompt": "!G", "limit": 2000}, "class_type": "CharactorPromptCreator"},
+            "22": {"inputs": {"tagQuery": ["27", 0], "Prompt": "!G", "limit": 2000}, "class_type": "CharactorPromptCreator"},
+            "23": {"inputs": {"prompt": ["21", 0]}, "class_type": "PromptUtilCharacterPromptExtract"},
+            "25": {"inputs": {"separator": ",", "text1": ["19", 0], "text2": ["16", 0]}, "class_type": "CR Text Concatenate"},
+            "26": {"inputs": {"Prompt": ["25", 0], "BlackList": "monochrome,greyscale,bare_shoulders, \nblack_tank_top,furry,tail,flower, wings,hair_pin,uncensored,small breasts, \n[^.*speech.*$],"}, "class_type": "krg PromptBlackList"},
+            "27": {"inputs": {"prompt": "assertive_female 1girl", "seed": 1538, "advance_interval": 1}, "class_type": "KRGWildcardProcessor"},
+            "28": {"inputs": {"prompt": "shigure_ui_(vtuber) solo", "seed": 1538, "advance_interval": 1}, "class_type": "KRGWildcardProcessor"},
+            "29": {"inputs": {"prompt": "score_8, year 2025, newest,\nsteam,\n{half-closed_eyes,|}\nmosaic_censoring, ", "seed": 2310, "advance_interval": 1}, "class_type": "KRGWildcardProcessor"},
+            "30": {"inputs": {
+                "PowerLoraLoaderHeaderWidget": {"type": "PowerLoraLoaderHeaderWidget"},
+                "lora_1": {"on": false, "lora": "Anima\\NQCT_ANMA_v0.safetensors", "strength": 0.9},
+                "lora_2": {"on": false, "lora": "WAIF\\@ANMS_ANMA_v0.safetensors", "strength": 1},
+                "lora_3": {"on": false, "lora": "Anima\\anima-masterpieces-nlmix2-e41.safetensors", "strength": 0.7},
+                "lora_4": {"on": false, "lora": "Anima\\anima-highres-aesthetic-boost.safetensors", "strength": 0.8},
+                "lora_5": {"on": true, "lora": "Anima\\anima-turbo-lora-v0.1.safetensors", "strength": 1},
+                "lora_6": {"on": false, "lora": "Anima\\@KTNH_ANMA_v0.safetensors", "strength": 0.75},
+                "lora_7": {"on": false, "lora": "Anima\\HASE_ANMA_v0.safetensors", "strength": 0.9},
+                "lora_8": {"on": false, "lora": "Anima\\FQTP_ANMA_v0.safetensors", "strength": 0.6},
+                "lora_9": {"on": false, "lora": "Anima\\GEDIQ_ANMA_v0.safetensors", "strength": 0.8},
+                "lora_10": {"on": false, "lora": "Anima\\NWQY_ANMA_v0.safetensors", "strength": 0.8},
+                "lora_11": {"on": true, "lora": "Anima\\KYNB_ANMA_v0.safetensors", "strength": 1},
+                "lora_12": {"on": true, "lora": "Anima\\@POSG_ANMA_v0.safetensors", "strength": 0.9},
+                "lora_13": {"on": false, "lora": "Anima\\RYUS_ANMA_v0.safetensors", "strength": 0.5},
+                "lora_14": {"on": false, "lora": "Anima\\@URON_ANMA_v0.safetensors", "strength": 0.5},
+                "lora_15": {"on": false, "lora": "Anima\\@FSYW_ANMA_v0.safetensors", "strength": 0.55},
+                "lora_16": {"on": false, "lora": "Anima\\NWQY_ANMA_v0.safetensors", "strength": 0.85},
+                "lora_17": {"on": false, "lora": "Anima\\YWED_ANMA_v0.safetensors", "strength": 1},
+                "➕ Add Lora": "", "model": ["5", 0]
+            }, "class_type": "Power Lora Loader (rgthree)"}
+        };
+
+        const generateClientId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const clientId = generateClientId();
+
+        // --- 2. State Management ---
+        let state = {
+            baseUrl: "http://127.0.0.1:8188",
+            prefix: "score_9, score_8_up, score_7_up, high quality, masterpiece",
+            character: "shigure_ui_(vtuber) solo",
+            charList: ["shigure_ui_(vtuber) solo", "hatsune_miku solo", "original 1girl"],
+            situation: "classroom, desk, window",
+            randomSituMode: false,
+            models: {
+                unet: "anima-preview3-base.safetensors",
+                clip: "qwen_3_06b_base.safetensors",
+                vae: "qwen_image_vae.safetensors",
+                upscale: "2x-AnimeSharpV4_Fast_RCAN_PU.safetensors"
+            },
+            size: { w: 824, h: 1216, b: 1 },
+            sampler: { seed: 12345, autoSeed: true, steps: 8, cfg: 1, name: "er_sde", scheduler: "simple", denoise: 1 },
+            loras: [], // Loaded from template initially
+            timeline: [], // { url, meta }
+            
+            // Runtime state
+            ws: null,
+            status: "disconnected", // disconnected, connected, generating, error
+            currentPromptId: null,
+            loop: { active: false, target: 1, current: 0 }
+        };
+
+        // Initialize LoRAs from template
+        for(let i=1; i<=17; i++) {
+            let lData = WORKFLOW_TEMPLATE["30"].inputs[`lora_${i}`];
+            if(lData) {
+                state.loras.push({id: i, on: lData.on, name: lData.lora, strength: lData.strength});
+            }
+        }
+
+        // Storage setup
+        const loadState = () => {
+            const saved = localStorage.getItem('comfyMobileState');
+            if(saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    // Merge mostly text/simple settings. Do not overwrite runtime state.
+                    state.baseUrl = parsed.baseUrl || state.baseUrl;
+                    state.prefix = parsed.prefix || state.prefix;
+                    state.character = parsed.character || state.character;
+                    state.charList = parsed.charList || state.charList;
+                    state.situation = parsed.situation || state.situation;
+                    state.randomSituMode = !!parsed.randomSituMode;
+                    if(parsed.models) state.models = parsed.models;
+                    if(parsed.size) state.size = parsed.size;
+                    if(parsed.sampler) state.sampler = parsed.sampler;
+                    if(parsed.loras && parsed.loras.length === 17) state.loras = parsed.loras;
+                    if(parsed.timeline) state.timeline = parsed.timeline;
+                } catch(e) { console.error("Failed to load state", e); }
+            }
+        };
+
+        const saveState = () => {
+            const toSave = {
+                baseUrl: state.baseUrl, prefix: state.prefix, character: state.character,
+                charList: state.charList, situation: state.situation, randomSituMode: state.randomSituMode,
+                models: state.models, size: state.size, sampler: state.sampler,
+                loras: state.loras, timeline: state.timeline.slice(0, 50) // keep last 50
+            };
+            localStorage.setItem('comfyMobileState', JSON.stringify(toSave));
+        };
+
+        // --- 3. UI Binding & Rendering ---
+        
+        // Tab switching
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.nav-btn').forEach(b => b.dataset.active = "false");
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
+                
+                const targetId = btn.closest('button').dataset.target;
+                document.getElementById(targetId).classList.remove('hidden');
+                btn.closest('button').dataset.active = "true";
+            });
+        });
+
+        // initial tab
+        document.querySelector('[data-target="tab-other"]').click();
+
+        const renderTimeline = () => {
+            const container = document.getElementById('timeline-container');
+            if(state.timeline.length === 0) return;
+            
+            container.innerHTML = '';
+            // Reverse to show newest at top
+            [...state.timeline].reverse().forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'snap-item';
+                div.innerHTML = `
+                    <img src="${item.url}" class="object-contain max-h-full max-w-full" loading="lazy">
+                    <div class="absolute bottom-4 right-4 bg-black/50 text-white text-xs px-2 py-1 rounded backdrop-blur">
+                        ${new Date(item.meta.time).toLocaleTimeString()}
+                    </div>
+                    <button class="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full backdrop-blur z-10 w-10 h-10 flex items-center justify-center info-btn">
+                        <i class="fas fa-info"></i>
+                    </button>
+                `;
+                
+                div.querySelector('.info-btn').addEventListener('click', () => showImageModal(item));
+                container.appendChild(div);
+            });
+        };
+
+        const showImageModal = (item) => {
+            const content = document.getElementById('image-modal-content');
+            content.innerHTML = `
+                <div class="bg-slate-50 p-2 rounded border break-words"><span class="font-bold">Prompt ID:</span> ${item.meta.prompt_id}</div>
+                <div class="bg-slate-50 p-2 rounded border break-words"><span class="font-bold">Seed:</span> ${item.meta.seed}</div>
+                <div class="bg-slate-50 p-2 rounded border break-words"><span class="font-bold">Prefix:</span><br>${item.meta.prefix}</div>
+                <div class="bg-slate-50 p-2 rounded border break-words"><span class="font-bold">Character:</span><br>${item.meta.character}</div>
+                <div class="bg-slate-50 p-2 rounded border break-words"><span class="font-bold">Situation:</span><br>${item.meta.situation}</div>
+            `;
+            document.getElementById('image-modal').classList.remove('hidden');
+        };
+        window.closeImageModal = () => document.getElementById('image-modal').classList.add('hidden');
+
+        const renderCharList = () => {
+            const ul = document.getElementById('char-list');
+            ul.innerHTML = '';
+            state.charList.forEach((char, i) => {
+                const li = document.createElement('li');
+                li.className = "flex justify-between items-center p-2 bg-slate-50 border rounded";
+                li.innerHTML = `
+                    <span class="flex-1 truncate text-sm cursor-pointer char-item" data-val="${char}">${char}</span>
+                    <button class="text-red-400 p-1 delete-char" data-idx="${i}"><i class="fas fa-trash"></i></button>
+                `;
+                ul.appendChild(li);
+            });
+
+            document.querySelectorAll('.char-item').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    const val = e.target.dataset.val;
+                    document.getElementById('input-character').value = val;
+                    updateStateFromInputs();
+                });
+            });
+            document.querySelectorAll('.delete-char').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    const idx = e.target.closest('button').dataset.idx;
+                    state.charList.splice(idx, 1);
+                    saveState();
+                    renderCharList();
+                });
+            });
+        };
+
+        const renderLoras = () => {
+            const container = document.getElementById('lora-container');
+            container.innerHTML = '';
+            state.loras.forEach((lora, i) => {
+                const div = document.createElement('div');
+                div.className = "p-2 border-b last:border-b-0 border-slate-200 flex flex-col gap-1";
+                div.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-500 w-6">#${lora.id}</span>
+                        <div class="relative inline-block w-8 mr-2 align-middle select-none">
+                            <input type="checkbox" id="lora-on-${i}" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-2 appearance-none cursor-pointer" ${lora.on ? 'checked' : ''}/>
+                            <label for="lora-on-${i}" class="toggle-label block overflow-hidden h-4 rounded-full bg-slate-300 cursor-pointer"></label>
+                        </div>
+                        <input type="text" id="lora-name-${i}" class="input-base py-1 text-xs flex-1 ml-2" value="${lora.name}">
+                    </div>
+                    <div class="flex items-center gap-2 pl-8">
+                        <span class="text-xs text-slate-500 w-8 text-right" id="lora-val-${i}">${Number(lora.strength).toFixed(2)}</span>
+                        <input type="range" id="lora-str-${i}" min="-2" max="2" step="0.05" value="${lora.strength}" class="flex-1">
+                    </div>
+                `;
+                container.appendChild(div);
+
+                // Bind events directly after creation
+                const onCb = div.querySelector(`#lora-on-${i}`);
+                const nameInp = div.querySelector(`#lora-name-${i}`);
+                const strInp = div.querySelector(`#lora-str-${i}`);
+                const valSpan = div.querySelector(`#lora-val-${i}`);
+
+                onCb.addEventListener('change', (e) => { state.loras[i].on = e.target.checked; saveState(); });
+                nameInp.addEventListener('change', (e) => { state.loras[i].name = e.target.value; saveState(); });
+                strInp.addEventListener('input', (e) => {
+                    valSpan.textContent = Number(e.target.value).toFixed(2);
+                    state.loras[i].strength = parseFloat(e.target.value);
+                    saveState();
+                });
+            });
+        };
+
+        const updateInputsFromState = () => {
+            document.getElementById('comfy-url').value = state.baseUrl;
+            document.getElementById('input-prefix').value = state.prefix;
+            document.getElementById('input-character').value = state.character;
+            document.getElementById('input-situation').value = state.situation;
+            document.getElementById('toggle-random-situ').checked = state.randomSituMode;
+            
+            document.getElementById('model-unet').value = state.models.unet;
+            document.getElementById('model-clip').value = state.models.clip;
+            document.getElementById('model-vae').value = state.models.vae;
+            document.getElementById('model-upscale').value = state.models.upscale;
+            
+            document.getElementById('size-w').value = state.size.w;
+            document.getElementById('size-h').value = state.size.h;
+            document.getElementById('size-b').value = state.size.b;
+            
+            document.getElementById('sampler-seed').value = state.sampler.seed;
+            document.getElementById('auto-seed').checked = state.sampler.autoSeed;
+            document.getElementById('sampler-steps').value = state.sampler.steps;
+            document.getElementById('sampler-cfg').value = state.sampler.cfg;
+            document.getElementById('sampler-name').value = state.sampler.name;
+            document.getElementById('sampler-scheduler').value = state.sampler.scheduler;
+            document.getElementById('sampler-denoise').value = state.sampler.denoise;
+
+            renderCharList();
+            renderLoras();
+            renderTimeline();
+        };
+
+        const updateStateFromInputs = () => {
+            state.baseUrl = document.getElementById('comfy-url').value.trim().replace(/\/$/, "");
+            state.prefix = document.getElementById('input-prefix').value;
+            state.character = document.getElementById('input-character').value;
+            state.situation = document.getElementById('input-situation').value;
+            state.randomSituMode = document.getElementById('toggle-random-situ').checked;
+
+            state.models.unet = document.getElementById('model-unet').value;
+            state.models.clip = document.getElementById('model-clip').value;
+            state.models.vae = document.getElementById('model-vae').value;
+            state.models.upscale = document.getElementById('model-upscale').value;
+
+            state.size.w = parseInt(document.getElementById('size-w').value) || 824;
+            state.size.h = parseInt(document.getElementById('size-h').value) || 1216;
+            state.size.b = parseInt(document.getElementById('size-b').value) || 1;
+
+            state.sampler.seed = parseInt(document.getElementById('sampler-seed').value) || 0;
+            state.sampler.autoSeed = document.getElementById('auto-seed').checked;
+            state.sampler.steps = parseInt(document.getElementById('sampler-steps').value) || 8;
+            state.sampler.cfg = parseFloat(document.getElementById('sampler-cfg').value) || 1;
+            state.sampler.name = document.getElementById('sampler-name').value;
+            state.sampler.scheduler = document.getElementById('sampler-scheduler').value;
+            state.sampler.denoise = parseFloat(document.getElementById('sampler-denoise').value) || 1;
+
+            saveState();
+        };
+
+        // Attach global input listeners (excluding LoRA which is handled in render)
+        const allInputs = document.querySelectorAll('.input-base:not([id^="lora-"]), .toggle-checkbox');
+        allInputs.forEach(inp => {
+            inp.addEventListener('change', updateStateFromInputs);
+        });
+
+        // Specific Button Actions
+        document.getElementById('prefix-presets').addEventListener('click', (e) => {
+            if(e.target.tagName === 'BUTTON') {
+                document.getElementById('input-prefix').value = e.target.dataset.val;
+                updateStateFromInputs();
+            }
+        });
+
+        document.getElementById('btn-add-char').addEventListener('click', () => {
+            const val = document.getElementById('input-character').value.trim();
+            if(val && !state.charList.includes(val)) {
+                state.charList.push(val);
+                updateStateFromInputs();
+                renderCharList();
+            }
+        });
+
+        document.querySelectorAll('.situ-preset').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const val = e.target.dataset.val;
+                const txt = document.getElementById('input-situation');
+                let current = txt.value.trim();
+                if(current.length > 0 && !current.endsWith(',')) current += ', ';
+                txt.value = current + val;
+                updateStateFromInputs();
+            });
+        });
+
+        document.getElementById('btn-random-seed').addEventListener('click', () => {
+            document.getElementById('sampler-seed').value = Math.floor(Math.random() * 1000000000);
+            updateStateFromInputs();
+        });
+
+        // --- 4. Danbooru Autocomplete ---
+        
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => { clearTimeout(timeout); func(...args); };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        const fetchDanbooruTags = async (query) => {
+            try {
+                const res = await fetch(`https://danbooru.donmai.us/tags.json?search[name_matches]=*${query}*&limit=10`);
+                if(!res.ok) return [];
+                return await res.json();
+            } catch(e) { console.error("Danbooru error", e); return []; }
+        };
+
+        const setupAutocomplete = (inputId, dropdownId) => {
+            const input = document.getElementById(inputId);
+            const dropdown = document.getElementById(dropdownId);
+            
+            const handleInput = debounce(async (e) => {
+                const val = input.value;
+                const cursor = input.selectionStart;
+                const textBefore = val.substring(0, cursor);
+                const match = textBefore.match(/([^,]+)$/);
+                
+                if(!match || match[1].trim().length < 2) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+                
+                const query = match[1].trim().replace(/\s/g, '_');
+                const tags = await fetchDanbooruTags(query);
+                
+                if(tags.length === 0) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+
+                dropdown.innerHTML = '';
+                tags.forEach(t => {
+                    const div = document.createElement('div');
+                    div.className = `autocomplete-item tag-cat-${t.category}`;
+                    div.innerHTML = `<span>${t.name}</span><span class="text-slate-400 text-xs">${t.post_count}</span>`;
+                    div.addEventListener('click', () => {
+                        const beforeMatch = textBefore.substring(0, match.index);
+                        const newText = beforeMatch + t.name + ', ' + val.substring(cursor);
+                        input.value = newText;
+                        input.focus();
+                        dropdown.style.display = 'none';
+                        updateStateFromInputs();
+                    });
+                    dropdown.appendChild(div);
+                });
+                dropdown.style.display = 'block';
+            }, 300);
+
+            input.addEventListener('input', handleInput);
+            document.addEventListener('click', (e) => {
+                if(!input.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+        };
+
+        setupAutocomplete('input-prefix', 'auto-prefix');
+        setupAutocomplete('input-character', 'auto-character');
+        setupAutocomplete('input-situation', 'auto-situation');
+
+
+        // --- 5. ComfyUI API & WebSocket ---
+
+        const updateStatus = (status, msg="") => {
+            state.status = status;
+            const ind = document.getElementById('status-indicator');
+            const txt = document.getElementById('status-text');
+            const btnGen = document.getElementById('btn-generate');
+            
+            if(status === 'connected' || status === 'idle') {
+                ind.className = "w-3 h-3 rounded-full bg-green-500";
+                txt.textContent = "接続済み";
+                btnGen.disabled = false;
+                btnGen.innerHTML = '<i class="fas fa-play mr-2"></i>生成開始';
+            } else if(status === 'generating') {
+                ind.className = "w-3 h-3 rounded-full bg-blue-500 animate-pulse";
+                txt.textContent = "生成中...";
+                btnGen.disabled = true;
+                btnGen.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>生成中';
+            } else if(status === 'error') {
+                ind.className = "w-3 h-3 rounded-full bg-red-500";
+                txt.textContent = "エラー: " + msg;
+                btnGen.disabled = false;
+            } else {
+                ind.className = "w-3 h-3 rounded-full bg-slate-400";
+                txt.textContent = "未接続";
+                btnGen.disabled = false;
+            }
+        };
+
+        const connectWS = () => {
+            if(state.ws) state.ws.close();
+            const wsUrl = state.baseUrl.replace(/^http/, 'ws') + `/ws?clientId=${clientId}`;
+            
+            try {
+                state.ws = new WebSocket(wsUrl);
+                state.ws.onopen = () => updateStatus('connected');
+                state.ws.onclose = () => { if(state.status !== 'generating') updateStatus('disconnected'); };
+                state.ws.onerror = () => updateStatus('error', 'WS接続失敗');
+                
+                state.ws.onmessage = (event) => {
+                    if (event.data instanceof Blob) {
+                        // Binary preview
+                        const url = URL.createObjectURL(event.data);
+                        const img = document.getElementById('live-preview-img');
+                        img.src = url;
+                        img.classList.remove('hidden');
+                        document.getElementById('preview-placeholder').classList.add('hidden');
+                        return;
+                    }
+
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'status') {
+                            // Empty queue means done
+                            if(state.status === 'generating' && msg.data.status.exec_info.queue_remaining === 0) {
+                                handleGenerationComplete();
+                            }
+                        } else if (msg.type === 'executing') {
+                            if(msg.data.node) {
+                                document.getElementById('progress-node').textContent = `Node: ${msg.data.node}`;
+                            } else {
+                                // Execution done (or errored)
+                                if(msg.data.prompt_id === state.currentPromptId) {
+                                    handleGenerationComplete();
+                                }
+                            }
+                        } else if (msg.type === 'progress') {
+                            const val = msg.data.value;
+                            const max = msg.data.max;
+                            const pct = Math.round((val / max) * 100);
+                            document.getElementById('progress-bar').style.width = `${pct}%`;
+                            document.getElementById('progress-percent').textContent = `${pct}%`;
+                        }
+                    } catch(e) { console.error(e); }
+                };
+            } catch(e) { updateStatus('error', 'WS不正URL'); }
+        };
+
+        document.getElementById('btn-connect').addEventListener('click', () => {
+            updateStateFromInputs();
+            connectWS();
+        });
+
+        // --- 6. Execution Engine ---
+
+        const getWorkflow = () => {
+            // Deep clone template
+            let wf = JSON.parse(JSON.stringify(WORKFLOW_TEMPLATE));
+
+            // Apply modifications
+            wf["29"].inputs.prompt = state.prefix;
+            wf["28"].inputs.prompt = state.character;
+            
+            // Handle Random Situation
+            let situToUse = state.situation;
+            if(state.randomSituMode) {
+                const presets = Array.from(document.querySelectorAll('.situ-preset')).map(el => el.dataset.val);
+                if(presets.length > 0) {
+                    situToUse = presets[Math.floor(Math.random() * presets.length)];
+                    // Just visual update, don't save to state.situation
+                    document.getElementById('input-situation').value = situToUse; 
+                }
+            }
+            wf["27"].inputs.prompt = situToUse;
+
+            wf["5"].inputs.unet_name = state.models.unet;
+            wf["2"].inputs.clip_name = state.models.clip;
+            wf["1"].inputs.vae_name = state.models.vae;
+            wf["4"].inputs.model_name = state.models.upscale;
+
+            wf["9"].inputs.width = state.size.w;
+            wf["9"].inputs.height = state.size.h;
+            wf["9"].inputs.batch_size = state.size.b;
+
+            // Handle Auto Seed
+            if(state.sampler.autoSeed) {
+                state.sampler.seed = Math.floor(Math.random() * 1000000000);
+                document.getElementById('sampler-seed').value = state.sampler.seed;
+                saveState();
+            }
+            
+            wf["13"].inputs.seed = state.sampler.seed;
+            wf["13"].inputs.steps = state.sampler.steps;
+            wf["13"].inputs.cfg = state.sampler.cfg;
+            wf["13"].inputs.sampler_name = state.sampler.name;
+            wf["13"].inputs.scheduler = state.sampler.scheduler;
+            wf["13"].inputs.denoise = state.sampler.denoise;
+
+            // LoRAs
+            state.loras.forEach(lora => {
+                const key = `lora_${lora.id}`;
+                if(wf["30"].inputs[key]) {
+                    wf["30"].inputs[key] = { on: lora.on, lora: lora.name, strength: lora.strength };
+                }
+            });
+
+            return { workflow: wf, meta: { prefix: state.prefix, character: state.character, situation: situToUse, seed: state.sampler.seed } };
+        };
+
+        const triggerGeneration = async () => {
+            if(!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+                connectWS();
+                await new Promise(r => setTimeout(r, 500)); // wait a bit
+            }
+
+            updateStateFromInputs();
+            const payload = getWorkflow();
+
+            // Reset UI
+            document.getElementById('progress-bar').style.width = `0%`;
+            document.getElementById('progress-percent').textContent = `0%`;
+            document.getElementById('progress-node').textContent = `開始準備中...`;
+            document.getElementById('live-preview-img').classList.add('hidden');
+            document.getElementById('preview-placeholder').classList.remove('hidden');
+
+            try {
+                updateStatus('generating');
+                const res = await fetch(`${state.baseUrl}/prompt`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: payload.workflow, client_id: clientId })
+                });
+
+                if(!res.ok) {
+                    const text = await res.text();
+                    throw new Error(text);
+                }
+
+                const data = await res.json();
+                state.currentPromptId = data.prompt_id;
+                // Save meta with prompt id temporarily
+                state._currentMeta = { ...payload.meta, prompt_id: data.prompt_id, time: Date.now() };
+
+            } catch(e) {
+                updateStatus('error', e.message);
+                state.loop.active = false;
+            }
+        };
+
+        const handleGenerationComplete = async () => {
+            if(state.status !== 'generating' || !state.currentPromptId) return;
+            
+            updateStatus('connected');
+            
+            try {
+                // Fetch history
+                const res = await fetch(`${state.baseUrl}/history/${state.currentPromptId}`);
+                const history = await res.json();
+                const output = history[state.currentPromptId];
+                
+                if(output && output.outputs) {
+                    // Find node 8 or any node with images
+                    let images = [];
+                    for (const nodeId in output.outputs) {
+                        if (output.outputs[nodeId].images) {
+                            images = images.concat(output.outputs[nodeId].images);
+                        }
+                    }
+
+                    if(images.length > 0) {
+                        images.forEach(img => {
+                            const params = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder, type: img.type });
+                            const url = `${state.baseUrl}/view?${params.toString()}`;
+                            state.timeline.push({ url: url, meta: state._currentMeta });
+                        });
+                        saveState();
+                        renderTimeline();
+                        
+                        // Switch to timeline view visually if on main tab and loop is done
+                        if(!state.loop.active) {
+                             document.querySelector('[data-target="tab-timeline"]').click();
+                        }
+                    }
+                }
+            } catch(e) {
+                console.error("Failed to fetch history", e);
+            }
+
+            state.currentPromptId = null;
+
+            // Handle Loop
+            if(state.loop.active) {
+                state.loop.current++;
+                if(state.loop.target === -1 || state.loop.current < state.loop.target) {
+                    setTimeout(triggerGeneration, 1000); // Small delay before next
+                } else {
+                    state.loop.active = false;
+                }
+            }
+        };
+
+        const stopGeneration = async () => {
+            state.loop.active = false;
+            try {
+                await fetch(`${state.baseUrl}/interrupt`, { method: 'POST' });
+                updateStatus('connected', '停止しました');
+            } catch(e) {
+                updateStatus('error', '停止失敗');
+            }
+        };
+
+        // Bind Action Buttons
+        document.getElementById('btn-generate').addEventListener('click', () => {
+            const countStr = document.getElementById('loop-count').value;
+            state.loop = { active: countStr !== "1", target: parseInt(countStr), current: 0 };
+            triggerGeneration();
+        });
+
+        document.getElementById('btn-stop').addEventListener('click', stopGeneration);
+
+        // --- 7. Init ---
+        loadState();
+        updateInputsFromState();
+        connectWS(); // Attempt initial connection
+
+    </script>
+</body>
+</html>

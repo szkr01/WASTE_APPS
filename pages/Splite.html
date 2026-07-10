@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Sprite Animator - Snap Flow (Light Theme)</title>
+    <meta name="description" content="スナップ機能と背景色書き出し対応のフローティングウィンドウ型スプライトアニメーションツール">
+    <meta name="page:icon" content="✨">
+    <meta name="page:color" content="#4f46e5">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        :root {
+            color-scheme: light;
+        }
+
+        body {
+            overscroll-behavior-y: none;
+            background-color: #f8fafc; /* slate-50 */
+            background-image: url("data:image/svg+xml,%3Csvg width='24' height='24' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='2' cy='2' r='1' fill='rgba(15,23,42,0.06)'/%3E%3C/svg%3E");
+        }
+
+        /* Custom Scrollbar for light theme */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* slate-300 */
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* slate-400 */
+        }
+
+        /* Checkerboard patterns */
+        .bg-checker-light {
+            background-color: #f1f5f9;
+            background-image: 
+                linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+                linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+                linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .bg-checker-dark {
+            background-color: #0f172a;
+            background-image: 
+                linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .bg-solid-light {
+            background-color: #ffffff;
+        }
+
+        canvas {
+            image-rendering: pixelated;
+        }
+
+        /* Prevent text selection during drag/resize */
+        .is-dragging {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Specific style for color picker */
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4f46e5', // Indigo 600
+                        primaryHover: '#4338ca',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="h-dvh w-full overflow-hidden text-slate-700 font-sans antialiased selection:bg-primary/20 selection:text-primary relative">
+
+    <!-- Desktop Area -->
+    <main id="desktop" class="absolute inset-0 p-[env(safe-area-inset-top)_env(safe-area-inset-right)_env(safe-area-inset-bottom)_env(safe-area-inset-left)] z-0">
+
+        <!-- 1. Controls Window -->
+        <div id="win-controls" class="draggable-window absolute flex flex-col bg-white/95 backdrop-blur-xl border border-slate-200 rounded-xl shadow-xl overflow-hidden transition-[border-color,box-shadow] duration-200 opacity-0 scale-95" tabindex="-1">
+            
+            <header class="drag-handle h-10 bg-slate-50 flex justify-between items-center px-4 cursor-move select-none border-b border-slate-200">
+                <span class="text-xs font-bold text-slate-600 uppercase tracking-widest flex items-center gap-2 pointer-events-none">
+                    <i class="ph-fill ph-sliders text-primary"></i> Tools
+                </span>
+            </header>
+
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-5 flex flex-col gap-6 relative">
+                
+                <!-- Source Upload -->
+                <div class="space-y-2">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Source</label>
+                    <button id="btn-upload" class="w-full relative group cursor-pointer flex flex-col items-center justify-center p-5 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 hover:border-primary/50 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:border-transparent">
+                        <i class="ph ph-upload-simple text-2xl text-slate-400 group-hover:text-primary mb-2 transition-colors"></i>
+                        <span class="text-sm font-medium text-slate-700">画像を読み込み</span>
+                        <input type="file" id="file-input" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="Upload Sprite Sheet">
+                    </button>
+                    <div class="text-right">
+                        <span class="text-[10px] text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200" id="label-image-size">0 x 0 px</span>
+                    </div>
+                </div>
+
+                <!-- Grid Configuration -->
+                <div id="control-group-grid" class="space-y-3 opacity-50 pointer-events-none transition-opacity duration-300">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-1">Grid Setup</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="space-y-1 relative">
+                            <label for="input-cols" class="text-xs font-medium text-slate-500">列 (Cols)</label>
+                            <input type="number" id="input-cols" min="1" value="1" class="block w-full rounded-lg border-slate-200 bg-white text-slate-800 shadow-sm focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm tabular-nums border p-2 transition-colors">
+                        </div>
+                        <div class="space-y-1 relative">
+                            <label for="input-rows" class="text-xs font-medium text-slate-500">行 (Rows)</label>
+                            <input type="number" id="input-rows" min="1" value="1" class="block w-full rounded-lg border-slate-200 bg-white text-slate-800 shadow-sm focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm tabular-nums border p-2 transition-colors">
+                        </div>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-2.5 flex justify-between items-center border border-slate-100">
+                        <span class="text-xs font-medium text-slate-600">総フレーム数</span>
+                        <span id="label-total-frames" class="text-sm font-mono font-bold text-primary">1</span>
+                    </div>
+                </div>
+
+                <!-- Animation Configuration -->
+                <div id="control-group-anim" class="space-y-4 opacity-50 pointer-events-none transition-opacity duration-300">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-1">
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Animation</label>
+                        <button id="btn-play-pause" class="size-6 flex items-center justify-center rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 bg-primary text-white" aria-label="Play or Pause">
+                            <i class="ph-fill ph-pause text-sm" id="icon-play-pause"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <label for="input-fps" class="flex justify-between items-center">
+                            <span class="text-xs font-medium text-slate-500">再生速度 (FPS)</span>
+                            <span id="label-fps" class="text-[10px] font-mono font-medium text-slate-700 bg-slate-100 px-1.5 rounded border border-slate-200">12</span>
+                        </label>
+                        <input type="range" id="input-fps" min="1" max="60" value="12" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 pt-1">
+                        <div class="space-y-1">
+                            <label for="input-start-frame" class="text-xs font-medium text-slate-500">ループ開始</label>
+                            <input type="number" id="input-start-frame" min="1" value="1" class="block w-full rounded-lg border-slate-200 bg-white text-slate-800 shadow-sm focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm tabular-nums border p-2 text-center">
+                        </div>
+                        <div class="space-y-1">
+                            <label for="input-end-frame" class="text-xs font-medium text-slate-500">ループ終了</label>
+                            <input type="number" id="input-end-frame" min="1" value="1" class="block w-full rounded-lg border-slate-200 bg-white text-slate-800 shadow-sm focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm tabular-nums border p-2 text-center">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex-1"></div>
+
+                <!-- Extract Action -->
+                <button id="btn-extract" disabled class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold text-white bg-primary hover:bg-primaryHover shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-transform active:scale-[0.98]">
+                    <i class="ph-bold ph-export text-lg"></i> フレーム書き出し
+                </button>
+            </div>
+
+            <!-- Resize Handle -->
+            <div class="resize-handle absolute bottom-0 right-0 size-5 cursor-se-resize flex items-end justify-end p-1 text-slate-400 hover:text-slate-600 transition-colors z-20">
+                <i class="ph-bold ph-caret-down transform -rotate-45 text-[10px]"></i>
+            </div>
+        </div>
+
+        <!-- 2. Source Window -->
+        <div id="win-source" class="draggable-window absolute flex flex-col bg-white/95 backdrop-blur-xl border border-slate-200 rounded-xl shadow-xl overflow-hidden transition-[border-color,box-shadow] duration-200 opacity-0 scale-95" tabindex="-1">
+            <header class="drag-handle h-10 bg-slate-50 flex items-center justify-between px-4 cursor-move select-none border-b border-slate-200">
+                <span class="text-xs font-bold text-slate-600 uppercase tracking-widest flex items-center gap-2 pointer-events-none">
+                    <i class="ph-fill ph-image text-emerald-500"></i> Source Sheet
+                </span>
+                <div class="flex items-center gap-0.5 bg-white p-0.5 rounded shadow-sm border border-slate-200" id="bg-toggles" role="group" aria-label="Background Switcher">
+                    <!-- Injected via JS -->
+                </div>
+            </header>
+            
+            <div class="flex-1 relative overflow-hidden bg-checker-light" id="source-bg-container">
+                <div class="absolute inset-0 overflow-auto custom-scrollbar" id="source-scroll-container">
+                    <div class="min-w-full min-h-full p-8 flex items-center justify-center">
+                        <div id="empty-state" class="text-center flex flex-col items-center gap-2 select-none pointer-events-none">
+                            <i class="ph-duotone ph-image-square text-4xl text-slate-300"></i>
+                            <span class="text-xs font-medium text-slate-400">No Image Loaded</span>
+                        </div>
+                        <canvas id="main-canvas" class="hidden shadow-lg ring-1 ring-slate-900/5 bg-white/50"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="resize-handle absolute bottom-0 right-0 size-5 cursor-se-resize flex items-end justify-end p-1 text-slate-400 hover:text-slate-600 transition-colors z-20">
+                <i class="ph-bold ph-caret-down transform -rotate-45 text-[10px]"></i>
+            </div>
+        </div>
+
+        <!-- 3. Preview Window -->
+        <div id="win-preview" class="draggable-window absolute flex flex-col bg-white/95 backdrop-blur-xl border border-slate-200 rounded-xl shadow-xl overflow-hidden transition-[border-color,box-shadow] duration-200 opacity-0 scale-95" tabindex="-1">
+            <header class="drag-handle h-10 bg-slate-50 flex items-center justify-between px-4 cursor-move select-none border-b border-slate-200">
+                <span class="text-xs font-bold text-slate-600 uppercase tracking-widest flex items-center gap-2 pointer-events-none">
+                    <i class="ph-fill ph-monitor-play text-rose-500"></i> Preview
+                </span>
+                <span id="frame-counter" class="text-[10px] font-mono font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-sm pointer-events-none">
+                    F: 0/0
+                </span>
+            </header>
+            
+            <div class="flex-1 relative overflow-hidden p-4 flex items-center justify-center bg-slate-50 pointer-events-none">
+                <canvas id="preview-canvas" class="max-w-full max-h-full object-contain filter drop-shadow-md"></canvas>
+            </div>
+
+            <div class="resize-handle absolute bottom-0 right-0 size-5 cursor-se-resize flex items-end justify-end p-1 text-slate-400 hover:text-slate-600 transition-colors z-20">
+                <i class="ph-bold ph-caret-down transform -rotate-45 text-[10px]"></i>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Extraction Modal Container -->
+    <div id="extraction-modal" class="fixed inset-0 z-[100] hidden" aria-modal="true" role="dialog">
+        <!-- Overlay -->
+        <div class="absolute inset-0 bg-slate-900/30 backdrop-blur-sm transition-opacity duration-300 opacity-0" id="extraction-modal-overlay"></div>
+        
+        <!-- Draggable Modal Window -->
+        <div class="absolute bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col transition-[transform,opacity] duration-300 ease-out opacity-0 scale-95" id="extraction-modal-content">
+            
+            <!-- Modal Header (Drag Handle) -->
+            <header class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl cursor-move select-none" id="modal-drag-handle">
+                <div class="pointer-events-none">
+                    <h2 class="text-lg font-bold text-slate-800">抽出されたフレーム</h2>
+                    <p class="text-xs text-slate-500 mt-0.5" id="modal-subtitle">0 frames extracted</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="btn-download-all" class="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primaryHover transition-colors flex items-center gap-2 focus:ring-2 focus:ring-primary focus:ring-offset-2">
+                        <i class="ph-bold ph-download-simple text-lg pointer-events-none"></i> すべて保存
+                    </button>
+                    <div class="w-px h-6 bg-slate-200 mx-1"></div>
+                    <button id="btn-close-modal" class="size-8 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors focus:ring-2 focus:ring-slate-200" aria-label="Close modal">
+                        <i class="ph-bold ph-x text-lg pointer-events-none"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Export Settings Toolbar -->
+            <div class="px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-4 z-10">
+                <span class="text-xs font-semibold text-slate-500 flex items-center gap-1.5"><i class="ph ph-paint-bucket"></i> 書き出し背景</span>
+                
+                <label class="flex items-center gap-2 cursor-pointer group">
+                    <input type="checkbox" id="export-bg-transparent" checked class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+                    <span class="text-sm text-slate-700 font-medium group-hover:text-primary transition-colors">透明にする</span>
+                </label>
+                
+                <div class="h-4 w-px bg-slate-300"></div>
+                
+                <div class="flex items-center gap-2.5 transition-opacity" id="export-color-wrapper" style="opacity: 0.5; pointer-events: none;">
+                    <div class="relative w-6 h-6 rounded-md overflow-hidden border border-slate-300 shadow-sm flex-shrink-0 focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-1">
+                        <input type="color" id="export-bg-color" value="#ffffff" class="absolute -top-2 -left-2 w-10 h-10 cursor-pointer border-0 p-0">
+                    </div>
+                    <span class="text-sm text-slate-600 font-mono tracking-wide" id="export-color-label">#FFFFFF</span>
+                </div>
+            </div>
+            
+            <!-- Export Grid -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50 rounded-b-2xl">
+                <div id="frames-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-[110] flex flex-col gap-2 pointer-events-none"></div>
+
+    <script type="module">
+        const cn = (...classes) => classes.filter(Boolean).join(' ');
+
+        // --- Configuration & State ---
+        const SNAP_THRESHOLD = 12; 
+        const SCREEN_MARGIN = 20;  
+
+        const state = {
+            imageObj: null,
+            cols: 1,
+            rows: 1,
+            totalFrames: 1,
+            fps: 12,
+            startFrame: 0, 
+            endFrame: 0,   
+            currentFrame: 0,
+            isPlaying: true,
+            animFrameId: null,
+            lastTime: 0,
+            bgMode: 'light-checker'
+        };
+
+        const exportState = {
+            isTransparent: true,
+            bgColor: '#ffffff',
+            frameCaches: [] // To hold DOM references for fast re-rendering
+        };
+
+        // --- DOM Elements ---
+        const els = {
+            fileInput: document.getElementById('file-input'),
+            emptyState: document.getElementById('empty-state'),
+            mainCanvas: document.getElementById('main-canvas'),
+            previewCanvas: document.getElementById('preview-canvas'),
+            
+            inputCols: document.getElementById('input-cols'),
+            inputRows: document.getElementById('input-rows'),
+            labelTotalFrames: document.getElementById('label-total-frames'),
+            labelImageSize: document.getElementById('label-image-size'),
+            
+            inputFps: document.getElementById('input-fps'),
+            labelFps: document.getElementById('label-fps'),
+            inputStartFrame: document.getElementById('input-start-frame'),
+            inputEndFrame: document.getElementById('input-end-frame'),
+            
+            btnPlayPause: document.getElementById('btn-play-pause'),
+            iconPlayPause: document.getElementById('icon-play-pause'),
+            frameCounter: document.getElementById('frame-counter'),
+            
+            controlGroupGrid: document.getElementById('control-group-grid'),
+            controlGroupAnim: document.getElementById('control-group-anim'),
+            btnExtract: document.getElementById('btn-extract'),
+            bgToggles: document.getElementById('bg-toggles'),
+            sourceBgContainer: document.getElementById('source-bg-container'),
+            
+            modal: document.getElementById('extraction-modal'),
+            modalOverlay: document.getElementById('extraction-modal-overlay'),
+            modalContent: document.getElementById('extraction-modal-content'),
+            modalDragHandle: document.getElementById('modal-drag-handle'),
+            btnCloseModal: document.getElementById('btn-close-modal'),
+            framesGrid: document.getElementById('frames-grid'),
+            btnDownloadAll: document.getElementById('btn-download-all'),
+            modalSubtitle: document.getElementById('modal-subtitle'),
+            
+            exportChkTransparent: document.getElementById('export-bg-transparent'),
+            exportColorInput: document.getElementById('export-bg-color'),
+            exportColorLabel: document.getElementById('export-color-label'),
+            exportColorWrapper: document.getElementById('export-color-wrapper'),
+            
+            toastContainer: document.getElementById('toast-container')
+        };
+
+        const ctxMain = els.mainCanvas.getContext('2d', { willReadFrequently: true });
+        const ctxPreview = els.previewCanvas.getContext('2d');
+
+        // --- Window Management with Snapping ---
+        let zIndexCounter = 10;
+        
+        function initWindows() {
+            const ww = window.innerWidth;
+            const wh = window.innerHeight;
+
+            const winControls = document.getElementById('win-controls');
+            const winSource = document.getElementById('win-source');
+            const winPreview = document.getElementById('win-preview');
+
+            // Set initial dimensions & positions
+            winControls.style.width = '300px';
+            winControls.style.height = Math.min(wh - SCREEN_MARGIN*2, 650) + 'px';
+            winControls.style.left = `${SCREEN_MARGIN}px`;
+            winControls.style.top = `${SCREEN_MARGIN}px`;
+
+            const srcW = Math.max(350, ww - 300 - SCREEN_MARGIN*3);
+            const srcH = Math.max(250, (wh - SCREEN_MARGIN*3) * 0.55);
+            winSource.style.width = `${srcW}px`;
+            winSource.style.height = `${srcH}px`;
+            winSource.style.left = `${SCREEN_MARGIN*2 + 300}px`;
+            winSource.style.top = `${SCREEN_MARGIN}px`;
+
+            const prevW = Math.max(250, 350);
+            const prevH = Math.max(200, (wh - SCREEN_MARGIN*3) * 0.45);
+            winPreview.style.width = `${prevW}px`;
+            winPreview.style.height = `${prevH}px`;
+            winPreview.style.left = `${SCREEN_MARGIN*2 + 300}px`;
+            winPreview.style.top = `${SCREEN_MARGIN*2 + srcH}px`;
+
+            // Setup interactions
+            document.querySelectorAll('.draggable-window').forEach((win, index) => {
+                setupWindowInteractions(win);
+                setTimeout(() => {
+                    win.classList.remove('opacity-0', 'scale-95');
+                    win.classList.add('animate-[win-enter_0.4s_cubic-bezier(0.16,1,0.3,1)_forwards]');
+                }, index * 80);
+            });
+
+            setTimeout(() => focusWindow(winControls), 300);
+        }
+
+        function focusWindow(win) {
+            document.querySelectorAll('.draggable-window').forEach(w => {
+                w.classList.remove('border-primary', 'shadow-[0_0_20px_rgba(79,70,229,0.15)]');
+                w.classList.add('border-slate-200', 'shadow-xl');
+            });
+            win.classList.remove('border-slate-200', 'shadow-xl');
+            win.classList.add('border-primary', 'shadow-[0_0_20px_rgba(79,70,229,0.15)]');
+            win.style.zIndex = ++zIndexCounter;
+        }
+
+        function getOtherRects(currentWin) {
+            const rects = [];
+            document.querySelectorAll('.draggable-window').forEach(w => {
+                if (w !== currentWin) rects.push(w.getBoundingClientRect());
+            });
+            return rects;
+        }
+
+        function setupWindowInteractions(win) {
+            const handle = win.querySelector('.drag-handle');
+            const resizer = win.querySelector('.resize-handle');
+            
+            const constraints = {
+                'win-controls': { minW: 280, minH: 400 },
+                'win-source': { minW: 300, minH: 250 },
+                'win-preview': { minW: 250, minH: 200 }
+            }[win.id];
+
+            win.addEventListener('pointerdown', () => focusWindow(win));
+
+            // Dragging
+            if (handle) {
+                handle.addEventListener('pointerdown', (e) => {
+                    if(e.button !== 0) return;
+                    e.preventDefault();
+                    
+                    document.body.classList.add('is-dragging');
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const rect = win.getBoundingClientRect();
+                    const startLeft = rect.left;
+                    const startTop = rect.top;
+                    
+                    const otherRects = getOtherRects(win);
+
+                    const onMove = (ev) => {
+                        let newL = startLeft + (ev.clientX - startX);
+                        let newT = startTop + (ev.clientY - startY);
+                        const winW = rect.width;
+                        const winH = rect.height;
+                        const ww = window.innerWidth;
+                        const wh = window.innerHeight;
+
+                        if (!ev.shiftKey) {
+                            if (Math.abs(newL - SCREEN_MARGIN) < SNAP_THRESHOLD) newL = SCREEN_MARGIN;
+                            if (Math.abs((newL + winW) - (ww - SCREEN_MARGIN)) < SNAP_THRESHOLD) newL = ww - SCREEN_MARGIN - winW;
+                            if (Math.abs(newT - SCREEN_MARGIN) < SNAP_THRESHOLD) newT = SCREEN_MARGIN;
+                            if (Math.abs((newT + winH) - (wh - SCREEN_MARGIN)) < SNAP_THRESHOLD) newT = wh - SCREEN_MARGIN - winH;
+
+                            for (const oRect of otherRects) {
+                                if (Math.abs(newL - oRect.right) < SNAP_THRESHOLD) newL = oRect.right;
+                                if (Math.abs((newL + winW) - oRect.left) < SNAP_THRESHOLD) newL = oRect.left - winW;
+                                if (Math.abs(newL - oRect.left) < SNAP_THRESHOLD) newL = oRect.left;
+                                if (Math.abs((newL + winW) - oRect.right) < SNAP_THRESHOLD) newL = oRect.right - winW;
+
+                                if (Math.abs(newT - oRect.bottom) < SNAP_THRESHOLD) newT = oRect.bottom;
+                                if (Math.abs((newT + winH) - oRect.top) < SNAP_THRESHOLD) newT = oRect.top - winH;
+                                if (Math.abs(newT - oRect.top) < SNAP_THRESHOLD) newT = oRect.top;
+                                if (Math.abs((newT + winH) - oRect.bottom) < SNAP_THRESHOLD) newT = oRect.bottom - winH;
+                            }
+                        }
+
+                        newL = Math.max(-winW + 50, Math.min(newL, ww - 50));
+                        newT = Math.max(0, Math.min(newT, wh - 50));
+
+                        win.style.left = `${newL}px`;
+                        win.style.top = `${newT}px`;
+                    };
+
+                    const onUp = () => {
+                        document.body.classList.remove('is-dragging');
+                        document.removeEventListener('pointermove', onMove);
+                        document.removeEventListener('pointerup', onUp);
+                    };
+
+                    document.addEventListener('pointermove', onMove);
+                    document.addEventListener('pointerup', onUp);
+                });
+            }
+
+            // Resizing
+            if (resizer) {
+                resizer.addEventListener('pointerdown', (e) => {
+                    if(e.button !== 0) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    focusWindow(win);
+                    document.body.classList.add('is-dragging');
+
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const rect = win.getBoundingClientRect();
+                    const startW = rect.width;
+                    const startH = rect.height;
+                    
+                    const otherRects = getOtherRects(win);
+                    const ww = window.innerWidth;
+                    const wh = window.innerHeight;
+
+                    const onMove = (ev) => {
+                        let newW = Math.max(constraints.minW, startW + (ev.clientX - startX));
+                        let newH = Math.max(constraints.minH, startH + (ev.clientY - startY));
+
+                        if (!ev.shiftKey) {
+                            const rightPos = rect.left + newW;
+                            if (Math.abs(rightPos - (ww - SCREEN_MARGIN)) < SNAP_THRESHOLD) newW = ww - SCREEN_MARGIN - rect.left;
+                            for (const oRect of otherRects) {
+                                if (Math.abs(rightPos - oRect.left) < SNAP_THRESHOLD) newW = oRect.left - rect.left;
+                                if (Math.abs(rightPos - oRect.right) < SNAP_THRESHOLD) newW = oRect.right - rect.left;
+                            }
+
+                            const bottomPos = rect.top + newH;
+                            if (Math.abs(bottomPos - (wh - SCREEN_MARGIN)) < SNAP_THRESHOLD) newH = wh - SCREEN_MARGIN - rect.top;
+                            for (const oRect of otherRects) {
+                                if (Math.abs(bottomPos - oRect.top) < SNAP_THRESHOLD) newH = oRect.top - rect.top;
+                                if (Math.abs(bottomPos - oRect.bottom) < SNAP_THRESHOLD) newH = oRect.bottom - rect.top;
+                            }
+                        }
+
+                        win.style.width = `${newW}px`;
+                        win.style.height = `${newH}px`;
+                    };
+
+                    const onUp = () => {
+                        document.body.classList.remove('is-dragging');
+                        document.removeEventListener('pointermove', onMove);
+                        document.removeEventListener('pointerup', onUp);
+                    };
+
+                    document.addEventListener('pointermove', onMove);
+                    document.addEventListener('pointerup', onUp);
+                });
+            }
+        }
+
+        // --- App Logic ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initWindows();
+            setupBgToggles();
+            setupEventListeners();
+            setupModalDrag();
+            
+            state.lastTime = performance.now();
+            requestAnimationFrame(animate);
+        });
+
+        function setupEventListeners() {
+            els.fileInput.addEventListener('change', handleFileUpload);
+            
+            els.inputCols.addEventListener('input', () => updateGridConfig('cols'));
+            els.inputRows.addEventListener('input', () => updateGridConfig('rows'));
+            
+            els.inputFps.addEventListener('input', (e) => {
+                state.fps = parseInt(e.target.value);
+                els.labelFps.textContent = state.fps;
+            });
+            
+            els.inputStartFrame.addEventListener('change', handleStartFrameChange);
+            els.inputEndFrame.addEventListener('change', handleEndFrameChange);
+
+            els.btnPlayPause.addEventListener('click', togglePlay);
+            els.btnExtract.addEventListener('click', openExtractionModal);
+            
+            els.btnCloseModal.addEventListener('click', closeExtractionModal);
+            els.modalOverlay.addEventListener('click', closeExtractionModal);
+            els.btnDownloadAll.addEventListener('click', downloadAllFrames);
+            
+            // Export Settings
+            els.exportChkTransparent.addEventListener('change', (e) => {
+                exportState.isTransparent = e.target.checked;
+                if (exportState.isTransparent) {
+                    els.exportColorWrapper.style.opacity = '0.5';
+                    els.exportColorWrapper.style.pointerEvents = 'none';
+                } else {
+                    els.exportColorWrapper.style.opacity = '1';
+                    els.exportColorWrapper.style.pointerEvents = 'auto';
+                }
+                updateExportFrames();
+            });
+
+            els.exportColorInput.addEventListener('input', (e) => {
+                exportState.bgColor = e.target.value;
+                els.exportColorLabel.textContent = e.target.value.toUpperCase();
+                updateExportFrames();
+            });
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    state.imageObj = img;
+                    els.labelImageSize.textContent = `${img.width} x ${img.height} px`;
+                    
+                    els.emptyState.classList.add('hidden');
+                    els.mainCanvas.classList.remove('hidden');
+                    els.controlGroupGrid.classList.remove('opacity-50', 'pointer-events-none');
+                    els.controlGroupAnim.classList.remove('opacity-50', 'pointer-events-none');
+                    els.btnExtract.disabled = false;
+
+                    state.cols = 1;
+                    state.rows = 1;
+                    els.inputCols.value = 1;
+                    els.inputRows.value = 1;
+                    
+                    updateGridConfig();
+                    
+                    if(!state.isPlaying) togglePlay();
+                    
+                    document.getElementById('source-scroll-container').scrollTo(0,0);
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function updateGridConfig() {
+            if (!state.imageObj) return;
+
+            let c = parseInt(els.inputCols.value) || 1;
+            let r = parseInt(els.inputRows.value) || 1;
+            
+            if (c > 100) c = 100;
+            if (r > 100) r = 100;
+            if (c < 1) c = 1;
+            if (r < 1) r = 1;
+
+            els.inputCols.value = c;
+            els.inputRows.value = r;
+
+            state.cols = c;
+            state.rows = r;
+            state.totalFrames = c * r;
+            els.labelTotalFrames.textContent = state.totalFrames;
+            
+            state.startFrame = 0;
+            state.endFrame = state.totalFrames - 1;
+            state.currentFrame = 0;
+            
+            els.inputStartFrame.min = 1;
+            els.inputStartFrame.max = state.totalFrames;
+            els.inputStartFrame.value = 1;
+
+            els.inputEndFrame.min = 1;
+            els.inputEndFrame.max = state.totalFrames;
+            els.inputEndFrame.value = state.totalFrames;
+
+            const frameW = state.imageObj.width / state.cols;
+            const frameH = state.imageObj.height / state.rows;
+            els.previewCanvas.width = frameW;
+            els.previewCanvas.height = frameH;
+
+            drawMainCanvas();
+            drawPreview();
+        }
+
+        function handleStartFrameChange(e) {
+            let val = parseInt(e.target.value) - 1;
+            if (isNaN(val) || val < 0) val = 0;
+            if (val >= state.totalFrames) val = state.totalFrames - 1;
+            
+            state.startFrame = val;
+            if (state.startFrame > state.endFrame) {
+                state.endFrame = state.startFrame;
+                els.inputEndFrame.value = state.endFrame + 1;
+            }
+            els.inputStartFrame.value = state.startFrame + 1;
+            
+            if (state.currentFrame < state.startFrame) state.currentFrame = state.startFrame;
+            drawPreview();
+            drawMainCanvas();
+        }
+
+        function handleEndFrameChange(e) {
+            let val = parseInt(e.target.value) - 1;
+            if (isNaN(val) || val < 0) val = 0;
+            if (val >= state.totalFrames) val = state.totalFrames - 1;
+            
+            state.endFrame = val;
+            if (state.endFrame < state.startFrame) {
+                state.startFrame = state.endFrame;
+                els.inputStartFrame.value = state.startFrame + 1;
+            }
+            els.inputEndFrame.value = state.endFrame + 1;
+            
+            if (state.currentFrame > state.endFrame) state.currentFrame = state.endFrame;
+            drawPreview();
+            drawMainCanvas();
+        }
+
+        function drawMainCanvas() {
+            if (!state.imageObj) return;
+
+            const img = state.imageObj;
+            const canvas = els.mainCanvas;
+            
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            ctxMain.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctxMain.globalAlpha = 0.5;
+            ctxMain.drawImage(img, 0, 0);
+            ctxMain.globalAlpha = 1.0;
+
+            const frameW = img.width / state.cols;
+            const frameH = img.height / state.rows;
+
+            const col = state.currentFrame % state.cols;
+            const row = Math.floor(state.currentFrame / state.cols);
+            
+            ctxMain.fillStyle = 'rgba(79, 70, 229, 0.3)'; 
+            ctxMain.fillRect(col * frameW, row * frameH, frameW, frameH);
+
+            ctxMain.drawImage(img, 
+                col * frameW, row * frameH, frameW, frameH, 
+                col * frameW, row * frameH, frameW, frameH
+            );
+
+            ctxMain.beginPath();
+            ctxMain.strokeStyle = 'rgba(239, 68, 68, 0.6)'; 
+            ctxMain.lineWidth = 1; 
+            ctxMain.translate(0.5, 0.5); 
+
+            for (let i = 1; i < state.cols; i++) {
+                let x = Math.floor(i * frameW);
+                ctxMain.moveTo(x, 0);
+                ctxMain.lineTo(x, img.height);
+            }
+            for (let i = 1; i < state.rows; i++) {
+                let y = Math.floor(i * frameH);
+                ctxMain.moveTo(0, y);
+                ctxMain.lineTo(img.width, y);
+            }
+            ctxMain.stroke();
+            ctxMain.translate(-0.5, -0.5);
+        }
+
+        function togglePlay() {
+            state.isPlaying = !state.isPlaying;
+            if (state.isPlaying) {
+                els.iconPlayPause.classList.replace('ph-play', 'ph-pause');
+                els.btnPlayPause.classList.add('bg-primary', 'text-white');
+                els.btnPlayPause.classList.remove('bg-slate-200', 'text-slate-600');
+                state.lastTime = performance.now();
+                requestAnimationFrame(animate);
+            } else {
+                els.iconPlayPause.classList.replace('ph-pause', 'ph-play');
+                els.btnPlayPause.classList.remove('bg-primary', 'text-white');
+                els.btnPlayPause.classList.add('bg-slate-200', 'text-slate-600');
+                cancelAnimationFrame(state.animFrameId);
+            }
+        }
+
+        function animate(time) {
+            if (!state.isPlaying) return;
+            state.animFrameId = requestAnimationFrame(animate);
+
+            const frameInterval = 1000 / state.fps;
+            const deltaTime = time - state.lastTime;
+
+            if (deltaTime >= frameInterval) {
+                state.lastTime = time - (deltaTime % frameInterval);
+                
+                state.currentFrame++;
+                if (state.currentFrame > state.endFrame || state.currentFrame >= state.totalFrames) {
+                    state.currentFrame = state.startFrame;
+                }
+                
+                drawPreview();
+                drawMainCanvas(); 
+            }
+        }
+
+        function drawPreview() {
+            if (!state.imageObj) return;
+
+            const img = state.imageObj;
+            const frameW = img.width / state.cols;
+            const frameH = img.height / state.rows;
+            
+            const col = state.currentFrame % state.cols;
+            const row = Math.floor(state.currentFrame / state.cols);
+            
+            ctxPreview.clearRect(0, 0, els.previewCanvas.width, els.previewCanvas.height);
+            ctxPreview.drawImage(img, col * frameW, row * frameH, frameW, frameH, 0, 0, frameW, frameH);
+            
+            const cur = (state.currentFrame + 1).toString().padStart(state.totalFrames.toString().length, '0');
+            els.frameCounter.textContent = `F: ${cur}/${state.totalFrames}`;
+        }
+
+        // --- Background Toggle (Source) ---
+        function setupBgToggles() {
+            const bgs = [
+                { id: 'light-checker', icon: 'ph-squares-four' },
+                { id: 'dark-checker', icon: 'ph-squares-four', isDark: true },
+                { id: 'solid-light', icon: 'ph-sun' }
+            ];
+
+            bgs.forEach(bg => {
+                const btn = document.createElement('button');
+                btn.className = cn(
+                    'size-6 flex items-center justify-center rounded-sm transition-colors focus:outline-none',
+                    state.bgMode === bg.id ? 'bg-white shadow border border-slate-200 text-primary' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                );
+                if(bg.isDark) {
+                    btn.innerHTML = `<i class="ph-fill ${bg.icon} text-xs text-slate-700"></i>`;
+                } else {
+                    btn.innerHTML = `<i class="ph ${bg.icon} text-xs"></i>`;
+                }
+                btn.setAttribute('aria-label', `Background: ${bg.id}`);
+                
+                btn.addEventListener('click', () => {
+                    state.bgMode = bg.id;
+                    updateBgUI();
+                });
+                
+                els.bgToggles.appendChild(btn);
+            });
+            updateBgUI();
+        }
+
+        function updateBgUI() {
+            Array.from(els.bgToggles.children).forEach((btn, i) => {
+                const id = ['light-checker', 'dark-checker', 'solid-light'][i];
+                const isActive = id === state.bgMode;
+                btn.className = cn(
+                    'size-6 flex items-center justify-center rounded-sm transition-colors focus:outline-none',
+                    isActive ? 'bg-white shadow-sm border border-slate-200 text-primary' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                );
+            });
+
+            els.sourceBgContainer.className = 'flex-1 relative overflow-hidden transition-colors duration-300';
+            if (state.bgMode === 'light-checker') els.sourceBgContainer.classList.add('bg-checker-light');
+            else if (state.bgMode === 'dark-checker') els.sourceBgContainer.classList.add('bg-checker-dark');
+            else els.sourceBgContainer.classList.add('bg-solid-light');
+        }
+
+        // --- Draggable Modal Logic ---
+        function setupModalDrag() {
+            const win = els.modalContent;
+            const handle = els.modalDragHandle;
+            
+            handle.addEventListener('pointerdown', (e) => {
+                if(e.button !== 0 || e.target.closest('button')) return; 
+                e.preventDefault();
+                
+                document.body.classList.add('is-dragging');
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const rect = win.getBoundingClientRect();
+                
+                const startLeft = rect.left;
+                const startTop = rect.top;
+
+                const onMove = (ev) => {
+                    let newL = startLeft + (ev.clientX - startX);
+                    let newT = startTop + (ev.clientY - startY);
+                    
+                    const ww = window.innerWidth;
+                    const wh = window.innerHeight;
+                    
+                    // Simple bounds to keep header reachable
+                    newL = Math.max(-rect.width + 50, Math.min(newL, ww - 50));
+                    newT = Math.max(0, Math.min(newT, wh - 50));
+
+                    win.style.left = `${newL}px`;
+                    win.style.top = `${newT}px`;
+                };
+
+                const onUp = () => {
+                    document.body.classList.remove('is-dragging');
+                    document.removeEventListener('pointermove', onMove);
+                    document.removeEventListener('pointerup', onUp);
+                };
+
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+            });
+        }
+
+        // --- Export Modal & Generation ---
+        function openExtractionModal() {
+            if(!state.imageObj) return;
+            if(state.isPlaying) togglePlay();
+
+            els.modal.classList.remove('hidden');
+            
+            // Calculate initial center position based on constraints
+            const mw = Math.min(window.innerWidth * 0.9, 1024);
+            els.modalContent.style.width = `${mw}px`;
+            
+            // Temporary show to get height
+            els.modalContent.style.visibility = 'hidden';
+            els.modalContent.classList.remove('opacity-0', 'scale-95');
+            const mh = els.modalContent.offsetHeight || 600; 
+            
+            // Center the modal
+            els.modalContent.style.left = `${(window.innerWidth - mw) / 2}px`;
+            els.modalContent.style.top = `${Math.max(20, (window.innerHeight - mh) / 2)}px`;
+            
+            els.modalContent.classList.add('opacity-0', 'scale-95');
+            els.modalContent.style.visibility = '';
+
+            // Force reflow
+            void els.modal.offsetWidth;
+
+            // Trigger Animation
+            els.modalOverlay.classList.remove('opacity-0');
+            els.modalContent.classList.remove('opacity-0', 'scale-95');
+            
+            els.modalSubtitle.textContent = `範囲: フレーム ${state.startFrame + 1} 〜 ${state.endFrame + 1} (${state.endFrame - state.startFrame + 1} 枚)`;
+
+            initExportFrames();
+        }
+
+        function closeExtractionModal() {
+            els.modalOverlay.classList.add('opacity-0');
+            els.modalContent.classList.add('opacity-0', 'scale-95');
+            
+            setTimeout(() => {
+                els.modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function initExportFrames() {
+            els.framesGrid.innerHTML = '';
+            exportState.frameCaches = [];
+            
+            for (let i = state.startFrame; i <= state.endFrame; i++) {
+                const card = document.createElement('div');
+                card.className = 'bg-white p-2 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-2 group hover:shadow-md hover:border-slate-300 transition-all';
+                
+                const imgContainer = document.createElement('div');
+                imgContainer.className = 'aspect-square rounded-lg flex items-center justify-center p-2 relative overflow-hidden ring-1 ring-inset ring-slate-900/5 transition-colors';
+                
+                const frameImg = document.createElement('img');
+                frameImg.className = 'max-w-full max-h-full object-contain';
+                
+                const label = document.createElement('div');
+                label.className = 'text-[10px] font-mono absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm text-slate-700 px-1.5 py-0.5 rounded shadow-sm border border-slate-100 pointer-events-none';
+                label.textContent = `#${i+1}`;
+
+                imgContainer.appendChild(frameImg);
+                imgContainer.appendChild(label);
+                
+                const btn = document.createElement('a');
+                btn.download = `frame_${(i+1).toString().padStart(3, '0')}.png`;
+                btn.className = 'w-full py-1.5 text-xs font-bold text-center text-slate-600 bg-slate-50 hover:bg-primary hover:text-white border border-slate-200 rounded-lg transition-colors block';
+                btn.innerHTML = '<i class="ph-bold ph-download-simple"></i> 保存';
+                
+                card.appendChild(imgContainer);
+                card.appendChild(btn);
+                
+                els.framesGrid.appendChild(card);
+                
+                exportState.frameCaches.push({
+                    index: i,
+                    imgEl: frameImg,
+                    linkEl: btn,
+                    imgContainer: imgContainer
+                });
+            }
+
+            updateExportFrames();
+        }
+
+        function updateExportFrames() {
+            if(!state.imageObj) return;
+
+            const img = state.imageObj;
+            const frameW = img.width / state.cols;
+            const frameH = img.height / state.rows;
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = frameW;
+            tempCanvas.height = frameH;
+            const tCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+            exportState.frameCaches.forEach(cache => {
+                tCtx.clearRect(0, 0, frameW, frameH);
+                
+                // Draw Custom Background if not transparent
+                if (!exportState.isTransparent) {
+                    tCtx.fillStyle = exportState.bgColor;
+                    tCtx.fillRect(0, 0, frameW, frameH);
+                    
+                    cache.imgContainer.classList.remove('bg-checker-light');
+                    cache.imgContainer.style.backgroundColor = exportState.bgColor;
+                } else {
+                    cache.imgContainer.classList.add('bg-checker-light');
+                    cache.imgContainer.style.backgroundColor = '';
+                }
+
+                // Draw Frame
+                const col = cache.index % state.cols;
+                const row = Math.floor(cache.index / state.cols);
+                tCtx.drawImage(img, col * frameW, row * frameH, frameW, frameH, 0, 0, frameW, frameH);
+                
+                const dataURL = tempCanvas.toDataURL('image/png');
+                cache.imgEl.src = dataURL;
+                cache.linkEl.href = dataURL;
+            });
+        }
+
+        function downloadAllFrames() {
+            if(exportState.frameCaches.length > 15) {
+                if(!confirm(`${exportState.frameCaches.length}個のファイルをダウンロードします。よろしいですか？`)) return;
+            }
+            
+            showToast(`${exportState.frameCaches.length} フレームのダウンロードを開始します`);
+            
+            exportState.frameCaches.forEach((cache, index) => {
+                setTimeout(() => {
+                    cache.linkEl.click();
+                }, index * 100);
+            });
+        }
+
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl text-sm font-medium flex items-center gap-2 transform transition-all translate-y-4 opacity-0 pointer-events-auto';
+            toast.innerHTML = `<i class="ph-fill ph-check-circle text-emerald-400"></i> ${message}`;
+            
+            els.toastContainer.appendChild(toast);
+            
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-4', 'opacity-0');
+            });
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-4', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
