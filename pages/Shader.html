@@ -1,0 +1,2732 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Layered Volume Explorer</title>
+<style>
+:root{color-scheme:dark;--bg:#090b0f;--panel:#11151c;--line:#2a3240;--text:#edf2f7;--muted:#98a5b5;--accent:#7ee787}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans JP",sans-serif}
+button,input,select,textarea{font:inherit}
+body{display:grid;grid-template-rows:auto 1fr;overflow:hidden}
+.top{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);background:#0b0e13}
+.title{margin-right:auto}
+.title b{display:block;font-size:15px}
+.title small{color:var(--muted)}
+button{border:1px solid var(--line);border-radius:7px;background:#171c25;color:var(--text);padding:7px 10px;cursor:pointer}
+button:hover{border-color:#526078}
+button:disabled{opacity:.4;cursor:default}
+.primary{background:#17371f;border-color:#397447}
+.danger{background:#351919;border-color:#6f3a3a}
+main{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px}
+.stage{position:relative;min-width:0;min-height:0;background:#040507}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.tiles{position:absolute;inset:12px;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);gap:10px;pointer-events:none}
+.tile{position:relative;padding:0;border:1px solid #ffffff25;border-radius:9px;background:transparent;pointer-events:auto}
+.tile.sel{box-shadow:inset 0 0 0 3px var(--accent)}
+.label{position:absolute;left:7px;right:7px;bottom:7px;display:flex;justify-content:space-between;gap:6px;padding:5px 7px;border-radius:5px;background:#05070ad9;font-size:10px;color:#dbe3ed;pointer-events:none}
+.label span:last-child{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.focusbar{position:absolute;top:12px;left:12px;right:12px;z-index:3;display:none;align-items:center;gap:10px;pointer-events:none}
+.focusbar>*{pointer-events:auto}
+.focustitle{min-width:0;padding:7px 10px;border:1px solid #ffffff25;border-radius:7px;background:#05070acc;color:#dbe3ed;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage.focused .tiles{display:none}
+.stage.focused .focusbar{display:flex}
+aside{min-height:0;overflow:auto;padding:13px;border-left:1px solid var(--line);background:var(--panel)}
+section{padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+section:last-child{border:0}
+h2{margin:0 0 9px;font-size:13px}
+p{margin:0 0 9px;color:var(--muted);font-size:11px;line-height:1.55}
+.ctrl{display:grid;grid-template-columns:112px 1fr 52px;gap:7px;align-items:center;margin:7px 0;font-size:11px}
+.ctrl output{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.ctrl select{grid-column:2/4}
+input[type=range],select{width:100%}
+select{border:1px solid var(--line);border-radius:5px;background:#0b0e13;color:var(--text);padding:5px}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px}
+.checks label{display:flex;gap:5px;align-items:center}
+.row{display:flex;gap:7px;flex-wrap:wrap}
+.row button{flex:1}
+.status{margin-top:8px;min-height:34px;padding:7px;border:1px solid var(--line);border-radius:6px;background:#0b0e13;color:var(--muted);font-size:11px;line-height:1.45}
+.status.err{color:#ffc6c1;border-color:#733b3b}
+.empty{color:var(--muted);font-size:11px;line-height:1.5}
+.note{padding:8px;border:1px solid var(--line);border-radius:6px;background:#0b0e13;color:var(--muted);font-size:10px;line-height:1.55}
+dialog{width:min(720px,calc(100vw - 30px));padding:0;border:1px solid var(--line);border-radius:10px;background:#0b0e13;color:var(--text)}
+dialog::backdrop{background:#000b}
+.dlghead,.dlgfoot{display:flex;align-items:center;gap:7px;padding:10px 12px}
+.dlghead{border-bottom:1px solid var(--line)}
+.dlgfoot{justify-content:flex-end;border-top:1px solid var(--line)}
+textarea{display:block;width:100%;height:min(60vh,500px);border:0;outline:0;resize:vertical;padding:12px;background:#06080b;color:#dce5ef;font:11px/1.5 ui-monospace,monospace}
+@media(max-width:1000px){
+  body{overflow:auto}
+  main{grid-template-columns:1fr;grid-template-rows:70vh auto}
+  aside{border-left:0;border-top:1px solid var(--line)}
+  .tiles{grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(4,1fr)}
+  .top{flex-wrap:wrap}
+  .title{width:100%}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="title">
+    <b>Layered Volume Explorer</b>
+    <small>外形場 + 内部模様場 + 等値層走査</small>
+  </div>
+  <button id="next" class="primary">次世代</button>
+  <button id="local">選択周辺</button>
+  <button id="back">前世代</button>
+  <button id="reset" class="danger">ランダム化</button>
+</header>
+
+<main>
+  <div class="stage" id="stage">
+    <canvas id="gl"></canvas>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="focusbar">
+      <button id="exitFocus">一覧へ戻る</button>
+      <div class="focustitle" id="focusTitle"></div>
+    </div>
+  </div>
+
+  <aside>
+    <section>
+      <h2>探索設定</h2>
+
+      <div class="ctrl">
+        <label>突然変異率</label>
+        <input id="rate" type="range" min=".02" max=".7" step=".01" value=".22">
+        <output></output>
+      </div>
+
+      <div class="ctrl">
+        <label>変異幅</label>
+        <input id="strength" type="range" min=".01" max=".4" step=".01" value=".11">
+        <output></output>
+      </div>
+
+      <div class="ctrl">
+        <label>多様性下限</label>
+        <input id="diversity" type="range" min="0" max=".35" step=".01" value=".10">
+        <output></output>
+      </div>
+
+      <div class="ctrl">
+        <label>時間速度</label>
+        <input id="speed" type="range" min="0" max="1.5" step=".05" value=".45">
+        <output></output>
+      </div>
+
+      <div class="checks">
+        <label><input id="animate" type="checkbox" checked>アニメーション</label>
+        <label><input id="lockB" type="checkbox">外形固定</label>
+        <label><input id="lockP" type="checkbox">内部場固定</label>
+        <label><input id="lockW" type="checkbox">変形固定</label>
+        <label><input id="lockA" type="checkbox">配色固定</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>選択</h2>
+      <p>外形は変形せず、座標変形は内部模様だけへ適用する。ダブルクリックで単一表示する。</p>
+
+      <div class="row">
+        <button id="focusSelected">拡大表示</button>
+        <button id="remeasure">明度を再計測</button>
+        <button id="clear">選択解除</button>
+        <button id="all">全選択</button>
+      </div>
+
+      <div id="status" class="status"></div>
+    </section>
+
+    <section>
+      <h2>個体編集</h2>
+      <div class="note">外側層厚さは作者の座標単位で定義する。半径4に対して0.55〜1.30の範囲だけを探索する。</div>
+      <div id="editor" class="empty" style="margin-top:10px">個体を1つ選択してください。</div>
+    </section>
+
+    <section>
+      <h2>保存と読込</h2>
+      <div class="row">
+        <button id="export">JSONを開く</button>
+        <button id="import">JSONを読み込む</button>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<dialog id="dialog">
+  <div class="dlghead">
+    <b id="dlgTitle">JSON</b>
+  </div>
+
+  <textarea id="json" spellcheck="false"></textarea>
+
+  <div class="dlgfoot">
+    <button id="copy">コピー</button>
+    <button id="apply" class="primary">適用</button>
+    <button id="close">閉じる</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  "use strict";
+
+  const N = 12;
+  const GRID_SCALE = 0.68;
+  const FOCUS_SCALE_CAP = 1.5;
+  const FPS = 24;
+
+  const B = [
+    "Sphere",
+    "Rounded Box",
+    "Torus",
+    "Superellipsoid"
+  ];
+
+  const P = [
+    "Fragment Cell",
+    "Glass Interference",
+    "Liquid Squircle",
+    "Abracadabra",
+    "Snake Cell"
+  ];
+
+  const W = [
+    "None",
+    "Twist",
+    "Wave",
+    "Fold"
+  ];
+
+  const S = [
+    ["cameraRatio", "カメラ距離", 1.9, 2.55, 0.01, "frame"],
+    ["rotationSpeed", "回転速度", -0.65, 0.65, 0.01, "frame"],
+    ["shapeParam", "外形変形", 0, 1, 0.01, "boundary"],
+    ["patternFrequency", "模様倍率", 0.65, 1.6, 0.01, "pattern"],
+    ["patternAmplitude", "模様振幅", 0.82, 1.16, 0.01, "pattern"],
+    ["patternBias", "模様バイアス", -0.1, 0.1, 0.005, "pattern"],
+    ["phase", "模様位相", -3.14, 3.14, 0.01, "pattern"],
+    ["warpAmount", "内部変形量", 0, 0.55, 0.01, "warp"],
+    ["warpFrequency", "変形周波数", 0.65, 1.8, 0.01, "warp"],
+    ["layerSpan", "外側層厚さ", 0.55, 1.3, 0.01, "march"],
+    ["stepFloor", "最小ステップ", 0.008, 0.016, 0.0001, "march"],
+    ["stepGain", "追従ゲイン", 0.055, 0.105, 0.001, "march"],
+    ["paletteFrequency", "色周波数", 0.25, 0.68, 0.01, "appearance"],
+    ["palettePhase", "色位相", -1, 1, 0.01, "appearance"],
+    ["intensity", "発光量", 0.88, 1.55, 0.01, "appearance"],
+    ["exposure", "露出", 0.35, 2.15, 0.01, "appearance"]
+  ].map(([key, label, min, max, step, group]) => ({
+    key,
+    label,
+    min,
+    max,
+    step,
+    group
+  }));
+
+  const SM = Object.fromEntries(
+    S.map((schema) => [schema.key, schema])
+  );
+
+  const presets = [
+    {
+      boundary: 0,
+      pattern: 0,
+      warp: 0,
+      cameraRatio: 2.0,
+      rotationSpeed: 0.22,
+      shapeParam: 0.45,
+      patternFrequency: 1,
+      patternAmplitude: 1,
+      patternBias: 0,
+      phase: 0,
+      warpAmount: 0,
+      warpFrequency: 1,
+      layerSpan: 1,
+      stepFloor: 0.012,
+      stepGain: 0.07,
+      paletteFrequency: 0.3,
+      palettePhase: 0,
+      intensity: 1.3,
+      exposure: 1
+    },
+    {
+      boundary: 0,
+      pattern: 1,
+      warp: 2,
+      cameraRatio: 2.0,
+      rotationSpeed: 0.16,
+      shapeParam: 0.5,
+      patternFrequency: 1,
+      patternAmplitude: 1,
+      patternBias: 0,
+      phase: 0,
+      warpAmount: 0.12,
+      warpFrequency: 1,
+      layerSpan: 1.25,
+      stepFloor: 0.01,
+      stepGain: 0.1,
+      paletteFrequency: 0.4,
+      palettePhase: 0.2,
+      intensity: 1,
+      exposure: 1.8
+    },
+    {
+      boundary: 3,
+      pattern: 2,
+      warp: 1,
+      cameraRatio: 2.05,
+      rotationSpeed: 0.2,
+      shapeParam: 0.7,
+      patternFrequency: 1,
+      patternAmplitude: 1,
+      patternBias: 0,
+      phase: 0.4,
+      warpAmount: 0.1,
+      warpFrequency: 0.9,
+      layerSpan: 1,
+      stepFloor: 0.012,
+      stepGain: 0.07,
+      paletteFrequency: 0.3,
+      palettePhase: -0.15,
+      intensity: 1.3,
+      exposure: 0.55
+    },
+    {
+      boundary: 1,
+      pattern: 3,
+      warp: 1,
+      cameraRatio: 2.18,
+      rotationSpeed: -0.17,
+      shapeParam: 0.48,
+      patternFrequency: 0.92,
+      patternAmplitude: 1,
+      patternBias: 0,
+      phase: -0.3,
+      warpAmount: 0.18,
+      warpFrequency: 1.15,
+      layerSpan: 1,
+      stepFloor: 0.012,
+      stepGain: 0.09,
+      paletteFrequency: 0.5,
+      palettePhase: 0.25,
+      intensity: 1.3,
+      exposure: 0.85
+    },
+    {
+      boundary: 0,
+      pattern: 4,
+      warp: 3,
+      cameraRatio: 2.15,
+      rotationSpeed: 0.2,
+      shapeParam: 0.4,
+      patternFrequency: 1,
+      patternAmplitude: 1,
+      patternBias: 0,
+      phase: 0.2,
+      warpAmount: 0.12,
+      warpFrequency: 1,
+      layerSpan: 1,
+      stepFloor: 0.012,
+      stepGain: 0.07,
+      paletteFrequency: 0.5,
+      palettePhase: -0.1,
+      intensity: 1.3,
+      exposure: 1
+    }
+  ];
+
+  const $ = (id) => document.getElementById(id);
+
+  const canvas = $("gl");
+  const stage = $("stage");
+  const tilesEl = $("tiles");
+  const editor = $("editor");
+  const status = $("status");
+
+  const C = {
+    rate: $("rate"),
+    strength: $("strength"),
+    diversity: $("diversity"),
+    speed: $("speed"),
+    animate: $("animate"),
+    lockB: $("lockB"),
+    lockP: $("lockP"),
+    lockW: $("lockW"),
+    lockA: $("lockA")
+  };
+
+  let gl;
+  let program;
+  let U = {};
+  let pop = [];
+  let sel = new Set();
+  let generation = 0;
+  let history = [];
+  let tiles = [];
+  let focusIndex = null;
+  let dirty = true;
+  let last = 0;
+  let t = 0;
+  let prev = performance.now();
+  let measurePending = new Set();
+  let measurements = Array(N).fill(null);
+
+  const clamp = (value, min, max) =>
+    Math.min(max, Math.max(min, value));
+
+  const clone = (value) =>
+    JSON.parse(JSON.stringify(value));
+
+  const lerp = (a, b, amount) =>
+    a + (b - a) * amount;
+
+  function gauss() {
+    let u = 0;
+    let v = 0;
+
+    while (!u) {
+      u = Math.random();
+    }
+
+    while (!v) {
+      v = Math.random();
+    }
+
+    return (
+      Math.sqrt(-2 * Math.log(u)) *
+      Math.cos(2 * Math.PI * v)
+    );
+  }
+
+  function norm(key, value) {
+    const schema = SM[key];
+
+    return (
+      (value - schema.min) /
+      (schema.max - schema.min)
+    );
+  }
+
+  function denorm(key, value) {
+    const schema = SM[key];
+
+    return lerp(
+      schema.min,
+      schema.max,
+      clamp(value, 0, 1)
+    );
+  }
+
+  function valid(source) {
+    const genome = clone(presets[0]);
+
+    genome.boundary = clamp(
+      Math.round(
+        Number(source.boundary ?? genome.boundary)
+      ),
+      0,
+      B.length - 1
+    );
+
+    genome.pattern = clamp(
+      Math.round(
+        Number(source.pattern ?? genome.pattern)
+      ),
+      0,
+      P.length - 1
+    );
+
+    genome.warp = clamp(
+      Math.round(
+        Number(source.warp ?? genome.warp)
+      ),
+      0,
+      W.length - 1
+    );
+
+    for (const schema of S) {
+      const value = Number(source[schema.key]);
+
+      if (Number.isFinite(value)) {
+        genome[schema.key] = clamp(
+          value,
+          schema.min,
+          schema.max
+        );
+      }
+    }
+
+    if (genome.warp === 0) {
+      genome.warpAmount = 0;
+    }
+
+    if (genome.warp === 3) {
+      genome.warpAmount = Math.min(
+        genome.warpAmount,
+        0.38
+      );
+    }
+
+    const complexity =
+      genome.patternFrequency *
+      (
+        1 +
+        0.45 *
+        genome.warpAmount *
+        genome.warpFrequency
+      );
+
+    if (complexity > 1.9) {
+      genome.patternFrequency *=
+        1.9 / complexity;
+    }
+
+    genome.stepFloor = Math.min(
+      genome.stepFloor,
+      genome.stepGain * 0.24
+    );
+
+    const energy =
+      genome.intensity *
+      genome.intensity *
+      genome.exposure;
+
+    if (energy > 3.0) {
+      genome.exposure *=
+        3.0 / energy;
+    }
+
+    return genome;
+  }
+
+  function locked(group) {
+    if (group === "boundary") {
+      return C.lockB.checked;
+    }
+
+    if (group === "pattern") {
+      return C.lockP.checked;
+    }
+
+    if (group === "warp") {
+      return C.lockW.checked;
+    }
+
+    if (group === "appearance") {
+      return C.lockA.checked;
+    }
+
+    return false;
+  }
+
+  function mutate(
+    source,
+    rate,
+    strength,
+    discrete = true
+  ) {
+    const genome = clone(source);
+
+    if (
+      discrete &&
+      !C.lockB.checked &&
+      Math.random() < rate * 0.3
+    ) {
+      genome.boundary =
+        Math.floor(Math.random() * B.length);
+    }
+
+    if (
+      discrete &&
+      !C.lockP.checked &&
+      Math.random() < rate * 0.42
+    ) {
+      genome.pattern =
+        Math.floor(Math.random() * P.length);
+    }
+
+    if (
+      discrete &&
+      !C.lockW.checked &&
+      Math.random() < rate * 0.28
+    ) {
+      genome.warp =
+        Math.floor(Math.random() * W.length);
+    }
+
+    for (const schema of S) {
+      if (
+        locked(schema.group) ||
+        Math.random() >= rate
+      ) {
+        continue;
+      }
+
+      genome[schema.key] = denorm(
+        schema.key,
+        norm(
+          schema.key,
+          genome[schema.key]
+        ) +
+        gauss() * strength
+      );
+    }
+
+    return valid(genome);
+  }
+
+  function cross(parentA, parentB) {
+    const child = clone(parentA);
+
+    if (!C.lockB.checked) {
+      child.boundary =
+        Math.random() < 0.5
+          ? parentA.boundary
+          : parentB.boundary;
+    }
+
+    if (!C.lockP.checked) {
+      child.pattern =
+        Math.random() < 0.5
+          ? parentA.pattern
+          : parentB.pattern;
+    }
+
+    if (!C.lockW.checked) {
+      child.warp =
+        Math.random() < 0.5
+          ? parentA.warp
+          : parentB.warp;
+    }
+
+    for (const schema of S) {
+      if (locked(schema.group)) {
+        continue;
+      }
+
+      child[schema.key] =
+        Math.random() < 0.55
+          ? lerp(
+              parentA[schema.key],
+              parentB[schema.key],
+              Math.random()
+            )
+          : Math.random() < 0.5
+            ? parentA[schema.key]
+            : parentB[schema.key];
+    }
+
+    return valid(child);
+  }
+
+  function distance(a, b) {
+    let sum =
+      Number(a.boundary !== b.boundary) +
+      Number(a.pattern !== b.pattern) +
+      Number(a.warp !== b.warp);
+
+    let count = 3;
+
+    for (const schema of S) {
+      const difference =
+        norm(schema.key, a[schema.key]) -
+        norm(schema.key, b[schema.key]);
+
+      sum += difference * difference;
+      count++;
+    }
+
+    return Math.sqrt(sum / count);
+  }
+
+  function ensureDiverse(
+    genome,
+    list,
+    rate,
+    strength
+  ) {
+    const floor =
+      Number(C.diversity.value);
+
+    for (
+      let attempt = 0;
+      attempt < 7 &&
+      list.some(
+        (item) =>
+          distance(genome, item) < floor
+      );
+      attempt++
+    ) {
+      genome = mutate(
+        genome,
+        Math.min(0.95, rate + 0.1),
+        Math.min(0.4, strength * 1.2),
+        true
+      );
+    }
+
+    return genome;
+  }
+
+  function randomGenome() {
+    const preset =
+      presets[
+        Math.floor(
+          Math.random() * presets.length
+        )
+      ];
+
+    return mutate(
+      clone(preset),
+      0.75,
+      0.17,
+      true
+    );
+  }
+
+  function scheduleMeasure(
+    indices = [...Array(N).keys()]
+  ) {
+    for (const index of indices) {
+      measurements[index] = null;
+      measurePending.add(index);
+    }
+
+    dirty = true;
+  }
+
+  function snapshot() {
+    return {
+      generation,
+      population: pop.map(clone),
+      selected: [...sel],
+      focusIndex
+    };
+  }
+
+  function pushHistory() {
+    history.push(snapshot());
+
+    if (history.length > 40) {
+      history.shift();
+    }
+  }
+
+  function restore(state) {
+    generation =
+      Number(state.generation) || 0;
+
+    pop = (state.population || [])
+      .map(valid)
+      .slice(0, N);
+
+    while (pop.length < N) {
+      pop.push(randomGenome());
+    }
+
+    sel = new Set(
+      (state.selected || []).filter(
+        (index) =>
+          index >= 0 &&
+          index < N
+      )
+    );
+
+    focusIndex =
+      Number.isInteger(state.focusIndex) &&
+      state.focusIndex >= 0 &&
+      state.focusIndex < N
+        ? state.focusIndex
+        : null;
+
+    if (focusIndex !== null) {
+      sel = new Set([focusIndex]);
+    }
+
+    scheduleMeasure();
+    refresh();
+  }
+
+  function init() {
+    generation = 0;
+    history = [];
+    sel.clear();
+    focusIndex = null;
+
+    pop = Array.from(
+      { length: N },
+      (_, index) =>
+        mutate(
+          clone(
+            presets[
+              index % presets.length
+            ]
+          ),
+          0.52,
+          0.08,
+          true
+        )
+    );
+
+    scheduleMeasure();
+    refresh();
+  }
+
+  function evolve(local = false) {
+    const parents = [...sel]
+      .sort((a, b) => a - b)
+      .map((index) => pop[index]);
+
+    if (!parents.length) {
+      message(
+        "親候補を1つ以上選択してください。",
+        true
+      );
+      return;
+    }
+
+    const keepFocus =
+      focusIndex !== null;
+
+    pushHistory();
+
+    const rate =
+      Number(C.rate.value);
+
+    const strength =
+      Number(C.strength.value);
+
+    const next =
+      parents
+        .slice(0, 2)
+        .map(clone);
+
+    while (next.length < N) {
+      let child;
+
+      if (
+        local ||
+        parents.length === 1
+      ) {
+        child = clone(
+          parents[
+            Math.floor(
+              Math.random() *
+              parents.length
+            )
+          ]
+        );
+      } else {
+        const parentA =
+          parents[
+            Math.floor(
+              Math.random() *
+              parents.length
+            )
+          ];
+
+        let parentB = parentA;
+
+        while (parentB === parentA) {
+          parentB =
+            parents[
+              Math.floor(
+                Math.random() *
+                parents.length
+              )
+            ];
+        }
+
+        child = cross(
+          parentA,
+          parentB
+        );
+      }
+
+      const childRate =
+        local
+          ? Math.min(rate, 0.42)
+          : rate;
+
+      const childStrength =
+        local
+          ? strength * 0.68
+          : strength;
+
+      child = mutate(
+        child,
+        childRate,
+        childStrength,
+        true
+      );
+
+      next.push(
+        ensureDiverse(
+          child,
+          next,
+          childRate,
+          childStrength
+        )
+      );
+    }
+
+    pop = next;
+    generation++;
+    sel = new Set([0]);
+    focusIndex =
+      keepFocus ? 0 : null;
+
+    scheduleMeasure();
+    refresh();
+
+    message(
+      `世代 ${generation} を生成しました。`
+    );
+  }
+
+  function randomize() {
+    pushHistory();
+
+    generation++;
+    sel.clear();
+    focusIndex = null;
+
+    pop = Array.from(
+      { length: N },
+      randomGenome
+    );
+
+    scheduleMeasure();
+    refresh();
+
+    message(
+      `世代 ${generation} をランダム生成しました。`
+    );
+  }
+
+  function back() {
+    const state = history.pop();
+
+    if (!state) {
+      message(
+        "戻せる世代がありません。",
+        true
+      );
+      return;
+    }
+
+    restore(state);
+
+    message(
+      `世代 ${generation} に戻しました。`
+    );
+  }
+
+  function message(
+    text,
+    error = false
+  ) {
+    status.textContent = text;
+    status.classList.toggle(
+      "err",
+      error
+    );
+  }
+
+  function focusText() {
+    if (focusIndex === null) {
+      return "";
+    }
+
+    const genome =
+      pop[focusIndex];
+
+    const measurement =
+      measurements[focusIndex];
+
+    return (
+      `#${focusIndex + 1} ` +
+      `${B[genome.boundary]} · ` +
+      `${P[genome.pattern]} · ` +
+      `${W[genome.warp]}` +
+      (
+        measurement
+          ? ` · L ${measurement.highlight.toFixed(2)}` +
+            ` · W ${(measurement.clipped * 100).toFixed(0)}%`
+          : ""
+      )
+    );
+  }
+
+  function updateFocusUI() {
+    const active =
+      focusIndex !== null &&
+      pop[focusIndex];
+
+    stage.classList.toggle(
+      "focused",
+      Boolean(active)
+    );
+
+    $("focusTitle").textContent =
+      active
+        ? focusText()
+        : "";
+
+    $("focusSelected").disabled =
+      sel.size !== 1;
+
+    dirty = true;
+  }
+
+  function openFocus(index) {
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= N
+    ) {
+      return;
+    }
+
+    focusIndex = index;
+    sel = new Set([index]);
+
+    selectUI();
+    drawEditor();
+    updateFocusUI();
+
+    message(
+      `個体 #${index + 1} を拡大表示しています。`
+    );
+  }
+
+  function closeFocus() {
+    focusIndex = null;
+    updateFocusUI();
+
+    message(
+      `世代 ${generation} / 選択 ${sel.size} 個`
+    );
+  }
+
+  function makeTiles() {
+    for (
+      let index = 0;
+      index < N;
+      index++
+    ) {
+      const button =
+        document.createElement("button");
+
+      button.className = "tile";
+
+      button.innerHTML =
+        `<div class="label">` +
+        `<span>#${index + 1}</span>` +
+        `<span></span>` +
+        `</div>`;
+
+      button.onclick = (event) => {
+        if (event.shiftKey) {
+          sel.add(index);
+        } else if (sel.has(index)) {
+          sel.delete(index);
+        } else {
+          sel.add(index);
+        }
+
+        selectUI();
+        drawEditor();
+        dirty = true;
+      };
+
+      button.ondblclick = (event) => {
+        event.preventDefault();
+        openFocus(index);
+      };
+
+      tilesEl.appendChild(button);
+      tiles.push(button);
+    }
+  }
+
+  function labels() {
+    tiles.forEach(
+      (tile, index) => {
+        const genome = pop[index];
+
+        const measurement =
+          measurements[index];
+
+        tile.querySelector(
+          "span:last-child"
+        ).textContent =
+          `${B[genome.boundary]} · ` +
+          `${P[genome.pattern]}` +
+          (
+            measurement
+              ? ` · L${measurement.highlight.toFixed(2)}` +
+                ` W${(measurement.clipped * 100).toFixed(0)}%`
+              : ""
+          );
+      }
+    );
+
+    if (focusIndex !== null) {
+      $("focusTitle").textContent =
+        focusText();
+    }
+  }
+
+  function selectUI() {
+    tiles.forEach(
+      (tile, index) => {
+        tile.classList.toggle(
+          "sel",
+          sel.has(index)
+        );
+      }
+    );
+
+    $("next").disabled =
+      !sel.size;
+
+    $("local").disabled =
+      !sel.size;
+
+    $("back").disabled =
+      !history.length;
+
+    $("focusSelected").disabled =
+      sel.size !== 1;
+
+    message(
+      `世代 ${generation} / 選択 ${sel.size} 個`
+    );
+  }
+
+  function refresh() {
+    labels();
+    selectUI();
+    drawEditor();
+    updateFocusUI();
+    dirty = true;
+  }
+
+  function selectRow(
+    label,
+    value,
+    names,
+    onChange
+  ) {
+    const row =
+      document.createElement("div");
+
+    row.className = "ctrl";
+
+    row.innerHTML =
+      `<label>${label}</label>` +
+      `<select>` +
+      names
+        .map(
+          (name, index) =>
+            `<option value="${index}">${name}</option>`
+        )
+        .join("") +
+      `</select>`;
+
+    const select =
+      row.querySelector("select");
+
+    select.value = value;
+
+    select.onchange = () => {
+      onChange(
+        Number(select.value)
+      );
+    };
+
+    return row;
+  }
+
+  function rangeRow(
+    schema,
+    value,
+    onChange
+  ) {
+    const row =
+      document.createElement("div");
+
+    row.className = "ctrl";
+
+    row.innerHTML =
+      `<label>${schema.label}</label>` +
+      `<input ` +
+      `type="range" ` +
+      `min="${schema.min}" ` +
+      `max="${schema.max}" ` +
+      `step="${schema.step}" ` +
+      `value="${value}">` +
+      `<output></output>`;
+
+    const input =
+      row.querySelector("input");
+
+    const output =
+      row.querySelector("output");
+
+    const digits =
+      schema.step < 0.001
+        ? 4
+        : schema.step < 0.01
+          ? 3
+          : 2;
+
+    const update = () => {
+      output.textContent =
+        Number(input.value)
+          .toFixed(digits);
+    };
+
+    update();
+
+    input.oninput = () => {
+      update();
+
+      onChange(
+        Number(input.value)
+      );
+    };
+
+    return row;
+  }
+
+  function drawEditor() {
+    editor.innerHTML = "";
+
+    if (sel.size !== 1) {
+      editor.className = "empty";
+
+      editor.textContent =
+        sel.size
+          ? "直接編集する場合は1個だけ選択してください。"
+          : "個体を1つ選択してください。";
+
+      return;
+    }
+
+    editor.className = "";
+
+    const index =
+      [...sel][0];
+
+    const genome =
+      pop[index];
+
+    editor.append(
+      selectRow(
+        "外形",
+        genome.boundary,
+        B,
+        (value) => {
+          genome.boundary = value;
+          scheduleMeasure([index]);
+          labels();
+        }
+      ),
+
+      selectRow(
+        "内部場",
+        genome.pattern,
+        P,
+        (value) => {
+          genome.pattern = value;
+          scheduleMeasure([index]);
+          labels();
+        }
+      ),
+
+      selectRow(
+        "内部変形",
+        genome.warp,
+        W,
+        (value) => {
+          genome.warp = value;
+
+          if (!value) {
+            genome.warpAmount = 0;
+          }
+
+          scheduleMeasure([index]);
+          labels();
+          drawEditor();
+        }
+      )
+    );
+
+    for (const schema of S) {
+      editor.append(
+        rangeRow(
+          schema,
+          genome[schema.key],
+          (value) => {
+            genome[schema.key] =
+              value;
+
+            if (
+              schema.key === "warpAmount" &&
+              genome.warp === 0 &&
+              value > 0.001
+            ) {
+              genome.warp = 2;
+            }
+
+            pop[index] =
+              valid(genome);
+
+            scheduleMeasure([index]);
+            labels();
+          }
+        )
+      );
+    }
+  }
+
+  function bindRange(id) {
+    const input = $(id);
+
+    const output =
+      input.parentElement
+        .querySelector("output");
+
+    const update = () => {
+      output.textContent =
+        Number(input.value)
+          .toFixed(2);
+    };
+
+    input.oninput = () => {
+      update();
+      dirty = true;
+    };
+
+    update();
+  }
+
+  function shader(type, source) {
+    const shaderObject =
+      gl.createShader(type);
+
+    gl.shaderSource(
+      shaderObject,
+      source
+    );
+
+    gl.compileShader(
+      shaderObject
+    );
+
+    if (
+      !gl.getShaderParameter(
+        shaderObject,
+        gl.COMPILE_STATUS
+      )
+    ) {
+      throw new Error(
+        gl.getShaderInfoLog(
+          shaderObject
+        )
+      );
+    }
+
+    return shaderObject;
+  }
+
+  function setupGL() {
+    gl = canvas.getContext(
+      "webgl",
+      {
+        antialias: false,
+        depth: false,
+        alpha: false,
+        powerPreference:
+          "high-performance"
+      }
+    );
+
+    if (!gl) {
+      throw new Error(
+        "WebGLを初期化できませんでした。"
+      );
+    }
+
+    const vertexShader = shader(
+      gl.VERTEX_SHADER,
+      `
+attribute vec2 a;
+
+void main() {
+  gl_Position = vec4(a, 0.0, 1.0);
+}
+`
+    );
+
+    const fragmentShader = shader(
+      gl.FRAGMENT_SHADER,
+      `
+precision highp float;
+
+uniform vec4 vp;
+
+uniform float time;
+uniform float boundaryType;
+uniform float patternType;
+uniform float warpType;
+
+uniform float cameraRatio;
+uniform float rotationSpeed;
+uniform float shapeParam;
+
+uniform float patternFrequency;
+uniform float patternAmplitude;
+uniform float patternBias;
+uniform float phaseValue;
+
+uniform float warpAmount;
+uniform float warpFrequency;
+
+uniform float layerSpan;
+uniform float stepFloor;
+uniform float stepGain;
+
+uniform float paletteFrequency;
+uniform float palettePhase;
+uniform float intensity;
+uniform float exposure;
+
+const int STEPS = 84;
+const float OBJECT_RADIUS = 4.0;
+
+mat2 R(float angle) {
+  float cosine = cos(angle);
+  float sine = sin(angle);
+
+  return mat2(
+    cosine,
+    -sine,
+    sine,
+    cosine
+  );
+}
+
+float roundBox(
+  vec3 point,
+  vec3 bounds,
+  float rounding
+) {
+  vec3 offset =
+    abs(point) - bounds;
+
+  return
+    length(max(offset, 0.0)) +
+    min(
+      max(
+        offset.x,
+        max(
+          offset.y,
+          offset.z
+        )
+      ),
+      0.0
+    ) -
+    rounding;
+}
+
+float outerField(vec3 point) {
+  if (boundaryType < 0.5) {
+    vec3 scale = vec3(
+      1.0 +
+      0.12 *
+      (shapeParam - 0.5),
+
+      1.0 -
+      0.1 *
+      (shapeParam - 0.5),
+
+      1.0 +
+      0.08 *
+      sin(
+        shapeParam *
+        3.14159
+      )
+    );
+
+    return
+      length(point / scale) -
+      OBJECT_RADIUS;
+  }
+
+  if (boundaryType < 1.5) {
+    return roundBox(
+      point,
+      vec3(3.05),
+      mix(
+        0.28,
+        0.9,
+        shapeParam
+      )
+    );
+  }
+
+  if (boundaryType < 2.5) {
+    float majorRadius =
+      mix(
+        2.65,
+        2.95,
+        shapeParam
+      );
+
+    float minorRadius =
+      mix(
+        1.42,
+        1.12,
+        shapeParam
+      );
+
+    return
+      length(
+        vec2(
+          length(point.xz) -
+          majorRadius,
+          point.y
+        )
+      ) -
+      minorRadius;
+  }
+
+  float exponentValue =
+    mix(
+      2.25,
+      6.5,
+      shapeParam
+    );
+
+  vec3 absolutePoint =
+    abs(point) + 0.0001;
+
+  return
+    pow(
+      pow(
+        absolutePoint.x,
+        exponentValue
+      ) +
+      pow(
+        absolutePoint.y,
+        exponentValue
+      ) +
+      pow(
+        absolutePoint.z,
+        exponentValue
+      ),
+      1.0 / exponentValue
+    ) -
+    OBJECT_RADIUS;
+}
+
+vec3 warpInner(vec3 point) {
+  if (warpType < 0.5) {
+    return point;
+  }
+
+  if (warpType < 1.5) {
+    point.xz =
+      R(
+        point.y *
+        (
+          0.035 +
+          0.16 *
+          warpAmount
+        ) +
+        time *
+        rotationSpeed *
+        0.22
+      ) *
+      point.xz;
+
+    return point;
+  }
+
+  if (warpType < 2.5) {
+    vec3 warpPhase =
+      point.yzx *
+      (
+        0.42 *
+        warpFrequency
+      ) +
+      vec3(
+        0.0,
+        2.1,
+        4.2
+      ) +
+      time *
+      (
+        0.15 +
+        abs(rotationSpeed)
+      );
+
+    return
+      point +
+      sin(warpPhase) *
+      (
+        1.25 *
+        warpAmount
+      );
+  }
+
+  vec3 foldedPoint =
+    abs(point);
+
+  foldedPoint.xy =
+    R(
+      0.12 +
+      0.55 *
+      warpAmount
+    ) *
+    foldedPoint.xy;
+
+  return mix(
+    point,
+    foldedPoint -
+    vec3(
+      0.25 +
+      0.7 *
+      warpAmount
+    ),
+    warpAmount / 0.55
+  );
+}
+
+float innerField(vec3 point) {
+  float frequency =
+    patternFrequency;
+
+  float patternPhase =
+    phaseValue +
+    time *
+    rotationSpeed *
+    0.3;
+
+  if (patternType < 0.5) {
+    return sin(
+      length(
+        fract(
+          point *
+          frequency
+        ) *
+        point
+      ) +
+      patternPhase
+    );
+  }
+
+  if (patternType < 1.5) {
+    vec3 q =
+      point *
+      frequency +
+      time *
+      0.16;
+
+    return sin(
+      dot(
+        cos(q).yzx,
+        sin(q)
+      ) /
+      0.12 +
+      patternPhase
+    );
+  }
+
+  if (patternType < 2.5) {
+    return sin(
+      length(
+        point * point
+      ) *
+      (
+        2.5 *
+        frequency
+      ) +
+      patternPhase
+    );
+  }
+
+  if (patternType < 3.5) {
+    vec3 q =
+      point * 0.5;
+
+    float noiseScale =
+      0.01;
+
+    for (
+      int index = 0;
+      index < 6;
+      index++
+    ) {
+      q.y +=
+        abs(
+          dot(
+            sin(
+              q.x +
+              time * 2.0 +
+              q / noiseScale
+            ),
+            0.2 + q - q
+          )
+        ) *
+        noiseScale;
+
+      noiseScale *= 2.0;
+    }
+
+    return sin(
+      length(point) +
+      sin(length(q)) *
+      frequency +
+      patternPhase
+    );
+  }
+
+  return sin(
+    length(
+      floor(
+        point *
+        (
+          3.0 *
+          frequency
+        )
+      ) +
+      dot(
+        sin(point),
+        cos(point.yzx)
+      ) /
+      0.4
+    ) +
+    patternPhase
+  );
+}
+
+vec3 palette(float index) {
+  return sin(
+    vec3(
+      1.0,
+      2.0,
+      3.0
+    ) +
+    palettePhase +
+    index *
+    paletteFrequency
+  );
+}
+
+vec3 tanhApprox(vec3 value) {
+  value = clamp(
+    value,
+    vec3(-10.0),
+    vec3(10.0)
+  );
+
+  vec3 exponent =
+    exp(2.0 * value);
+
+  return
+    (
+      exponent -
+      1.0
+    ) /
+    (
+      exponent +
+      1.0
+    );
+}
+
+void main() {
+  vec2 uv =
+    (
+      gl_FragCoord.xy -
+      vp.xy
+    ) /
+    vp.zw *
+    2.0 -
+    1.0;
+
+  uv.x *=
+    vp.z / vp.w;
+
+  vec3 accumulation =
+    vec3(0.0);
+
+  float depth =
+    0.0;
+
+  float cameraDistance =
+    cameraRatio *
+    OBJECT_RADIUS;
+
+  for (
+    int index = 0;
+    index < STEPS;
+    index++
+  ) {
+    vec3 point = vec3(
+      uv * depth,
+      depth -
+      cameraDistance
+    );
+
+    float angle =
+      time *
+      rotationSpeed;
+
+    point.xz =
+      R(angle) *
+      point.xz;
+
+    point.xy =
+      R(angle * 0.37) *
+      point.xy;
+
+    float outer =
+      outerField(point);
+
+    float inner =
+      innerField(
+        warpInner(point)
+      ) *
+      patternAmplitude +
+      patternBias;
+
+    float layer =
+      layerSpan *
+      float(index) /
+      float(STEPS - 1);
+
+    float stepAuthor =
+      stepFloor +
+      stepGain *
+      abs(
+        max(
+          inner,
+          outer
+        ) -
+        layer
+      );
+
+    vec3 contribution =
+      intensity *
+      palette(float(index)) /
+      max(
+        stepAuthor,
+        0.004
+      );
+
+    accumulation +=
+      max(
+        contribution,
+        vec3(
+          -dot(
+            point,
+            point
+          )
+        )
+      );
+
+    depth += stepAuthor;
+
+    if (
+      depth >
+      cameraDistance +
+      OBJECT_RADIUS +
+      layerSpan +
+      1.5
+    ) {
+      break;
+    }
+  }
+
+  vec3 color =
+    tanhApprox(
+      accumulation *
+      accumulation *
+      exposure /
+      800000.0
+    );
+
+  gl_FragColor =
+    vec4(
+      color,
+      1.0
+    );
+}
+`
+    );
+
+    program =
+      gl.createProgram();
+
+    gl.attachShader(
+      program,
+      vertexShader
+    );
+
+    gl.attachShader(
+      program,
+      fragmentShader
+    );
+
+    gl.linkProgram(program);
+
+    if (
+      !gl.getProgramParameter(
+        program,
+        gl.LINK_STATUS
+      )
+    ) {
+      throw new Error(
+        gl.getProgramInfoLog(
+          program
+        )
+      );
+    }
+
+    gl.useProgram(program);
+
+    const buffer =
+      gl.createBuffer();
+
+    gl.bindBuffer(
+      gl.ARRAY_BUFFER,
+      buffer
+    );
+
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([
+        -1, -1,
+         1, -1,
+        -1,  1,
+        -1,  1,
+         1, -1,
+         1,  1
+      ]),
+      gl.STATIC_DRAW
+    );
+
+    const positionLocation =
+      gl.getAttribLocation(
+        program,
+        "a"
+      );
+
+    gl.enableVertexAttribArray(
+      positionLocation
+    );
+
+    gl.vertexAttribPointer(
+      positionLocation,
+      2,
+      gl.FLOAT,
+      false,
+      0,
+      0
+    );
+
+    const uniformNames = [
+      "vp",
+      "time",
+      "boundaryType",
+      "patternType",
+      "warpType",
+      "cameraRatio",
+      "rotationSpeed",
+      "shapeParam",
+      "patternFrequency",
+      "patternAmplitude",
+      "patternBias",
+      "phaseValue",
+      "warpAmount",
+      "warpFrequency",
+      "layerSpan",
+      "stepFloor",
+      "stepGain",
+      "paletteFrequency",
+      "palettePhase",
+      "intensity",
+      "exposure"
+    ];
+
+    for (const name of uniformNames) {
+      U[name] =
+        gl.getUniformLocation(
+          program,
+          name
+        );
+    }
+
+    gl.disable(
+      gl.DEPTH_TEST
+    );
+
+    gl.enable(
+      gl.SCISSOR_TEST
+    );
+  }
+
+  function resize() {
+    const rect =
+      stage.getBoundingClientRect();
+
+    const scale =
+      focusIndex === null
+        ? GRID_SCALE
+        : Math.min(
+            devicePixelRatio || 1,
+            FOCUS_SCALE_CAP
+          );
+
+    const width = Math.max(
+      1,
+      Math.floor(
+        rect.width *
+        scale
+      )
+    );
+
+    const height = Math.max(
+      1,
+      Math.floor(
+        rect.height *
+        scale
+      )
+    );
+
+    if (
+      canvas.width !== width ||
+      canvas.height !== height
+    ) {
+      canvas.width = width;
+      canvas.height = height;
+      dirty = true;
+    }
+  }
+
+  function viewport(index) {
+    const columns =
+      matchMedia(
+        "(max-width:1000px)"
+      ).matches
+        ? 3
+        : 4;
+
+    const rows =
+      Math.ceil(N / columns);
+
+    const scaleX =
+      canvas.width /
+      stage.clientWidth;
+
+    const scaleY =
+      canvas.height /
+      stage.clientHeight;
+
+    const gapX =
+      10 * scaleX;
+
+    const gapY =
+      10 * scaleY;
+
+    const paddingX =
+      12 * scaleX;
+
+    const paddingY =
+      12 * scaleY;
+
+    const width =
+      (
+        canvas.width -
+        2 * paddingX -
+        gapX *
+        (columns - 1)
+      ) /
+      columns;
+
+    const height =
+      (
+        canvas.height -
+        2 * paddingY -
+        gapY *
+        (rows - 1)
+      ) /
+      rows;
+
+    const column =
+      index % columns;
+
+    const rowFromTop =
+      Math.floor(
+        index / columns
+      );
+
+    const rowFromBottom =
+      rows -
+      1 -
+      rowFromTop;
+
+    return {
+      x: Math.floor(
+        paddingX +
+        column *
+        (
+          width +
+          gapX
+        )
+      ),
+
+      y: Math.floor(
+        paddingY +
+        rowFromBottom *
+        (
+          height +
+          gapY
+        )
+      ),
+
+      w: Math.floor(width),
+      h: Math.floor(height)
+    };
+  }
+
+  function uniforms(
+    genome,
+    viewportData
+  ) {
+    gl.uniform4f(
+      U.vp,
+      viewportData.x,
+      viewportData.y,
+      viewportData.w,
+      viewportData.h
+    );
+
+    gl.uniform1f(
+      U.time,
+      t
+    );
+
+    gl.uniform1f(
+      U.boundaryType,
+      genome.boundary
+    );
+
+    gl.uniform1f(
+      U.patternType,
+      genome.pattern
+    );
+
+    gl.uniform1f(
+      U.warpType,
+      genome.warp
+    );
+
+    for (const schema of S) {
+      gl.uniform1f(
+        U[
+          schema.key === "phase"
+            ? "phaseValue"
+            : schema.key
+        ],
+        genome[schema.key]
+      );
+    }
+  }
+
+  function drawGenome(
+    index,
+    viewportData
+  ) {
+    gl.viewport(
+      viewportData.x,
+      viewportData.y,
+      viewportData.w,
+      viewportData.h
+    );
+
+    gl.scissor(
+      viewportData.x,
+      viewportData.y,
+      viewportData.w,
+      viewportData.h
+    );
+
+    gl.clearColor(
+      0.004,
+      0.005,
+      0.007,
+      1
+    );
+
+    gl.clear(
+      gl.COLOR_BUFFER_BIT
+    );
+
+    uniforms(
+      pop[index],
+      viewportData
+    );
+
+    gl.drawArrays(
+      gl.TRIANGLES,
+      0,
+      6
+    );
+  }
+
+  function sampleBrightness(
+    viewportData
+  ) {
+    const points = [
+      [0, 0],
+      [-0.18, 0],
+      [0.18, 0],
+      [0, -0.18],
+      [0, 0.18],
+      [-0.16, -0.16],
+      [0.16, -0.16],
+      [-0.16, 0.16],
+      [0.16, 0.16],
+      [-0.32, 0],
+      [0.32, 0],
+      [0, -0.32],
+      [0, 0.32]
+    ];
+
+    const values = [];
+
+    const pixels =
+      new Uint8Array(
+        3 * 3 * 4
+      );
+
+    for (
+      const [pointX, pointY]
+      of points
+    ) {
+      const x = clamp(
+        Math.round(
+          viewportData.x +
+          (
+            0.5 +
+            pointX
+          ) *
+          viewportData.w
+        ) -
+        1,
+        viewportData.x,
+        Math.max(
+          viewportData.x,
+          viewportData.x +
+          viewportData.w -
+          3
+        )
+      );
+
+      const y = clamp(
+        Math.round(
+          viewportData.y +
+          (
+            0.5 +
+            pointY
+          ) *
+          viewportData.h
+        ) -
+        1,
+        viewportData.y,
+        Math.max(
+          viewportData.y,
+          viewportData.y +
+          viewportData.h -
+          3
+        )
+      );
+
+      gl.readPixels(
+        x,
+        y,
+        3,
+        3,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixels
+      );
+
+      for (
+        let offset = 0;
+        offset < pixels.length;
+        offset += 4
+      ) {
+        values.push(
+          (
+            0.2126 *
+            pixels[offset] +
+            0.7152 *
+            pixels[offset + 1] +
+            0.0722 *
+            pixels[offset + 2]
+          ) /
+          255
+        );
+      }
+    }
+
+    values.sort(
+      (a, b) => a - b
+    );
+
+    const top =
+      values.slice(
+        -Math.max(
+          1,
+          Math.ceil(
+            values.length *
+            0.2
+          )
+        )
+      );
+
+    return {
+      highlight:
+        top.reduce(
+          (sum, value) =>
+            sum + value,
+          0
+        ) /
+        top.length,
+
+      median:
+        values[
+          Math.floor(
+            values.length *
+            0.5
+          )
+        ] || 0,
+
+      clipped:
+        values.filter(
+          (value) =>
+            value > 0.97
+        ).length /
+        values.length
+    };
+  }
+
+  function render(now) {
+    resize();
+
+    const delta = Math.min(
+      0.1,
+      (now - prev) / 1000
+    );
+
+    prev = now;
+
+    if (C.animate.checked) {
+      t +=
+        delta *
+        Number(C.speed.value);
+
+      dirty = true;
+    }
+
+    if (
+      dirty &&
+      now - last >
+      1000 / FPS
+    ) {
+      last = now;
+      dirty = false;
+
+      gl.useProgram(program);
+
+      gl.scissor(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      gl.clearColor(
+        0.008,
+        0.01,
+        0.014,
+        1
+      );
+
+      gl.clear(
+        gl.COLOR_BUFFER_BIT
+      );
+
+      let measured = false;
+
+      if (
+        focusIndex !== null &&
+        pop[focusIndex]
+      ) {
+        const viewportData = {
+          x: 0,
+          y: 0,
+          w: canvas.width,
+          h: canvas.height
+        };
+
+        drawGenome(
+          focusIndex,
+          viewportData
+        );
+
+        if (
+          measurePending.has(
+            focusIndex
+          )
+        ) {
+          measurements[
+            focusIndex
+          ] =
+            sampleBrightness(
+              viewportData
+            );
+
+          measurePending.delete(
+            focusIndex
+          );
+
+          measured = true;
+        }
+      } else {
+        for (
+          let index = 0;
+          index < N;
+          index++
+        ) {
+          const viewportData =
+            viewport(index);
+
+          drawGenome(
+            index,
+            viewportData
+          );
+
+          if (
+            measurePending.has(
+              index
+            )
+          ) {
+            measurements[index] =
+              sampleBrightness(
+                viewportData
+              );
+
+            measurePending.delete(
+              index
+            );
+
+            measured = true;
+          }
+        }
+      }
+
+      if (measured) {
+        labels();
+
+        if (sel.size === 1) {
+          drawEditor();
+        }
+      }
+    }
+
+    requestAnimationFrame(
+      render
+    );
+  }
+
+  function openJSON(mode) {
+    $("dlgTitle").textContent =
+      mode === "export"
+        ? "現在の探索状態"
+        : "探索状態を読み込む";
+
+    $("apply").style.display =
+      mode === "export"
+        ? "none"
+        : "inline-block";
+
+    $("json").value =
+      mode === "export"
+        ? JSON.stringify(
+            {
+              version: 4,
+              generation,
+              population: pop,
+              selected: [...sel],
+              focusIndex,
+
+              settings: {
+                rate:
+                  Number(C.rate.value),
+
+                strength:
+                  Number(
+                    C.strength.value
+                  ),
+
+                diversity:
+                  Number(
+                    C.diversity.value
+                  ),
+
+                speed:
+                  Number(C.speed.value)
+              }
+            },
+            null,
+            2
+          )
+        : "";
+
+    $("dialog").showModal();
+  }
+
+  async function copyJSON() {
+    const input = $("json");
+
+    input.select();
+
+    try {
+      await navigator.clipboard
+        .writeText(
+          input.value
+        );
+
+      message(
+        "JSONをコピーしました。"
+      );
+    } catch {
+      document.execCommand(
+        "copy"
+      );
+
+      message(
+        "JSONを選択しました。"
+      );
+    }
+  }
+
+  function applyJSON() {
+    try {
+      const data = JSON.parse(
+        $("json").value
+      );
+
+      if (
+        !Array.isArray(
+          data.population
+        )
+      ) {
+        throw new Error(
+          "population が配列ではありません。"
+        );
+      }
+
+      pushHistory();
+
+      restore({
+        generation:
+          data.generation,
+
+        population:
+          data.population,
+
+        selected:
+          data.selected,
+
+        focusIndex:
+          data.focusIndex
+      });
+
+      if (data.settings) {
+        for (
+          const key of [
+            "rate",
+            "strength",
+            "diversity",
+            "speed"
+          ]
+        ) {
+          if (
+            Number.isFinite(
+              Number(
+                data.settings[key]
+              )
+            )
+          ) {
+            C[key].value =
+              data.settings[key];
+
+            C[key].dispatchEvent(
+              new Event("input")
+            );
+          }
+        }
+      }
+
+      $("dialog").close();
+
+      message(
+        "JSONを読み込みました。"
+      );
+    } catch (error) {
+      message(
+        `JSONを読み込めませんでした: ${error.message}`,
+        true
+      );
+    }
+  }
+
+  function events() {
+    for (
+      const id of [
+        "rate",
+        "strength",
+        "diversity",
+        "speed"
+      ]
+    ) {
+      bindRange(id);
+    }
+
+    $("next").onclick = () => {
+      evolve(false);
+    };
+
+    $("local").onclick = () => {
+      evolve(true);
+    };
+
+    $("back").onclick = back;
+    $("reset").onclick = randomize;
+
+    $("focusSelected").onclick = () => {
+      if (sel.size === 1) {
+        openFocus(
+          [...sel][0]
+        );
+      }
+    };
+
+    $("exitFocus").onclick =
+      closeFocus;
+
+    $("remeasure").onclick = () => {
+      scheduleMeasure(
+        focusIndex !== null
+          ? [focusIndex]
+          : [...Array(N).keys()]
+      );
+
+      message(
+        "明度を1フレーム再計測します。"
+      );
+    };
+
+    $("clear").onclick = () => {
+      focusIndex = null;
+      sel.clear();
+      refresh();
+    };
+
+    $("all").onclick = () => {
+      focusIndex = null;
+
+      sel = new Set(
+        [...Array(N).keys()]
+      );
+
+      refresh();
+    };
+
+    $("animate").onchange = () => {
+      dirty = true;
+    };
+
+    $("export").onclick = () => {
+      openJSON("export");
+    };
+
+    $("import").onclick = () => {
+      openJSON("import");
+    };
+
+    $("copy").onclick =
+      copyJSON;
+
+    $("apply").onclick =
+      applyJSON;
+
+    $("close").onclick = () => {
+      $("dialog").close();
+    };
+
+    addEventListener(
+      "resize",
+      () => {
+        dirty = true;
+      }
+    );
+
+    addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          event.key === "Escape" &&
+          focusIndex !== null &&
+          !$("dialog").open
+        ) {
+          event.preventDefault();
+          closeFocus();
+        }
+      }
+    );
+  }
+
+  try {
+    makeTiles();
+    events();
+    setupGL();
+    init();
+
+    requestAnimationFrame(
+      render
+    );
+  } catch (error) {
+    message(
+      `初期化に失敗しました: ${error.message}`,
+      true
+    );
+
+    console.error(error);
+  }
+})();
+</script>
+</body>
+</html>
