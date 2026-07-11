@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoboVac Programmer</title>
+    <meta name="description" content="Program your own robot vacuum to clean a randomly generated room using JavaScript.">
+    <meta name="page:icon" content="🧹">
+    <meta name="page:color" content="#111827">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Custom CSS to supplement Tailwind */
+        body {
+            background-color: #0f172a; /* slate-900 */
+            color: #f8fafc; /* slate-50 */
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        /* Custom Scrollbar for Editor */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background: #3b82f6; 
+            border-radius: 4px;
+        }
+        textarea::-webkit-scrollbar-thumb:hover {
+            background: #60a5fa; 
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Glowing effects for canvas */
+        canvas {
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.1);
+        }
+
+        /* Editor Syntax Highlights (Simulated via colors) */
+        .editor-container {
+            position: relative;
+        }
+        #code-editor {
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            background-color: transparent;
+            caret-color: #38bdf8;
+            outline: none;
+            white-space: pre;
+            resize: none;
+            line-height: 1.5;
+            z-index: 2;
+            position: relative;
+        }
+        
+        .line-numbers {
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            color: #64748b;
+            text-align: right;
+            padding-right: 10px;
+            line-height: 1.5;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="glass-panel px-6 py-3 flex justify-between items-center z-10 border-b border-slate-700">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-robot text-sky-400 text-2xl"></i>
+            <h1 class="text-xl font-bold tracking-wider text-sky-100">RoboVac <span class="text-sky-400 text-sm">JS_API</span></h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="text-sm bg-slate-800 px-3 py-1 rounded border border-slate-600">
+                <i class="fa-solid fa-broom text-yellow-400 mr-2"></i>
+                <span id="clean-stats">0.0%</span>
+            </div>
+            <button id="btn-run" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold py-1.5 px-4 rounded transition-colors flex items-center gap-2">
+                <i class="fa-solid fa-play"></i> Run Code
+            </button>
+            <button id="btn-stop" class="bg-red-500 hover:bg-red-400 text-slate-900 font-bold py-1.5 px-4 rounded transition-colors flex items-center gap-2 hidden">
+                <i class="fa-solid fa-stop"></i> Stop
+            </button>
+            <button id="btn-regen" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-1.5 px-4 rounded transition-colors flex items-center gap-2">
+                <i class="fa-solid fa-dice"></i> New Room
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Code Editor Panel -->
+        <section class="w-1/3 flex flex-col border-r border-slate-700 glass-panel bg-slate-900/90 z-10">
+            <div class="px-4 py-2 bg-slate-800 border-b border-slate-700 flex justify-between items-center text-xs text-slate-300">
+                <span><i class="fa-brands fa-js text-yellow-400 mr-1"></i> robot_logic.js</span>
+                <span class="text-sky-400 hover:text-sky-300 cursor-pointer" onclick="loadDefaultCode()">[Reset Example]</span>
+            </div>
+            
+            <div class="flex-1 flex overflow-hidden relative pt-2 pb-2">
+                <div id="line-numbers" class="line-numbers w-12 pl-2 pt-1 pb-1">1</div>
+                <textarea id="code-editor" class="flex-1 h-full w-full p-1 text-sm text-sky-100 border-none" spellcheck="false">
+// ロボットを制御する関数 (毎フレーム呼ばれます)
+// robot API:
+// robot.move(speed) : 前進速度 (-1.0 〜 1.0)
+// robot.turn(speed) : 回転速度 (-1.0 〜 1.0)
+// robot.getDistance(index) : 距離センサー (0:左, 1:正面, 2:右) 
+//                            値は 0.0(衝突) 〜 1.0(遠い)
+// robot.isBumping() : バンパーが壁に接触しているか (boolean)
+
+let state = 'forward';
+let turnDir = 1;
+let turnTimer = 0;
+
+if (robot.isBumping() || robot.getDistance(1) < 0.15) {
+    state = 'avoid';
+    turnTimer = 20 + Math.random() * 30;
+    turnDir = Math.random() > 0.5 ? 1 : -1;
+}
+
+if (state === 'avoid') {
+    robot.move(-0.5); // 少しバック
+    robot.turn(turnDir);
+    turnTimer--;
+    if (turnTimer <= 0) state = 'forward';
+} else {
+    // 障害物追従の簡単な例
+    let left = robot.getDistance(0);
+    let right = robot.getDistance(2);
+    
+    robot.move(1.0); // 最大速度で前進
+    
+    // 左右のセンサー差で少し曲がる
+    if (left < 0.5) robot.turn(0.5);
+    else if (right < 0.5) robot.turn(-0.5);
+    else robot.turn(0.0);
+}
+</textarea>
+            </div>
+            
+            <!-- Console / Status -->
+            <div class="h-32 bg-black border-t border-slate-700 p-2 overflow-y-auto font-mono text-xs">
+                <div class="text-slate-500 mb-1">>> System Console Ready...</div>
+                <div id="console-output" class="text-green-400">Waiting for execution.</div>
+            </div>
+        </section>
+
+        <!-- Simulation Panel -->
+        <section class="w-2/3 relative bg-slate-950 flex justify-center items-center overflow-hidden" id="canvas-container">
+            <!-- Grid Background -->
+            <div class="absolute inset-0 pointer-events-none opacity-20" style="background-image: radial-gradient(#38bdf8 1px, transparent 1px); background-size: 20px 20px;"></div>
+            
+            <canvas id="sim-canvas"></canvas>
+
+            <!-- API Docs Overlay (Hidden by default, simple toggle) -->
+            <div class="absolute top-4 right-4 bg-slate-800/80 p-4 rounded-lg border border-slate-600 backdrop-blur-md max-w-xs pointer-events-none text-xs text-slate-300">
+                <h3 class="text-sky-400 font-bold mb-2">🤖 Robot Specs</h3>
+                <ul class="space-y-1">
+                    <li><span class="text-white">Shape:</span> Circle (r=15px)</li>
+                    <li><span class="text-white">Max Speed:</span> 3.0 px/frame</li>
+                    <li><span class="text-white">Max Turn:</span> 0.1 rad/frame</li>
+                    <li><span class="text-white">Sensors:</span> -30°, 0°, +30° (Range: 120px)</li>
+                    <li><span class="text-white">Cleaning:</span> Center Suction + Top-Right Brush</li>
+                </ul>
+            </div>
+            
+            <!-- Sim Speed Control -->
+            <div class="absolute bottom-4 right-4 bg-slate-800/80 p-3 rounded-lg border border-slate-600 flex items-center gap-3">
+                <span class="text-xs text-slate-300"><i class="fa-solid fa-gauge-high"></i> Speed</span>
+                <input type="range" id="sim-speed" min="1" max="5" value="1" class="w-24">
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- Utility Math & Geometry ---
+        const MathUtils = {
+            distance: (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1),
+            // Line segment intersection (returns intersection point or null)
+            lineIntersect: (p0, p1, p2, p3) => {
+                let s1_x, s1_y, s2_x, s2_y;
+                s1_x = p1.x - p0.x; s1_y = p1.y - p0.y;
+                s2_x = p3.x - p2.x; s2_y = p3.y - p2.y;
+
+                let s, t;
+                let denom = -s2_x * s1_y + s1_x * s2_y;
+                if (denom === 0) return null;
+
+                s = (-s1_y * (p0.x - p2.x) + s1_x * (p0.y - p2.y)) / denom;
+                t = ( s2_x * (p0.y - p2.y) - s2_y * (p0.x - p2.x)) / denom;
+
+                if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+                    return { x: p0.x + (t * s1_x), y: p0.y + (t * s1_y) };
+                }
+                return null;
+            },
+            // Distance from point to line segment
+            distToSegment: (px, py, x1, y1, x2, y2) => {
+                let l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+                if (l2 === 0) return MathUtils.distance(px, py, x1, y1);
+                let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+                t = Math.max(0, Math.min(1, t));
+                return MathUtils.distance(px, py, x1 + t * (x2 - x1), y1 + t * (y2 - y1));
+            },
+            // Point in polygon (Ray casting algorithm)
+            pointInPolygon: (point, vs) => {
+                let x = point.x, y = point.y;
+                let inside = false;
+                for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                    let xi = vs[i].x, yi = vs[i].y;
+                    let xj = vs[j].x, yj = vs[j].y;
+                    let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                return inside;
+            }
+        };
+
+        // --- Core Simulation Classes ---
+
+        class Room {
+            constructor(width, height) {
+                this.width = width;
+                this.height = height;
+                this.vertices = [];
+                this.generate();
+            }
+
+            generate() {
+                this.vertices = [];
+                // Create a random closed polygon
+                const numPoints = 12 + Math.floor(Math.random() * 8);
+                const cx = this.width / 2;
+                const cy = this.height / 2;
+                const maxR = Math.min(this.width, this.height) / 2 * 0.9;
+                const minR = maxR * 0.4;
+
+                for (let i = 0; i < numPoints; i++) {
+                    const angle = (i / numPoints) * Math.PI * 2;
+                    // Add noise to radius to make irregular shapes
+                    let r = minR + Math.random() * (maxR - minR);
+                    
+                    // Create some alcoves/walls by drastically reducing radius occasionally
+                    if (Math.random() > 0.8) r *= 0.5;
+
+                    this.vertices.push({
+                        x: cx + Math.cos(angle) * r,
+                        y: cy + Math.sin(angle) * r
+                    });
+                }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = '#1e293b'; // Floor color
+                ctx.strokeStyle = '#38bdf8'; // Wall color
+                ctx.lineWidth = 4;
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 10;
+
+                ctx.beginPath();
+                ctx.moveTo(this.vertices[0].x, this.vertices[0].y);
+                for (let i = 1; i < this.vertices.length; i++) {
+                    ctx.lineTo(this.vertices[i].x, this.vertices[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Reset shadow for other drawings
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        class DirtManager {
+            constructor(room) {
+                this.room = room;
+                this.particles = [];
+                this.totalDirt = 0;
+                this.spawn();
+            }
+
+            spawn() {
+                this.particles = [];
+                const targetCount = 1500;
+                let attempts = 0;
+                while (this.particles.length < targetCount && attempts < targetCount * 5) {
+                    let p = {
+                        x: Math.random() * this.room.width,
+                        y: Math.random() * this.room.height,
+                        cleaned: false
+                    };
+                    if (MathUtils.pointInPolygon(p, this.room.vertices)) {
+                        this.particles.push(p);
+                    }
+                    attempts++;
+                }
+                this.totalDirt = this.particles.length;
+                updateStats(0, this.totalDirt);
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = 'rgba(148, 163, 184, 0.6)'; // Dirt color
+                for (let p of this.particles) {
+                    if (!p.cleaned) {
+                        ctx.fillRect(p.x, p.y, 2, 2);
+                    }
+                }
+            }
+        }
+
+        class Robot {
+            constructor(room) {
+                this.room = room;
+                this.radius = 16;
+                this.maxSpeed = 3.0;
+                this.maxTurn = 0.1;
+                
+                // Sensor setup: angles relative to robot forward (0)
+                this.sensorAngles = [-Math.PI/6, 0, Math.PI/6]; // Left, Center, Right
+                this.sensorMaxDist = 120;
+                this.sensorReadings = [1.0, 1.0, 1.0]; // Normalized 0.0 (close) to 1.0 (far)
+
+                // Hitboxes
+                this.suctionRect = { w: 20, h: 6 }; // Center
+                this.brushRadius = 8;
+                // Brush offset: Top Right (Forward is +X, Right is +Y in local)
+                this.brushOffset = { x: this.radius * 0.7, y: this.radius * 0.7 };
+                this.brushRotation = 0;
+
+                this.reset();
+            }
+
+            reset() {
+                // Find valid start pos
+                this.x = this.room.width / 2;
+                this.y = this.room.height / 2;
+                this.angle = 0;
+                
+                // User intents
+                this.cmdMove = 0;
+                this.cmdTurn = 0;
+                this.bumping = false;
+            }
+
+            updatePhysics() {
+                // Apply turn
+                this.angle += this.cmdTurn * this.maxTurn;
+
+                // Predict move
+                const speed = this.cmdMove * this.maxSpeed;
+                const dx = Math.cos(this.angle) * speed;
+                const dy = Math.sin(this.angle) * speed;
+                const nextX = this.x + dx;
+                const nextY = this.y + dy;
+
+                // Collision Detection with Walls (Circle vs Polygon Segments)
+                this.bumping = false;
+                for (let i = 0; i < this.room.vertices.length; i++) {
+                    let p1 = this.room.vertices[i];
+                    let p2 = this.room.vertices[(i + 1) % this.room.vertices.length];
+                    
+                    let dist = MathUtils.distToSegment(nextX, nextY, p1.x, p1.y, p2.x, p2.y);
+                    if (dist < this.radius) {
+                        this.bumping = true;
+                        break;
+                    }
+                }
+
+                // Move if no collision, or slide logic (simplified to stop forward movement)
+                if (!this.bumping) {
+                    this.x = nextX;
+                    this.y = nextY;
+                } else if (speed < 0) {
+                     // Allow backing up even if bumping forward (simplified)
+                     this.x = nextX;
+                     this.y = nextY;
+                }
+
+                // Update Raycast Sensors
+                for (let s = 0; s < this.sensorAngles.length; s++) {
+                    const sAngle = this.angle + this.sensorAngles[s];
+                    const pStart = { x: this.x, y: this.y };
+                    const pEnd = { 
+                        x: this.x + Math.cos(sAngle) * this.sensorMaxDist, 
+                        y: this.y + Math.sin(sAngle) * this.sensorMaxDist 
+                    };
+
+                    let closestDist = this.sensorMaxDist;
+
+                    for (let i = 0; i < this.room.vertices.length; i++) {
+                        let p1 = this.room.vertices[i];
+                        let p2 = this.room.vertices[(i + 1) % this.room.vertices.length];
+                        let intersect = MathUtils.lineIntersect(pStart, pEnd, p1, p2);
+                        if (intersect) {
+                            let d = MathUtils.distance(pStart.x, pStart.y, intersect.x, intersect.y);
+                            if (d < closestDist) closestDist = d;
+                        }
+                    }
+                    
+                    // Compensate for robot radius so sensor is from edge
+                    let effectiveDist = Math.max(0, closestDist - this.radius);
+                    this.sensorReadings[s] = effectiveDist / (this.sensorMaxDist - this.radius);
+                }
+
+                // Update Brush Animation
+                this.brushRotation -= 0.3; // Spin inward (relative to top right)
+            }
+
+            clean(dirtManager) {
+                let cleanedCount = 0;
+                
+                // Pre-calculate inverse rotation for transforming dirt to local space
+                const cosA = Math.cos(-this.angle);
+                const sinA = Math.sin(-this.angle);
+
+                for (let p of dirtManager.particles) {
+                    if (p.cleaned) continue;
+
+                    // Transform world pos to robot local pos
+                    let dx = p.x - this.x;
+                    let dy = p.y - this.y;
+                    // Note: Canvas coordinates +Y is down. 
+                    // Let's treat +X as forward, +Y as Right in local space.
+                    let lx = dx * cosA - dy * sinA;
+                    let ly = dx * sinA + dy * cosA;
+
+                    // 1. Suction Port Check (Center Rect)
+                    if (Math.abs(lx) <= this.suctionRect.w / 2 && Math.abs(ly) <= this.suctionRect.h / 2) {
+                        p.cleaned = true;
+                        cleanedCount++;
+                        continue;
+                    }
+
+                    // 2. Brush Check (Top Right Circle)
+                    let distToBrush = MathUtils.distance(lx, ly, this.brushOffset.x, this.brushOffset.y);
+                    if (distToBrush < this.brushRadius) {
+                        // Move dirt towards suction center (0,0 in local)
+                        // To do this, we just pull the world coordinates towards robot center
+                        let angleToCenter = Math.atan2(this.y - p.y, this.x - p.x);
+                        p.x += Math.cos(angleToCenter) * 4.0; // Pull speed
+                        p.y += Math.sin(angleToCenter) * 4.0;
+                    }
+                }
+                return cleanedCount;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Body
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#0f172a'; // dark body
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = this.bumping ? '#ef4444' : '#94a3b8'; // Red if bumping
+                ctx.stroke();
+
+                // Direction indicator / LED
+                ctx.beginPath();
+                ctx.arc(this.radius - 4, 0, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#10b981'; // Green LED
+                ctx.fill();
+                
+                // Suction Port
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(-this.suctionRect.w/2, -this.suctionRect.h/2, this.suctionRect.w, this.suctionRect.h);
+
+                // Side Brush (Top Right -> Local +X, +Y)
+                ctx.save();
+                ctx.translate(this.brushOffset.x, this.brushOffset.y);
+                ctx.rotate(this.brushRotation);
+                ctx.strokeStyle = '#f59e0b'; // Amber brush
+                ctx.lineWidth = 2;
+                for(let i=0; i<3; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(this.brushRadius, 0);
+                    ctx.stroke();
+                    ctx.rotate(Math.PI * 2 / 3);
+                }
+                ctx.restore();
+
+                // Draw Sensors Rays (Faint)
+                ctx.lineWidth = 1;
+                for (let s = 0; s < this.sensorAngles.length; s++) {
+                    ctx.save();
+                    ctx.rotate(this.sensorAngles[s]);
+                    
+                    let distPx = this.sensorReadings[s] * (this.sensorMaxDist - this.radius) + this.radius;
+                    
+                    // Ray
+                    ctx.beginPath();
+                    ctx.moveTo(this.radius, 0);
+                    ctx.lineTo(distPx, 0);
+                    ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+                    ctx.stroke();
+                    
+                    // Hit point
+                    if (this.sensorReadings[s] < 0.99) {
+                        ctx.beginPath();
+                        ctx.arc(distPx, 0, 2, 0, Math.PI*2);
+                        ctx.fillStyle = '#ef4444';
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // --- Application State & Game Loop ---
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+        
+        let room, robot, dirtManager;
+        let animationId = null;
+        let isRunning = false;
+        let userFunction = null;
+        let cleanedTotal = 0;
+
+        // UI Elements
+        const btnRun = document.getElementById('btn-run');
+        const btnStop = document.getElementById('btn-stop');
+        const btnRegen = document.getElementById('btn-regen');
+        const consoleOutput = document.getElementById('console-output');
+        const editor = document.getElementById('code-editor');
+        const lineNumbers = document.getElementById('line-numbers');
+        const speedSlider = document.getElementById('sim-speed');
+        const statsEl = document.getElementById('clean-stats');
+
+        function initCanvas() {
+            // High DPI support
+            const rect = container.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            // Fixed internal resolution for consistent physics, scale up for display
+            canvas.width = 800; 
+            canvas.height = 600;
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            
+            // Adjust canvas context scale to fit container while maintaining aspect ratio
+            const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
+            // We'll let CSS handle the scaling, internal coordinates remain 800x600
+        }
+
+        function initSim() {
+            initCanvas();
+            room = new Room(canvas.width, canvas.height);
+            robot = new Robot(room);
+            dirtManager = new DirtManager(room);
+            cleanedTotal = 0;
+            updateStats(0, dirtManager.totalDirt);
+            render();
+        }
+
+        function updateStats(cleaned, total) {
+            let percent = total === 0 ? 0 : (cleaned / total) * 100;
+            statsEl.innerText = `${percent.toFixed(1)}%`;
+            if (percent > 99) statsEl.style.color = '#10b981';
+            else statsEl.style.color = '#f8fafc';
+        }
+
+        function logConsole(msg, type='info') {
+            const colors = {
+                'info': 'text-sky-400',
+                'error': 'text-red-400',
+                'success': 'text-green-400'
+            };
+            consoleOutput.innerHTML = `<span class="${colors[type]}">${msg}</span>`;
+        }
+
+        // API exposed to user
+        const robotAPI = {
+            move: (val) => { robot.cmdMove = Math.max(-1.0, Math.min(1.0, Number(val) || 0)); },
+            turn: (val) => { robot.cmdTurn = Math.max(-1.0, Math.min(1.0, Number(val) || 0)); },
+            getDistance: (index) => robot.sensorReadings[index] ?? 1.0,
+            isBumping: () => robot.bumping
+        };
+
+        function compileUserCode() {
+            const code = editor.value;
+            try {
+                // Wrap in a function to isolate and pass API
+                // State variables can be preserved by running this inside an IIFE closure if needed, 
+                // but keeping it simple: just eval a function body.
+                // To allow 'let state = ...' to persist across frames, we wrap the whole thing in a closure that returns the loop function.
+                
+                const wrapperCode = `
+                    return function() {
+                        ${code}
+                    };
+                `;
+                const initFunc = new Function('robot', wrapperCode);
+                userFunction = initFunc(robotAPI); // This returns the inner loop function, initialized once
+                logConsole("Compilation successful. System running.", "success");
+                return true;
+            } catch (err) {
+                logConsole(`Error: ${err.message}`, "error");
+                return false;
+            }
+        }
+
+        function gameLoop() {
+            if (!isRunning) return;
+
+            const steps = parseInt(speedSlider.value);
+            
+            for (let i = 0; i < steps; i++) {
+                // 1. Run User Code
+                if (userFunction) {
+                    try {
+                        userFunction();
+                    } catch (err) {
+                        logConsole(`Runtime Error: ${err.message}`, "error");
+                        stopSim();
+                        break;
+                    }
+                }
+
+                // 2. Physics & State
+                robot.updatePhysics();
+                let newlyCleaned = robot.clean(dirtManager);
+                cleanedTotal += newlyCleaned;
+                
+                if (newlyCleaned > 0 && i === steps -1) {
+                    updateStats(cleanedTotal, dirtManager.totalDirt);
+                }
+            }
+
+            // 3. Render
+            render();
+            
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        function render() {
+            // Clear
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            room.draw(ctx);
+            dirtManager.draw(ctx);
+            robot.draw(ctx);
+        }
+
+        function startSim() {
+            if (compileUserCode()) {
+                isRunning = true;
+                btnRun.classList.add('hidden');
+                btnStop.classList.remove('hidden');
+                editor.disabled = true;
+                editor.classList.add('opacity-70');
+                if (!animationId) gameLoop();
+            }
+        }
+
+        function stopSim() {
+            isRunning = false;
+            btnRun.classList.remove('hidden');
+            btnStop.classList.add('hidden');
+            editor.disabled = false;
+            editor.classList.remove('opacity-70');
+            cancelAnimationFrame(animationId);
+            animationId = null;
+            // Reset commands so it stops visually immediately
+            robot.cmdMove = 0; robot.cmdTurn = 0;
+            render();
+        }
+
+        // --- Event Listeners ---
+        btnRun.addEventListener('click', startSim);
+        btnStop.addEventListener('click', stopSim);
+        btnRegen.addEventListener('click', () => {
+            stopSim();
+            initSim();
+            logConsole("New environment generated.", "info");
+        });
+
+        // Editor line numbers sync
+        editor.addEventListener('scroll', () => {
+            lineNumbers.scrollTop = editor.scrollTop;
+        });
+        
+        editor.addEventListener('input', updateLineNumbers);
+        
+        function updateLineNumbers() {
+            const lines = editor.value.split('\n').length;
+            let numbersHtml = '';
+            for (let i = 1; i <= lines; i++) {
+                numbersHtml += i + '<br>';
+            }
+            lineNumbers.innerHTML = numbersHtml;
+        }
+
+        // Tab key support in textarea
+        editor.addEventListener('keydown', function(e) {
+            if (e.key == 'Tab') {
+                e.preventDefault();
+                let start = this.selectionStart;
+                let end = this.selectionEnd;
+                this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+                this.selectionStart = this.selectionEnd = start + 4;
+            }
+        });
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            // Re-render, canvas size is handled by CSS, but we might want to redraw
+            render();
+        });
+
+        // Global functions for inline HTML handlers
+        window.loadDefaultCode = function() {
+            const defaultCode = `// ロボットを制御する関数 (毎フレーム呼ばれます)
+// robot API:
+// robot.move(speed) : 前進速度 (-1.0 〜 1.0)
+// robot.turn(speed) : 回転速度 (-1.0 〜 1.0)
+// robot.getDistance(index) : 距離センサー (0:左, 1:正面, 2:右) 
+//                            値は 0.0(衝突) 〜 1.0(遠い)
+// robot.isBumping() : バンパーが壁に接触しているか (boolean)
+
+let state = 'forward';
+let turnDir = 1;
+let turnTimer = 0;
+
+// function body returned to core loop
+return function() {
+    if (robot.isBumping() || robot.getDistance(1) < 0.15) {
+        state = 'avoid';
+        turnTimer = 20 + Math.random() * 30;
+        turnDir = Math.random() > 0.5 ? 1 : -1;
+    }
+
+    if (state === 'avoid') {
+        robot.move(-0.5); // 少しバック
+        robot.turn(turnDir);
+        turnTimer--;
+        if (turnTimer <= 0) state = 'forward';
+    } else {
+        // 障害物追従の簡単な例
+        let left = robot.getDistance(0);
+        let right = robot.getDistance(2);
+        
+        robot.move(1.0); // 最大速度で前進
+        
+        // 左右のセンサー差で少し曲がる
+        if (left < 0.5) robot.turn(0.5);
+        else if (right < 0.5) robot.turn(-0.5);
+        else robot.turn(0.0);
+    }
+}`;
+            editor.value = defaultCode;
+            updateLineNumbers();
+            logConsole("Example code loaded.", "info");
+        };
+
+        // Initialize
+        updateLineNumbers();
+        // Load default wrapped code format properly on init
+        window.loadDefaultCode();
+        initSim();
+
+    </script>
+</body>
+</html>

@@ -73,6 +73,10 @@
                 <button id="btnAddText" class="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2">
                     <i class="fas fa-font"></i> Add Text
                 </button>
+                <p class="text-[10px] leading-relaxed text-slate-400 px-1 flex items-start gap-1.5">
+                    <i class="fas fa-vector-square mt-0.5 text-violet-400"></i>
+                    <span><kbd class="font-sans border border-slate-200 bg-slate-50 rounded px-1">Ctrl</kbd> / <kbd class="font-sans border border-slate-200 bg-slate-50 rounded px-1">⌘</kbd> + corner drag: four-point warp</span>
+                </p>
 
                 <section class="bg-white">
                     <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -530,6 +534,7 @@
         let isPanning = false;
         let isDragging = false;
         let isResizing = false;
+        let isWarping = false;
         let resizeHandle = '';
         let panStart = { x: 0, y: 0 };
         let actionStart = { x: 0, y: 0 };
@@ -574,7 +579,8 @@
                     x: obj.x,
                     y: obj.y,
                     w: obj.w,
-                    h: obj.h
+                    h: obj.h,
+                    warp: cloneWarp(obj.warp)
                 })),
                 selectedIndex,
                 layerCounter
@@ -608,7 +614,8 @@
                     ao.x !== bo.x ||
                     ao.y !== bo.y ||
                     ao.w !== bo.w ||
-                    ao.h !== bo.h
+                    ao.h !== bo.h ||
+                    !warpsEqual(ao.warp, bo.warp)
                 ) return false;
             }
             return true;
@@ -643,7 +650,8 @@
                         x: obj.x,
                         y: obj.y,
                         w: obj.w,
-                        h: obj.h
+                        h: obj.h,
+                        warp: cloneWarp(obj.warp)
                     };
                 }
 
@@ -658,7 +666,8 @@
                     x: obj.x,
                     y: obj.y,
                     w: obj.w,
-                    h: obj.h
+                    h: obj.h,
+                    warp: cloneWarp(obj.warp)
                 };
             });
 
@@ -702,6 +711,297 @@
                 w: Math.abs(b.x - a.x),
                 h: Math.abs(b.y - a.y)
             };
+        }
+
+
+        const WARP_KEYS = ['tl', 'tr', 'br', 'bl'];
+        const WARP_MESH_MIN = 8;
+        const WARP_MESH_MAX = 24;
+
+        function clonePoint(point) {
+            return point ? { x: Number(point.x), y: Number(point.y) } : null;
+        }
+
+        function cloneWarp(warp) {
+            if (!warp || !WARP_KEYS.every(key => warp[key])) return null;
+            return {
+                tl: clonePoint(warp.tl),
+                tr: clonePoint(warp.tr),
+                br: clonePoint(warp.br),
+                bl: clonePoint(warp.bl)
+            };
+        }
+
+        function warpsEqual(a, b, epsilon = 1e-6) {
+            if (!a && !b) return true;
+            if (!a || !b) return false;
+            return WARP_KEYS.every(key =>
+                Math.abs(a[key].x - b[key].x) <= epsilon &&
+                Math.abs(a[key].y - b[key].y) <= epsilon
+            );
+        }
+
+        function rectToWarp(obj) {
+            return {
+                tl: { x: obj.x, y: obj.y },
+                tr: { x: obj.x + obj.w, y: obj.y },
+                br: { x: obj.x + obj.w, y: obj.y + obj.h },
+                bl: { x: obj.x, y: obj.y + obj.h }
+            };
+        }
+
+        function getObjectWarp(obj) {
+            return cloneWarp(obj?.warp) || rectToWarp(obj);
+        }
+
+        function getWarpBounds(warp) {
+            const points = WARP_KEYS.map(key => warp[key]);
+            const xs = points.map(point => point.x);
+            const ys = points.map(point => point.y);
+            const minX = Math.min(...xs);
+            const minY = Math.min(...ys);
+            const maxX = Math.max(...xs);
+            const maxY = Math.max(...ys);
+            return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+        }
+
+        function syncObjectBoundsFromWarp(obj) {
+            if (!obj?.warp) return;
+            const bounds = getWarpBounds(obj.warp);
+            obj.x = bounds.x;
+            obj.y = bounds.y;
+            obj.w = Math.max(0.001, bounds.w);
+            obj.h = Math.max(0.001, bounds.h);
+        }
+
+        function pointInTriangle(point, a, b, c) {
+            const sign = (p1, p2, p3) =>
+                (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+            const d1 = sign(point, a, b);
+            const d2 = sign(point, b, c);
+            const d3 = sign(point, c, a);
+            const hasNegative = d1 < 0 || d2 < 0 || d3 < 0;
+            const hasPositive = d1 > 0 || d2 > 0 || d3 > 0;
+            return !(hasNegative && hasPositive);
+        }
+
+        function pointInWarp(point, warp) {
+            return pointInTriangle(point, warp.tl, warp.tr, warp.br) ||
+                pointInTriangle(point, warp.tl, warp.br, warp.bl);
+        }
+
+        function solveLinearSystem(matrix, values) {
+            const n = values.length;
+            const augmented = matrix.map((row, index) => [...row, values[index]]);
+
+            for (let column = 0; column < n; column++) {
+                let pivot = column;
+                for (let row = column + 1; row < n; row++) {
+                    if (Math.abs(augmented[row][column]) > Math.abs(augmented[pivot][column])) pivot = row;
+                }
+                if (Math.abs(augmented[pivot][column]) < 1e-10) return null;
+                [augmented[column], augmented[pivot]] = [augmented[pivot], augmented[column]];
+
+                const divisor = augmented[column][column];
+                for (let c = column; c <= n; c++) augmented[column][c] /= divisor;
+
+                for (let row = 0; row < n; row++) {
+                    if (row === column) continue;
+                    const factor = augmented[row][column];
+                    if (Math.abs(factor) < 1e-14) continue;
+                    for (let c = column; c <= n; c++) {
+                        augmented[row][c] -= factor * augmented[column][c];
+                    }
+                }
+            }
+
+            return augmented.map(row => row[n]);
+        }
+
+        function computeWarpHomography(warp) {
+            const pairs = [
+                [0, 0, warp.tl.x, warp.tl.y],
+                [1, 0, warp.tr.x, warp.tr.y],
+                [1, 1, warp.br.x, warp.br.y],
+                [0, 1, warp.bl.x, warp.bl.y]
+            ];
+            const matrix = [];
+            const values = [];
+
+            for (const [u, v, x, y] of pairs) {
+                matrix.push([u, v, 1, 0, 0, 0, -x * u, -x * v]);
+                values.push(x);
+                matrix.push([0, 0, 0, u, v, 1, -y * u, -y * v]);
+                values.push(y);
+            }
+
+            return solveLinearSystem(matrix, values);
+        }
+
+        function mapWarpPoint(h, u, v, warp) {
+            if (h) {
+                const denominator = h[6] * u + h[7] * v + 1;
+                if (Math.abs(denominator) > 1e-8) {
+                    return {
+                        x: (h[0] * u + h[1] * v + h[2]) / denominator,
+                        y: (h[3] * u + h[4] * v + h[5]) / denominator
+                    };
+                }
+            }
+
+            const topX = warp.tl.x + (warp.tr.x - warp.tl.x) * u;
+            const topY = warp.tl.y + (warp.tr.y - warp.tl.y) * u;
+            const bottomX = warp.bl.x + (warp.br.x - warp.bl.x) * u;
+            const bottomY = warp.bl.y + (warp.br.y - warp.bl.y) * u;
+            return {
+                x: topX + (bottomX - topX) * v,
+                y: topY + (bottomY - topY) * v
+            };
+        }
+
+        function expandTriangle(points, amount = 0.35) {
+            const center = {
+                x: (points[0].x + points[1].x + points[2].x) / 3,
+                y: (points[0].y + points[1].y + points[2].y) / 3
+            };
+            return points.map(point => {
+                const dx = point.x - center.x;
+                const dy = point.y - center.y;
+                const length = Math.hypot(dx, dy) || 1;
+                return {
+                    x: point.x + dx / length * amount,
+                    y: point.y + dy / length * amount
+                };
+            });
+        }
+
+        function drawImageTriangle(ctxToDraw, source, sourcePoints, destinationPoints) {
+            const [s0, s1, s2] = sourcePoints;
+            const [d0, d1, d2] = destinationPoints;
+            const determinant = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
+            if (Math.abs(determinant) < 1e-8) return;
+
+            const a = (d0.x * (s1.y - s2.y) + d1.x * (s2.y - s0.y) + d2.x * (s0.y - s1.y)) / determinant;
+            const c = (d0.x * (s2.x - s1.x) + d1.x * (s0.x - s2.x) + d2.x * (s1.x - s0.x)) / determinant;
+            const e = (d0.x * (s1.x * s2.y - s2.x * s1.y) + d1.x * (s2.x * s0.y - s0.x * s2.y) + d2.x * (s0.x * s1.y - s1.x * s0.y)) / determinant;
+            const b = (d0.y * (s1.y - s2.y) + d1.y * (s2.y - s0.y) + d2.y * (s0.y - s1.y)) / determinant;
+            const d = (d0.y * (s2.x - s1.x) + d1.y * (s0.x - s2.x) + d2.y * (s1.x - s0.x)) / determinant;
+            const f = (d0.y * (s1.x * s2.y - s2.x * s1.y) + d1.y * (s2.x * s0.y - s0.x * s2.y) + d2.y * (s0.x * s1.y - s1.x * s0.y)) / determinant;
+
+            const clipPoints = expandTriangle(destinationPoints);
+            ctxToDraw.save();
+            ctxToDraw.beginPath();
+            ctxToDraw.moveTo(clipPoints[0].x, clipPoints[0].y);
+            ctxToDraw.lineTo(clipPoints[1].x, clipPoints[1].y);
+            ctxToDraw.lineTo(clipPoints[2].x, clipPoints[2].y);
+            ctxToDraw.closePath();
+            ctxToDraw.clip();
+            ctxToDraw.transform(a, b, c, d, e, f);
+            ctxToDraw.drawImage(source, 0, 0);
+            ctxToDraw.restore();
+        }
+
+        function drawSourceToWarp(ctxToDraw, source, warp) {
+            const sourceWidth = source.naturalWidth || source.width;
+            const sourceHeight = source.naturalHeight || source.height;
+            if (!sourceWidth || !sourceHeight) return;
+
+            const bounds = getWarpBounds(warp);
+            const meshSize = clamp(
+                Math.ceil(Math.max(bounds.w, bounds.h) / 64),
+                WARP_MESH_MIN,
+                WARP_MESH_MAX
+            );
+            const homography = computeWarpHomography(warp);
+            const grid = Array.from({ length: meshSize + 1 }, (_, y) =>
+                Array.from({ length: meshSize + 1 }, (_, x) =>
+                    mapWarpPoint(homography, x / meshSize, y / meshSize, warp)
+                )
+            );
+
+            for (let y = 0; y < meshSize; y++) {
+                for (let x = 0; x < meshSize; x++) {
+                    const u0 = x / meshSize;
+                    const v0 = y / meshSize;
+                    const u1 = (x + 1) / meshSize;
+                    const v1 = (y + 1) / meshSize;
+                    const sTL = { x: u0 * sourceWidth, y: v0 * sourceHeight };
+                    const sTR = { x: u1 * sourceWidth, y: v0 * sourceHeight };
+                    const sBR = { x: u1 * sourceWidth, y: v1 * sourceHeight };
+                    const sBL = { x: u0 * sourceWidth, y: v1 * sourceHeight };
+                    const dTL = grid[y][x];
+                    const dTR = grid[y][x + 1];
+                    const dBR = grid[y + 1][x + 1];
+                    const dBL = grid[y + 1][x];
+
+                    drawImageTriangle(ctxToDraw, source, [sTL, sTR, sBR], [dTL, dTR, dBR]);
+                    drawImageTriangle(ctxToDraw, source, [sTL, sBR, sBL], [dTL, dBR, dBL]);
+                }
+            }
+        }
+
+        function decomposeInBasis(vector, basisX, basisY) {
+            const determinant = basisX.x * basisY.y - basisX.y * basisY.x;
+            if (Math.abs(determinant) < 1e-8) return null;
+            return {
+                x: (vector.x * basisY.y - vector.y * basisY.x) / determinant,
+                y: (basisX.x * vector.y - basisX.y * vector.x) / determinant
+            };
+        }
+
+        function resizeWarpFromCorner(originalWarp, handle, target, preserveRatio) {
+            const layout = {
+                br: { opposite: 'tl', axisX: 'tr', axisY: 'bl' },
+                tl: { opposite: 'br', axisX: 'bl', axisY: 'tr' },
+                tr: { opposite: 'bl', axisX: 'tl', axisY: 'br' },
+                bl: { opposite: 'tr', axisX: 'br', axisY: 'tl' }
+            }[handle];
+            if (!layout) return cloneWarp(originalWarp);
+
+            const origin = originalWarp[layout.opposite];
+            const basisX = {
+                x: originalWarp[layout.axisX].x - origin.x,
+                y: originalWarp[layout.axisX].y - origin.y
+            };
+            const basisY = {
+                x: originalWarp[layout.axisY].x - origin.x,
+                y: originalWarp[layout.axisY].y - origin.y
+            };
+            const selectedVector = {
+                x: originalWarp[handle].x - origin.x,
+                y: originalWarp[handle].y - origin.y
+            };
+            const targetVector = { x: target.x - origin.x, y: target.y - origin.y };
+            const selectedCoordinates = decomposeInBasis(selectedVector, basisX, basisY);
+            const targetCoordinates = decomposeInBasis(targetVector, basisX, basisY);
+            if (!selectedCoordinates || !targetCoordinates) return cloneWarp(originalWarp);
+
+            let scaleX = targetCoordinates.x / (selectedCoordinates.x || 1);
+            let scaleY = targetCoordinates.y / (selectedCoordinates.y || 1);
+            const minimumScale = 0.01;
+            scaleX = Math.max(minimumScale, scaleX);
+            scaleY = Math.max(minimumScale, scaleY);
+
+            if (preserveRatio) {
+                const uniformScale = Math.abs(scaleX - 1) >= Math.abs(scaleY - 1) ? scaleX : scaleY;
+                scaleX = uniformScale;
+                scaleY = uniformScale;
+            }
+
+            const resized = {};
+            for (const key of WARP_KEYS) {
+                const vector = {
+                    x: originalWarp[key].x - origin.x,
+                    y: originalWarp[key].y - origin.y
+                };
+                const coordinates = decomposeInBasis(vector, basisX, basisY);
+                if (!coordinates) return cloneWarp(originalWarp);
+                resized[key] = {
+                    x: origin.x + basisX.x * coordinates.x * scaleX + basisY.x * coordinates.y * scaleY,
+                    y: origin.y + basisX.y * coordinates.x * scaleX + basisY.y * coordinates.y * scaleY
+                };
+            }
+            return resized;
         }
 
         function setTextMode(active) {
@@ -758,7 +1058,8 @@
                 x: obj.x,
                 y: obj.y,
                 w: obj.w,
-                h: obj.h
+                h: obj.h,
+                warp: cloneWarp(obj.warp)
             };
         }
 
@@ -1156,11 +1457,20 @@
             obj._textTextureKey = '';
         }
 
+        function drawObjectSource(ctxToDraw, source, obj) {
+            if (!source) return;
+            ctxToDraw.imageSmoothingEnabled = true;
+            if (obj.warp) {
+                drawSourceToWarp(ctxToDraw, source, getObjectWarp(obj));
+            } else {
+                ctxToDraw.drawImage(source, obj.x, obj.y, obj.w, obj.h);
+            }
+        }
+
         function drawTextObject(ctxToDraw, obj) {
             const texture = getTextTexture(obj);
             if (!texture) return;
-            ctxToDraw.imageSmoothingEnabled = true;
-            ctxToDraw.drawImage(texture, obj.x, obj.y, obj.w, obj.h);
+            drawObjectSource(ctxToDraw, texture, obj);
         }
 
         function drawObject(ctxToDraw, obj) {
@@ -1169,7 +1479,7 @@
                 return;
             }
             if (obj?.img?.complete && obj.img.naturalWidth > 0) {
-                ctxToDraw.drawImage(obj.img, obj.x, obj.y, obj.w, obj.h);
+                drawObjectSource(ctxToDraw, obj.img, obj);
             }
         }
 
@@ -1708,26 +2018,27 @@
                 ctx.save();
                 ctx.translate(view.x, view.y);
                 ctx.scale(view.zoom, view.zoom);
-                
-                ctx.strokeStyle = '#3b82f6';
+
+                const warp = getObjectWarp(sel);
+                ctx.strokeStyle = isWarping ? '#7c3aed' : '#3b82f6';
                 ctx.lineWidth = 2 / view.zoom;
-                ctx.strokeRect(sel.x, sel.y, sel.w, sel.h);
+                ctx.beginPath();
+                ctx.moveTo(warp.tl.x, warp.tl.y);
+                ctx.lineTo(warp.tr.x, warp.tr.y);
+                ctx.lineTo(warp.br.x, warp.br.y);
+                ctx.lineTo(warp.bl.x, warp.bl.y);
+                ctx.closePath();
+                ctx.stroke();
 
                 ctx.fillStyle = '#ffffff';
-                ctx.strokeStyle = '#3b82f6';
+                ctx.strokeStyle = isWarping ? '#7c3aed' : '#3b82f6';
                 ctx.lineWidth = 2 / view.zoom;
                 const hs = HANDLE_SIZE / view.zoom;
 
-                const handles = [
-                    { x: sel.x, y: sel.y },
-                    { x: sel.x + sel.w, y: sel.y },
-                    { x: sel.x, y: sel.y + sel.h },
-                    { x: sel.x + sel.w, y: sel.y + sel.h }
-                ];
-
-                handles.forEach(h => {
-                    ctx.fillRect(h.x - hs/2, h.y - hs/2, hs, hs);
-                    ctx.strokeRect(h.x - hs/2, h.y - hs/2, hs, hs);
+                WARP_KEYS.forEach(key => {
+                    const handle = warp[key];
+                    ctx.fillRect(handle.x - hs / 2, handle.y - hs / 2, hs, hs);
+                    ctx.strokeRect(handle.x - hs / 2, handle.y - hs / 2, hs, hs);
                 });
 
                 ctx.restore();
@@ -1854,7 +2165,7 @@
 
         canvas.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            if (isPanning || isDragging || isResizing || isCreatingText) return;
+            if (isPanning || isDragging || isResizing || isWarping || isCreatingText) return;
             showCanvasContextMenu(e.clientX, e.clientY);
         });
 
@@ -1889,20 +2200,23 @@
             const hs = (HANDLE_SIZE * 1.5) / view.zoom; 
 
             if (sel) {
-                const handles = {
-                    tl: { x: sel.x, y: sel.y },
-                    tr: { x: sel.x + sel.w, y: sel.y },
-                    bl: { x: sel.x, y: sel.y + sel.h },
-                    br: { x: sel.x + sel.w, y: sel.y + sel.h }
-                };
+                const handles = getObjectWarp(sel);
 
-                for (let key in handles) {
-                    const h = handles[key];
-                    if (Math.abs(wpos.x - h.x) <= hs && Math.abs(wpos.y - h.y) <= hs) {
+                for (const key of WARP_KEYS) {
+                    const handle = handles[key];
+                    if (Math.abs(wpos.x - handle.x) <= hs && Math.abs(wpos.y - handle.y) <= hs) {
                         isResizing = true;
+                        isWarping = sel.type === 'image' && (e.ctrlKey || e.metaKey);
                         resizeHandle = key;
                         actionStart = { x: wpos.x, y: wpos.y };
-                        origObj = { x: sel.x, y: sel.y, w: sel.w, h: sel.h };
+                        origObj = {
+                            x: sel.x,
+                            y: sel.y,
+                            w: sel.w,
+                            h: sel.h,
+                            warp: cloneWarp(sel.warp),
+                            resolvedWarp: getObjectWarp(sel)
+                        };
                         transformStartSnapshot = captureState();
                         return;
                     }
@@ -1914,8 +2228,7 @@
             if (wpos.x >= 0 && wpos.x <= BOARD_W && wpos.y >= 0 && wpos.y <= BOARD_H) {
                 for (let i = objects.length - 1; i >= 0; i--) {
                     const obj = objects[i];
-                    if (wpos.x >= obj.x && wpos.x <= obj.x + obj.w &&
-                        wpos.y >= obj.y && wpos.y <= obj.y + obj.h) {
+                    if (pointInWarp(wpos, getObjectWarp(obj))) {
                         clickedIdx = i;
                         break;
                     }
@@ -1930,7 +2243,14 @@
             if (selectedIndex !== -1) {
                 isDragging = true;
                 actionStart = { x: wpos.x, y: wpos.y };
-                origObj = { x: objects[selectedIndex].x, y: objects[selectedIndex].y };
+                origObj = {
+                    x: objects[selectedIndex].x,
+                    y: objects[selectedIndex].y,
+                    w: objects[selectedIndex].w,
+                    h: objects[selectedIndex].h,
+                    warp: cloneWarp(objects[selectedIndex].warp),
+                    resolvedWarp: getObjectWarp(objects[selectedIndex])
+                };
                 transformStartSnapshot = captureState();
             }
             render();
@@ -1960,8 +2280,17 @@
             if (isDragging && selectedIndex !== -1) {
                 const dx = wpos.x - actionStart.x;
                 const dy = wpos.y - actionStart.y;
-                objects[selectedIndex].x = origObj.x + dx;
-                objects[selectedIndex].y = origObj.y + dy;
+                const selected = objects[selectedIndex];
+                selected.x = origObj.x + dx;
+                selected.y = origObj.y + dy;
+                if (origObj.warp) {
+                    selected.warp = cloneWarp(origObj.resolvedWarp);
+                    WARP_KEYS.forEach(key => {
+                        selected.warp[key].x += dx;
+                        selected.warp[key].y += dy;
+                    });
+                    syncObjectBoundsFromWarp(selected);
+                }
                 render();
                 return;
             }
@@ -1972,59 +2301,68 @@
                 const dy = wpos.y - actionStart.y;
                 const minSize = 10;
 
-                let nw = origObj.w;
-                let nh = origObj.h;
-                let nx = origObj.x;
-                let ny = origObj.y;
+                if (isWarping) {
+                    sel.warp = cloneWarp(origObj.resolvedWarp);
+                    sel.warp[resizeHandle] = { x: wpos.x, y: wpos.y };
+                    syncObjectBoundsFromWarp(sel);
+                } else if (origObj.warp) {
+                    sel.warp = resizeWarpFromCorner(origObj.resolvedWarp, resizeHandle, wpos, e.shiftKey);
+                    syncObjectBoundsFromWarp(sel);
+                } else {
+                    let nw = origObj.w;
+                    let nh = origObj.h;
+                    let nx = origObj.x;
+                    let ny = origObj.y;
 
-                if (resizeHandle === 'br') {
-                    nw = origObj.w + dx;
-                    nh = origObj.h + dy;
-                } else if (resizeHandle === 'bl') {
-                    nw = origObj.w - dx;
-                    nh = origObj.h + dy;
-                    nx = origObj.x + dx;
-                } else if (resizeHandle === 'tr') {
-                    nw = origObj.w + dx;
-                    nh = origObj.h - dy;
-                    ny = origObj.y + dy;
-                } else if (resizeHandle === 'tl') {
-                    nw = origObj.w - dx;
-                    nh = origObj.h - dy;
-                    nx = origObj.x + dx;
-                    ny = origObj.y + dy;
-                }
-
-                if (e.shiftKey) {
-                    const ratio = origObj.w / origObj.h;
-                    if (nw / nh > ratio) nw = nh * ratio;
-                    else nh = nw / ratio;
-                    
-                    if (resizeHandle === 'bl') nx = origObj.x + (origObj.w - nw);
-                    if (resizeHandle === 'tr') ny = origObj.y + (origObj.h - nh);
-                    if (resizeHandle === 'tl') {
-                        nx = origObj.x + (origObj.w - nw);
-                        ny = origObj.y + (origObj.h - nh);
+                    if (resizeHandle === 'br') {
+                        nw = origObj.w + dx;
+                        nh = origObj.h + dy;
+                    } else if (resizeHandle === 'bl') {
+                        nw = origObj.w - dx;
+                        nh = origObj.h + dy;
+                        nx = origObj.x + dx;
+                    } else if (resizeHandle === 'tr') {
+                        nw = origObj.w + dx;
+                        nh = origObj.h - dy;
+                        ny = origObj.y + dy;
+                    } else if (resizeHandle === 'tl') {
+                        nw = origObj.w - dx;
+                        nh = origObj.h - dy;
+                        nx = origObj.x + dx;
+                        ny = origObj.y + dy;
                     }
+
+                    if (e.shiftKey) {
+                        const ratio = origObj.w / origObj.h;
+                        if (nw / nh > ratio) nw = nh * ratio;
+                        else nh = nw / ratio;
+
+                        if (resizeHandle === 'bl') nx = origObj.x + (origObj.w - nw);
+                        if (resizeHandle === 'tr') ny = origObj.y + (origObj.h - nh);
+                        if (resizeHandle === 'tl') {
+                            nx = origObj.x + (origObj.w - nw);
+                            ny = origObj.y + (origObj.h - nh);
+                        }
+                    }
+
+                    if (nw < minSize) {
+                        if (resizeHandle === 'bl' || resizeHandle === 'tl') nx -= minSize - nw;
+                        nw = minSize;
+                    }
+                    if (nh < minSize) {
+                        if (resizeHandle === 'tr' || resizeHandle === 'tl') ny -= minSize - nh;
+                        nh = minSize;
+                    }
+
+                    sel.x = nx;
+                    sel.y = ny;
+                    sel.w = nw;
+                    sel.h = nh;
                 }
 
-                if (nw < minSize) {
-                    if (resizeHandle === 'bl' || resizeHandle === 'tl') nx -= minSize - nw;
-                    nw = minSize;
-                }
-                if (nh < minSize) {
-                    if (resizeHandle === 'tr' || resizeHandle === 'tl') ny -= minSize - nh;
-                    nh = minSize;
-                }
-
-                sel.x = nx;
-                sel.y = ny;
-                sel.w = nw;
-                sel.h = nh;
-                
                 if (document.activeElement === canvas) {
-                    const itemSubtitle = layerList.children[objects.length - 1 - selectedIndex]?.querySelector('.text-\\[9px\\]');
-                    if(itemSubtitle) itemSubtitle.innerText = `${Math.round(nw)} x ${Math.round(nh)}`;
+                    const itemSubtitle = layerList.children[objects.length - 1 - selectedIndex]?.querySelector('.text-\[9px\]');
+                    if (itemSubtitle) itemSubtitle.innerText = `${Math.round(sel.w)} x ${Math.round(sel.h)}`;
                 }
 
                 render();
@@ -2037,16 +2375,19 @@
                 const hs = (HANDLE_SIZE * 1.5) / view.zoom;
                 
                 if (!isTextMode && sel) {
-                    const handles = {
-                        tl: { x: sel.x, y: sel.y, c: 'nwse-resize' },
-                        tr: { x: sel.x + sel.w, y: sel.y, c: 'nesw-resize' },
-                        bl: { x: sel.x, y: sel.y + sel.h, c: 'nesw-resize' },
-                        br: { x: sel.x + sel.w, y: sel.y + sel.h, c: 'nwse-resize' }
+                    const handles = getObjectWarp(sel);
+                    const resizeCursors = {
+                        tl: 'nwse-resize',
+                        tr: 'nesw-resize',
+                        bl: 'nesw-resize',
+                        br: 'nwse-resize'
                     };
-                    for (let key in handles) {
-                        const h = handles[key];
-                        if (Math.abs(wpos.x - h.x) <= hs && Math.abs(wpos.y - h.y) <= hs) {
-                            cursor = h.c;
+                    for (const key of WARP_KEYS) {
+                        const handle = handles[key];
+                        if (Math.abs(wpos.x - handle.x) <= hs && Math.abs(wpos.y - handle.y) <= hs) {
+                            cursor = sel.type === 'image' && (e.ctrlKey || e.metaKey)
+                                ? 'crosshair'
+                                : resizeCursors[key];
                             break;
                         }
                     }
@@ -2067,7 +2408,8 @@
             isDragging = false;
             if (isResizing) {
                 isResizing = false;
-                updateLayerList(); 
+                isWarping = false;
+                updateLayerList();
             }
             if (wasTransforming) {
                 pushHistorySnapshot(transformStartSnapshot);

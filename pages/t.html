@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DFA string matcher visualizer</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0d0f14;
+      color: #e9edf5;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #bar {
+      position: fixed;
+      left: 18px;
+      top: 14px;
+      right: 18px;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: 60px 60px 220px 1fr 116px 116px 92px 92px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input, button {
+      height: 38px;
+      box-sizing: border-box;
+      border: 1px solid #33394a;
+      border-radius: 10px;
+      background: #171b25;
+      color: #eef2fb;
+      padding: 0 10px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    button {
+      cursor: pointer;
+      background: #222838;
+    }
+
+    button:hover {
+      background: #2d3549;
+    }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <input id="a0" value="a" maxlength="1" title="文字1">
+    <input id="a1" value="b" maxlength="1" title="文字2">
+    <input id="pattern" value="aabbaaba" title="パターンP">
+    <input id="text" value="aabbaabbaabbaabbaabaabbaaba" title="テキストT">
+    <button id="build">作成開始</button>
+    <button id="search">探索開始</button>
+    <button id="step">1手</button>
+    <button id="auto">自動</button>
+  </div>
+
+<script>
+new p5((p) => {
+  const NODE_R = 25;
+
+  let alphabet = ["a", "b"];
+  let pattern = "aabbaaba";
+  let text = "aabbaabbaabbaabbaabaabbaaba";
+
+  let nodes = [];
+  let edges = [];
+  let transition = [];
+
+  let phases = [];
+  let phaseIndex = 0;
+
+  let mode = "idle";
+  let auto = false;
+  let lastAuto = 0;
+
+  let currentState = 0;
+  let textIndex = 0;
+  let stateHistory = [0];
+  let matches = [];
+
+  let activeEdgeId = null;
+  let activeSearch = null;
+  let activeNodeId = null;
+
+  let message = "作成開始で、DFAのノードと遷移辺を順に作成する。";
+  let detail = "";
+
+  p.setup = () => {
+    p.createCanvas(p.windowWidth, p.windowHeight);
+    p.textFont("system-ui, sans-serif");
+
+    document.getElementById("build").onclick = startBuild;
+    document.getElementById("search").onclick = startSearch;
+    document.getElementById("step").onclick = step;
+    document.getElementById("auto").onclick = toggleAuto;
+
+    rebuildData();
+  };
+
+  p.windowResized = () => {
+    p.resizeCanvas(p.windowWidth, p.windowHeight);
+    layoutNodes();
+  };
+
+  p.draw = () => {
+    p.background(13, 15, 20);
+
+    if (auto && p.millis() - lastAuto > 720) {
+      step();
+      lastAuto = p.millis();
+    }
+
+    drawHeader();
+    drawGraph();
+    drawTape();
+    drawPanel();
+  };
+
+  function readInputs() {
+    const c0 = document.getElementById("a0").value || "a";
+    const c1 = document.getElementById("a1").value || "b";
+
+    alphabet = [c0[0], c1[0]].filter((ch, i, arr) => ch && arr.indexOf(ch) === i);
+    pattern = document.getElementById("pattern").value || "";
+    text = document.getElementById("text").value || "";
+  }
+
+  function rebuildData() {
+    readInputs();
+
+    nodes = [];
+    edges = [];
+    transition = [];
+    phases = [];
+    phaseIndex = 0;
+
+    const m = pattern.length;
+
+    for (let q = 0; q <= m; q++) {
+      nodes.push({
+        id: q,
+        prefix: pattern.slice(0, q),
+        x: 0,
+        y: 0,
+        created: false,
+        bornAt: 0
+      });
+
+      transition[q] = {};
+    }
+
+    for (let q = 0; q <= m; q++) {
+      phases.push({ type: "node", q });
+    }
+
+    for (let q = 0; q <= m; q++) {
+      for (const ch of alphabet) {
+        const result = computeNextState(q, ch);
+        const edge = {
+          id: edges.length,
+          from: q,
+          to: result.to,
+          label: ch,
+          base: result.base,
+          kept: result.kept,
+          created: false,
+          bornAt: 0,
+          lane: 0
+        };
+
+        edges.push(edge);
+        transition[q][ch] = result.to;
+        phases.push({ type: "edge", edgeId: edge.id });
+      }
+    }
+
+    assignEdgeLanes();
+    layoutNodes();
+  }
+
+  function computeNextState(q, ch) {
+    const base = pattern.slice(0, q) + ch;
+    const limit = Math.min(pattern.length, base.length);
+
+    for (let k = limit; k >= 0; k--) {
+      const prefix = pattern.slice(0, k);
+      if (base.endsWith(prefix)) {
+        return {
+          to: k,
+          base,
+          kept: prefix
+        };
+      }
+    }
+
+    return {
+      to: 0,
+      base,
+      kept: ""
+    };
+  }
+
+  function assignEdgeLanes() {
+    const counts = new Map();
+
+    for (const edge of edges) {
+      const key = `${edge.from}->${edge.to}`;
+      const count = counts.get(key) || 0;
+      edge.lane = count;
+      counts.set(key, count + 1);
+    }
+  }
+
+  function layoutNodes() {
+    const m = pattern.length;
+    const left = 80;
+    const right = p.width - 80;
+    const y = p.height * 0.36;
+    const span = Math.max(1, m);
+
+    for (let q = 0; q <= m; q++) {
+      nodes[q].x = p.lerp(left, right, q / span);
+      nodes[q].y = y;
+    }
+  }
+
+  function startBuild() {
+    rebuildData();
+
+    for (const node of nodes) node.created = false;
+    for (const edge of edges) edge.created = false;
+
+    mode = "build";
+    auto = false;
+    phaseIndex = 0;
+    currentState = 0;
+    textIndex = 0;
+    stateHistory = [0];
+    matches = [];
+    activeEdgeId = null;
+    activeSearch = null;
+    activeNodeId = null;
+
+    document.getElementById("auto").textContent = "自動";
+    message = "ノード作成から開始する。状態kは、Pの先頭k文字まで発見した状態である。";
+    detail = "";
+  }
+
+  function startSearch() {
+    rebuildData();
+
+    for (const node of nodes) {
+      node.created = true;
+      node.bornAt = p.millis() - 1000;
+    }
+
+    for (const edge of edges) {
+      edge.created = true;
+      edge.bornAt = p.millis() - 1000;
+    }
+
+    mode = "search";
+    auto = false;
+    currentState = 0;
+    textIndex = 0;
+    stateHistory = [0];
+    matches = [];
+    activeEdgeId = null;
+    activeSearch = null;
+    activeNodeId = 0;
+
+    document.getElementById("auto").textContent = "自動";
+    message = "探索を開始する。Tを左から1文字ずつ読み、辺に沿って状態を移動する。";
+    detail = "";
+  }
+
+  function toggleAuto() {
+    auto = !auto;
+    document.getElementById("auto").textContent = auto ? "停止" : "自動";
+  }
+
+  function step() {
+    if (mode === "idle") {
+      startBuild();
+      return;
+    }
+
+    if (mode === "build") {
+      buildStep();
+      return;
+    }
+
+    if (mode === "search") {
+      searchStep();
+    }
+  }
+
+  function buildStep() {
+    if (phaseIndex >= phases.length) {
+      mode = "search";
+      currentState = 0;
+      textIndex = 0;
+      stateHistory = [0];
+      matches = [];
+      activeNodeId = 0;
+      activeEdgeId = null;
+      activeSearch = null;
+      message = "DFAの作成が完了した。次の操作から探索を実行する。";
+      detail = "";
+      return;
+    }
+
+    const phase = phases[phaseIndex];
+    phaseIndex++;
+
+    if (phase.type === "node") {
+      const node = nodes[phase.q];
+      node.created = true;
+      node.bornAt = p.millis();
+      activeNodeId = node.id;
+      activeEdgeId = null;
+
+      message = `状態${node.id}を作成した。`;
+      detail = `状態${node.id}は、Pの先頭${node.id}文字「${node.prefix || "ε"}」まで発見した状態である。`;
+      return;
+    }
+
+    const edge = edges[phase.edgeId];
+    edge.created = true;
+    edge.bornAt = p.millis();
+    activeEdgeId = edge.id;
+    activeNodeId = null;
+
+    message = `遷移 δ(${edge.from}, ${edge.label}) = ${edge.to} を作成した。`;
+    detail =
+      `状態${edge.from}で持つ文字列「${pattern.slice(0, edge.from) || "ε"}」に` +
+      `「${edge.label}」を足して「${edge.base}」を見る。` +
+      `その末尾に残るPの最長接頭語は「${edge.kept || "ε"}」なので、次状態は${edge.to}である。`;
+  }
+
+  function searchStep() {
+    if (textIndex >= text.length) {
+      auto = false;
+      document.getElementById("auto").textContent = "自動";
+      activeSearch = null;
+      message = "探索が完了した。";
+      detail = `発見位置: ${matches.length ? matches.join(", ") : "なし"}`;
+      return;
+    }
+
+    const ch = text[textIndex];
+    const from = currentState;
+    const to = Object.prototype.hasOwnProperty.call(transition[from], ch)
+      ? transition[from][ch]
+      : 0;
+
+    const edge = edges.find(e => e.from === from && e.to === to && e.label === ch) || null;
+
+    currentState = to;
+    stateHistory.push(to);
+    activeNodeId = to;
+    activeEdgeId = edge ? edge.id : null;
+
+    activeSearch = edge
+      ? { edgeId: edge.id, startedAt: p.millis(), from, to, ch, index: textIndex }
+      : null;
+
+    if (to === pattern.length && pattern.length > 0) {
+      matches.push(textIndex - pattern.length + 1);
+    }
+
+    message = `T[${textIndex}] = ${ch} を読んだ。状態${from}から状態${to}へ移動した。`;
+    detail =
+      to === pattern.length
+        ? `状態${pattern.length}に到達したため、開始位置 ${textIndex - pattern.length + 1} にPが現れる。`
+        : `現在状態${to}は、読んだ部分の末尾にPの先頭${to}文字が残っていることを表す。`;
+
+    textIndex++;
+  }
+
+  function drawHeader() {
+    p.noStroke();
+    p.fill(242);
+    p.textSize(22);
+    p.text("有限オートマトン法 文字列探索グラフ", 18, 80);
+
+    p.fill(176);
+    p.textSize(14);
+    p.text(`Σ = { ${alphabet.join(", ")} }    P = ${pattern || "未入力"}    T = ${text || "未入力"}`, 18, 106);
+
+    p.fill(232);
+    p.textSize(15);
+    p.text(message, 18, 134);
+  }
+
+  function drawGraph() {
+    for (const edge of edges) {
+      if (edge.created) drawEdge(edge);
+    }
+
+    if (activeSearch) drawMovingToken(activeSearch);
+
+    for (const node of nodes) {
+      if (node.created) drawNode(node);
+    }
+  }
+
+  function drawNode(node) {
+    const age = Math.min(1, (p.millis() - node.bornAt) / 360);
+    const scale = easeOutBack(age);
+    const r = NODE_R * scale;
+    const active = activeNodeId === node.id;
+    const accept = node.id === pattern.length;
+
+    p.stroke(active ? "#ffd166" : accept ? "#e8edf7" : "#7f8798");
+    p.strokeWeight(active ? 4 : 2);
+    p.fill(active ? "#39301a" : "#151923");
+    p.circle(node.x, node.y, r * 2);
+
+    if (accept) {
+      p.noFill();
+      p.stroke(active ? "#ffd166" : "#e8edf7");
+      p.strokeWeight(2);
+      p.circle(node.x, node.y, r * 2 - 10);
+    }
+
+    p.noStroke();
+    p.fill("#f3f6fb");
+    p.textAlign(p.CENTER, p.CENTER);
+    p.textSize(18);
+    p.text(node.id, node.x, node.y - 1);
+
+    p.fill("#9da6b8");
+    p.textSize(11);
+    p.text(node.prefix || "ε", node.x, node.y + 43);
+    p.textAlign(p.LEFT, p.BASELINE);
+  }
+
+  function drawEdge(edge) {
+    const age = Math.min(1, (p.millis() - edge.bornAt) / 560);
+    const progress = edge.id === activeEdgeId ? easeInOutCubic(age) : 1;
+    const active = edge.id === activeEdgeId;
+
+    if (edge.from === edge.to) {
+      drawSelfLoop(edge, progress, active);
+    } else {
+      drawCurvedEdge(edge, progress, active);
+    }
+  }
+
+  function drawCurvedEdge(edge, progress, active) {
+    const geom = curvedEdgeGeometry(edge);
+    const samples = Math.max(10, Math.ceil(42 * progress));
+
+    p.noFill();
+    p.stroke(active ? "#ffd166" : "#556070");
+    p.strokeWeight(active ? 4 : 2);
+    p.beginShape();
+
+    for (let i = 0; i <= samples; i++) {
+      const t = progress * (i / samples);
+      const pt = quadraticPoint(geom.start, geom.control, geom.end, t);
+      p.vertex(pt.x, pt.y);
+    }
+
+    p.endShape();
+
+    const headT = Math.max(0.001, progress);
+    const head = quadraticPoint(geom.start, geom.control, geom.end, headT);
+    const prev = quadraticPoint(geom.start, geom.control, geom.end, Math.max(0, headT - 0.02));
+    drawArrowHead(prev.x, prev.y, head.x, head.y, active);
+
+    if (progress > 0.7) {
+      const labelPoint = quadraticPoint(geom.start, geom.control, geom.end, 0.5);
+      drawEdgeLabel(edge.label, labelPoint.x, labelPoint.y, active);
+    }
+  }
+
+  function drawSelfLoop(edge, progress, active) {
+    const node = nodes[edge.from];
+    const loop = selfLoopGeometry(edge);
+    const start = -p.PI * 0.1;
+    const end = p.TWO_PI * 1.15;
+    const a1 = start;
+    const a2 = start + (end - start) * progress;
+    const steps = Math.max(8, Math.ceil(42 * progress));
+
+    p.noFill();
+    p.stroke(active ? "#ffd166" : "#556070");
+    p.strokeWeight(active ? 4 : 2);
+    p.beginShape();
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = p.lerp(a1, a2, t);
+      p.vertex(loop.cx + Math.cos(a) * loop.rx, loop.cy + Math.sin(a) * loop.ry);
+    }
+
+    p.endShape();
+
+    const head = {
+      x: loop.cx + Math.cos(a2) * loop.rx,
+      y: loop.cy + Math.sin(a2) * loop.ry
+    };
+    const prevA = a2 - 0.05;
+    const prev = {
+      x: loop.cx + Math.cos(prevA) * loop.rx,
+      y: loop.cy + Math.sin(prevA) * loop.ry
+    };
+
+    drawArrowHead(prev.x, prev.y, head.x, head.y, active);
+
+    if (progress > 0.7) {
+      drawEdgeLabel(edge.label, loop.cx, loop.cy - loop.ry - 12, active);
+    }
+  }
+
+  function drawMovingToken(search) {
+    const edge = edges[search.edgeId];
+    const t = easeInOutCubic(Math.min(1, (p.millis() - search.startedAt) / 520));
+    let pt;
+
+    if (edge.from === edge.to) {
+      const loop = selfLoopGeometry(edge);
+      const a = p.lerp(-p.PI * 0.1, p.TWO_PI * 1.15, t);
+      pt = {
+        x: loop.cx + Math.cos(a) * loop.rx,
+        y: loop.cy + Math.sin(a) * loop.ry
+      };
+    } else {
+      const geom = curvedEdgeGeometry(edge);
+      pt = quadraticPoint(geom.start, geom.control, geom.end, t);
+    }
+
+    p.noStroke();
+    p.fill("#fff3b0");
+    p.circle(pt.x, pt.y, 15);
+
+    p.fill("#0d0f14");
+    p.textAlign(p.CENTER, p.CENTER);
+    p.textSize(10);
+    p.text(search.ch, pt.x, pt.y + 0.5);
+    p.textAlign(p.LEFT, p.BASELINE);
+  }
+
+  function curvedEdgeGeometry(edge) {
+    const a = nodes[edge.from];
+    const b = nodes[edge.to];
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.max(1, Math.hypot(dx, dy));
+
+    const mid = {
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2
+    };
+
+    const forward = edge.to > edge.from;
+    const distanceRank = Math.abs(edge.to - edge.from);
+    const bendBase = 58 + distanceRank * 18 + edge.lane * 26;
+    const bend = forward ? bendBase : -bendBase;
+
+    const nx = -dy / dist;
+    const ny = dx / dist;
+
+    const control = {
+      x: mid.x + nx * bend,
+      y: mid.y + ny * bend
+    };
+
+    const startDir = normalize(control.x - a.x, control.y - a.y);
+    const endDir = normalize(control.x - b.x, control.y - b.y);
+
+    return {
+      start: {
+        x: a.x + startDir.x * NODE_R,
+        y: a.y + startDir.y * NODE_R
+      },
+      control,
+      end: {
+        x: b.x + endDir.x * NODE_R,
+        y: b.y + endDir.y * NODE_R
+      }
+    };
+  }
+
+  function selfLoopGeometry(edge) {
+    const node = nodes[edge.from];
+    const lane = edge.lane || 0;
+
+    return {
+      cx: node.x,
+      cy: node.y - 52 - lane * 10,
+      rx: 42 + lane * 7,
+      ry: 32 + lane * 5
+    };
+  }
+
+  function drawEdgeLabel(label, x, y, active) {
+    p.noStroke();
+    p.fill(active ? "#ffd166" : "#cbd3e4");
+    p.textAlign(p.CENTER, p.CENTER);
+    p.textSize(active ? 16 : 13);
+    p.text(label, x, y);
+    p.textAlign(p.LEFT, p.BASELINE);
+  }
+
+  function drawArrowHead(x1, y1, x2, y2, active) {
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const size = active ? 12 : 9;
+
+    p.push();
+    p.translate(x2, y2);
+    p.rotate(angle);
+    p.noStroke();
+    p.fill(active ? "#ffd166" : "#556070");
+    p.triangle(0, 0, -size, -size * 0.55, -size, size * 0.55);
+    p.pop();
+  }
+
+  function drawTape() {
+    const y = p.height - 154;
+    const left = 24;
+    const maxWidth = p.width - 48;
+    const cell = Math.max(22, Math.min(38, maxWidth / Math.max(1, text.length)));
+
+    p.noStroke();
+    p.fill("#dce3ef");
+    p.textSize(15);
+    p.text("テキスト入力", left, y - 32);
+
+    for (let i = 0; i < text.length; i++) {
+      const x = left + i * cell;
+      const current = mode === "search" && i === textIndex;
+      const already = i < textIndex;
+      const hit = matches.some(s => i >= s && i < s + pattern.length);
+
+      p.stroke(current ? "#ffd166" : hit ? "#e8edf7" : "#3c4354");
+      p.strokeWeight(current ? 3 : 1);
+      p.fill(hit ? "#25344b" : already ? "#202634" : "#141821");
+      p.rect(x, y, cell - 2, 34, 6);
+
+      p.noStroke();
+      p.fill("#edf2fb");
+      p.textAlign(p.CENTER, p.CENTER);
+      p.textSize(15);
+      p.text(text[i], x + cell / 2 - 1, y + 17);
+
+      p.fill("#9ba5b7");
+      p.textSize(10);
+      p.text(i, x + cell / 2 - 1, y + 49);
+
+      if (stateHistory[i + 1] !== undefined) {
+        p.fill("#ffd166");
+        p.textSize(12);
+        p.text(stateHistory[i + 1], x + cell / 2 - 1, y - 11);
+      }
+    }
+
+    p.textAlign(p.LEFT, p.BASELINE);
+  }
+
+  function drawPanel() {
+    const x = 18;
+    const y = p.height - 58;
+
+    p.noStroke();
+    p.fill("#e9edf5");
+    p.textSize(15);
+
+    const found = matches.length ? matches.join(", ") : "なし";
+    p.text(`発見位置: ${found}`, x, y);
+
+    p.fill("#aeb8ca");
+    p.textSize(13);
+    p.text(detail, x, y + 24);
+  }
+
+  function quadraticPoint(a, c, b, t) {
+    const u = 1 - t;
+
+    return {
+      x: u * u * a.x + 2 * u * t * c.x + t * t * b.x,
+      y: u * u * a.y + 2 * u * t * c.y + t * t * b.y
+    };
+  }
+
+  function normalize(x, y) {
+    const d = Math.max(0.0001, Math.hypot(x, y));
+    return { x: x / d, y: y / d };
+  }
+
+  function easeInOutCubic(t) {
+    return t < 0.5
+      ? 4 * t * t * t
+      : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function easeOutBack(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Depth Normal Stroke Painter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js"
+    }
+  }
+  </script>
+
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #09090b;
+    }
+
+    input[type="range"] {
+      accent-color: white;
+    }
+
+    canvas {
+      image-rendering: auto;
+    }
+
+    .checker {
+      background-image:
+        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255,255,255,0.05) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.05) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.05) 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    }
+  </style>
+</head>
+
+<body class="h-screen w-screen bg-zinc-950 text-zinc-100">
+  <div class="grid h-screen w-screen grid-rows-[52px_1fr_160px]">
+    <header class="grid grid-cols-[320px_1fr_360px] border-b border-white/10 bg-zinc-950">
+      <div class="flex items-center gap-3 border-r border-white/10 px-4">
+        <div class="text-sm font-semibold tracking-wide">Depth Normal Stroke Painter</div>
+      </div>
+
+      <div class="flex items-center gap-3 px-4">
+        <label class="cursor-pointer bg-white px-4 py-2 text-xs font-semibold text-zinc-950">
+          画像を開く
+          <input id="fileInput" type="file" accept="image/*" class="hidden" />
+        </label>
+
+        <button id="runButton" disabled class="bg-zinc-800 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">
+          深度検出して描画
+        </button>
+
+        <button id="rerenderButton" disabled class="bg-zinc-800 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">
+          再描画
+        </button>
+
+        <button id="downloadButton" disabled class="bg-zinc-800 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">
+          PNG保存
+        </button>
+      </div>
+
+      <div class="grid grid-cols-[1fr_52px] items-center gap-3 border-l border-white/10 px-4">
+        <div>
+          <div id="statusText" class="truncate text-xs text-zinc-300">画像を選択してください。</div>
+          <div class="mt-1 h-1 bg-zinc-800">
+            <div id="statusBar" class="h-full w-0 bg-white"></div>
+          </div>
+        </div>
+        <div id="statusRate" class="text-right text-xs tabular-nums text-zinc-400">0%</div>
+      </div>
+    </header>
+
+    <main class="grid min-h-0 grid-cols-[320px_1fr]">
+      <aside class="min-h-0 overflow-y-auto border-r border-white/10 bg-zinc-950">
+        <div class="border-b border-white/10 px-4 py-3 text-xs font-semibold text-zinc-400">
+          STROKE
+        </div>
+
+        <div class="divide-y divide-white/10">
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>最大辺</span>
+              <span id="maxEdgeValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="maxEdge" type="range" min="512" max="1800" step="64" value="1024" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>ストローク数</span>
+              <span id="strokeCountValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="strokeCount" type="range" min="1000" max="26000" step="250" value="9000" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>長さ</span>
+              <span id="strokeLengthValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="strokeLength" type="range" min="2" max="54" step="1" value="15" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>幅</span>
+              <span id="strokeWidthValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="strokeWidth" type="range" min="0.3" max="7" step="0.1" value="1.7" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>濃度</span>
+              <span id="strokeAlphaValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="strokeAlpha" type="range" min="0.03" max="0.95" step="0.01" value="0.36" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>下地濃度</span>
+              <span id="baseAlphaValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="baseAlpha" type="range" min="0" max="1" step="0.01" value="0.48" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>法線差分半径</span>
+              <span id="normalRadiusValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="normalRadius" type="range" min="1" max="12" step="1" value="3" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>法線の傾き倍率</span>
+              <span id="normalScaleValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="normalScale" type="range" min="2" max="90" step="1" value="34" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>法線方向の回転</span>
+              <span id="normalRotationValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="normalRotation" type="range" min="-180" max="180" step="1" value="0" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>法線ノイズ</span>
+              <span id="angleNoiseValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="angleNoise" type="range" min="0" max="1.4" step="0.01" value="0.12" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>点位置の散らし</span>
+              <span id="positionJitterValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="positionJitter" type="range" min="0" max="1" step="0.01" value="0.62" class="w-full" />
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="mb-2 flex justify-between text-xs">
+              <span>深度による長さ変化</span>
+              <span id="depthLengthValue" class="tabular-nums text-zinc-400"></span>
+            </div>
+            <input id="depthLength" type="range" min="-1" max="2" step="0.01" value="0.45" class="w-full" />
+          </div>
+
+          <label class="flex items-center justify-between px-4 py-3 text-xs">
+            <span>深度を反転</span>
+            <input id="invertDepth" type="checkbox" class="h-4 w-4" />
+          </label>
+
+          <label class="flex items-center justify-between px-4 py-3 text-xs">
+            <span>背景を白で塗る</span>
+            <input id="whiteBackground" type="checkbox" class="h-4 w-4" checked />
+          </label>
+        </div>
+
+        <div class="border-t border-white/10 px-4 py-4 text-xs leading-5 text-zinc-400">
+          深度マップの近傍差分から
+          <span class="text-zinc-200">normal = normalize([-dz/dx, -dz/dy, 1])</span>
+          を作り、<span class="text-zinc-200">normal.xy</span> の角度でストロークを描画します。
+        </div>
+      </aside>
+
+      <section id="stage" class="checker relative min-h-0 overflow-hidden bg-zinc-900">
+        <canvas id="outputCanvas" class="absolute left-1/2 top-1/2 max-h-full max-w-full -translate-x-1/2 -translate-y-1/2 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]"></canvas>
+
+        <div id="emptyNotice" class="absolute inset-0 grid place-items-center text-sm text-zinc-500">
+          画像を開くと、ここに結果が表示されます。
+        </div>
+      </section>
+    </main>
+
+    <footer class="grid min-h-0 grid-cols-[320px_1fr_1fr] border-t border-white/10 bg-zinc-950">
+      <div class="flex items-center border-r border-white/10 px-4 text-xs text-zinc-400">
+        PREVIEW
+      </div>
+
+      <div class="grid min-h-0 grid-cols-[72px_1fr] border-r border-white/10">
+        <div class="flex items-center justify-center border-r border-white/10 text-xs text-zinc-500">SOURCE</div>
+        <div class="grid place-items-center overflow-hidden bg-zinc-950">
+          <canvas id="sourceCanvas" class="max-h-[150px] max-w-full"></canvas>
+        </div>
+      </div>
+
+      <div class="grid min-h-0 grid-cols-[72px_1fr]">
+        <div class="flex items-center justify-center border-r border-white/10 text-xs text-zinc-500">DEPTH</div>
+        <div class="grid place-items-center overflow-hidden bg-zinc-950">
+          <canvas id="depthCanvas" class="max-h-[150px] max-w-full"></canvas>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module">
+    import { pipeline, env } from '@xenova/transformers';
+
+    env.allowLocalModels = false;
+    env.allowRemoteModels = true;
+
+    const $ = (id) => document.getElementById(id);
+
+    const fileInput = $('fileInput');
+    const runButton = $('runButton');
+    const rerenderButton = $('rerenderButton');
+    const downloadButton = $('downloadButton');
+    const emptyNotice = $('emptyNotice');
+
+    const sourceCanvas = $('sourceCanvas');
+    const depthCanvas = $('depthCanvas');
+    const outputCanvas = $('outputCanvas');
+
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    const depthCtx = depthCanvas.getContext('2d', { willReadFrequently: true });
+    const outputCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
+
+    const controls = {
+      maxEdge: $('maxEdge'),
+      strokeCount: $('strokeCount'),
+      strokeLength: $('strokeLength'),
+      strokeWidth: $('strokeWidth'),
+      strokeAlpha: $('strokeAlpha'),
+      baseAlpha: $('baseAlpha'),
+      normalRadius: $('normalRadius'),
+      normalScale: $('normalScale'),
+      normalRotation: $('normalRotation'),
+      angleNoise: $('angleNoise'),
+      positionJitter: $('positionJitter'),
+      depthLength: $('depthLength'),
+      invertDepth: $('invertDepth'),
+      whiteBackground: $('whiteBackground')
+    };
+
+    const labels = {
+      maxEdge: $('maxEdgeValue'),
+      strokeCount: $('strokeCountValue'),
+      strokeLength: $('strokeLengthValue'),
+      strokeWidth: $('strokeWidthValue'),
+      strokeAlpha: $('strokeAlphaValue'),
+      baseAlpha: $('baseAlphaValue'),
+      normalRadius: $('normalRadiusValue'),
+      normalScale: $('normalScaleValue'),
+      normalRotation: $('normalRotationValue'),
+      angleNoise: $('angleNoiseValue'),
+      positionJitter: $('positionJitterValue'),
+      depthLength: $('depthLengthValue')
+    };
+
+    let imageUrl = null;
+    let sourceImage = null;
+    let depthEstimator = null;
+    let sourceImageData = null;
+    let depthImageData = null;
+    let width = 0;
+    let height = 0;
+    let seed = 987654321;
+
+    function setStatus(text, rate = null) {
+      $('statusText').textContent = text;
+
+      if (rate !== null) {
+        const value = Math.max(0, Math.min(100, Math.round(rate)));
+        $('statusRate').textContent = `${value}%`;
+        $('statusBar').style.width = `${value}%`;
+      }
+    }
+
+    function setLocked(locked) {
+      fileInput.disabled = locked;
+      runButton.disabled = locked || !sourceImage;
+      rerenderButton.disabled = locked || !depthImageData;
+      downloadButton.disabled = locked || !depthImageData;
+    }
+
+    function syncLabels() {
+      for (const [key, label] of Object.entries(labels)) {
+        const value = controls[key].value;
+
+        if (
+          key === 'strokeWidth' ||
+          key === 'strokeAlpha' ||
+          key === 'baseAlpha' ||
+          key === 'angleNoise' ||
+          key === 'positionJitter' ||
+          key === 'depthLength'
+        ) {
+          label.textContent = Number(value).toFixed(2);
+        } else if (key === 'normalRotation') {
+          label.textContent = `${value}°`;
+        } else {
+          label.textContent = value;
+        }
+      }
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function makeRandom(initialSeed) {
+      let s = initialSeed >>> 0;
+
+      return function random() {
+        s ^= s << 13;
+        s ^= s >>> 17;
+        s ^= s << 5;
+        return (s >>> 0) / 4294967296;
+      };
+    }
+
+    function hash01(x, y) {
+      let n = (x * 374761393 + y * 668265263 + seed * 1442695041) >>> 0;
+      n = (n ^ (n >>> 13)) >>> 0;
+      n = Math.imul(n, 1274126177) >>> 0;
+      return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+    }
+
+    function resizeCanvas(canvas, w, h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    function fitSize(img, maxEdge) {
+      const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+
+      return {
+        width: Math.max(1, Math.round(img.naturalWidth * scale)),
+        height: Math.max(1, Math.round(img.naturalHeight * scale))
+      };
+    }
+
+    function loadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('画像を読み込めませんでした。'));
+        img.src = url;
+      });
+    }
+
+    function drawSource() {
+      const size = fitSize(sourceImage, Number(controls.maxEdge.value));
+
+      width = size.width;
+      height = size.height;
+
+      resizeCanvas(sourceCanvas, width, height);
+      resizeCanvas(depthCanvas, width, height);
+      resizeCanvas(outputCanvas, width, height);
+
+      sourceCtx.clearRect(0, 0, width, height);
+      sourceCtx.drawImage(sourceImage, 0, 0, width, height);
+
+      sourceImageData = sourceCtx.getImageData(0, 0, width, height);
+    }
+
+    function clearGenerated() {
+      depthImageData = null;
+      depthCtx.clearRect(0, 0, depthCanvas.width, depthCanvas.height);
+      outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+      emptyNotice.style.display = 'grid';
+    }
+
+    async function openImageFile(file) {
+      if (imageUrl) {
+        URL.revokeObjectURL(imageUrl);
+      }
+
+      imageUrl = URL.createObjectURL(file);
+      sourceImage = await loadImage(imageUrl);
+
+      drawSource();
+      clearGenerated();
+
+      runButton.disabled = false;
+      rerenderButton.disabled = true;
+      downloadButton.disabled = true;
+
+      setStatus('画像を読み込みました。', 0);
+    }
+
+    async function ensureEstimator() {
+      if (depthEstimator) {
+        return depthEstimator;
+      }
+
+      setStatus('モデルを読み込んでいます。', 2);
+
+      depthEstimator = await pipeline(
+        'depth-estimation',
+        'Xenova/depth-anything-small-hf',
+        {
+          progress_callback: (progress) => {
+            if (progress.status === 'progress' && Number.isFinite(progress.progress)) {
+              setStatus(`モデル取得中: ${progress.file || ''}`, progress.progress);
+            } else if (progress.status) {
+              setStatus(`モデル処理中: ${progress.status}`, null);
+            }
+          }
+        }
+      );
+
+      setStatus('モデルを読み込みました。', 100);
+      return depthEstimator;
+    }
+
+    async function runDepth() {
+      if (!sourceImage || !imageUrl) {
+        return;
+      }
+
+      setLocked(true);
+
+      try {
+        drawSource();
+
+        const estimator = await ensureEstimator();
+
+        setStatus('深度マップを作成しています。', 0);
+
+        const output = await estimator(imageUrl);
+        const rawDepthCanvas = await output.depth.toCanvas();
+
+        depthCtx.clearRect(0, 0, width, height);
+        depthCtx.drawImage(rawDepthCanvas, 0, 0, width, height);
+
+        depthImageData = depthCtx.getImageData(0, 0, width, height);
+
+        await renderStrokes();
+        setStatus('完了しました。', 100);
+      } catch (error) {
+        console.error(error);
+        setStatus(error?.message || '処理に失敗しました。', 0);
+      } finally {
+        setLocked(false);
+      }
+    }
+
+    function pixelIndex(x, y) {
+      const ix = clamp(Math.round(x), 0, width - 1);
+      const iy = clamp(Math.round(y), 0, height - 1);
+      return (iy * width + ix) * 4;
+    }
+
+    function colorAt(x, y) {
+      const i = pixelIndex(x, y);
+      const d = sourceImageData.data;
+
+      return {
+        r: d[i],
+        g: d[i + 1],
+        b: d[i + 2],
+        a: d[i + 3] / 255
+      };
+    }
+
+    function depthAt(x, y) {
+      const i = pixelIndex(x, y);
+      let value = depthImageData.data[i] / 255;
+
+      if (controls.invertDepth.checked) {
+        value = 1 - value;
+      }
+
+      return clamp(value, 0, 1);
+    }
+
+    function normalAt(x, y) {
+      const r = Number(controls.normalRadius.value);
+      const scale = Number(controls.normalScale.value);
+
+      const dzdx = (depthAt(x + r, y) - depthAt(x - r, y)) / (2 * r);
+      const dzdy = (depthAt(x, y + r) - depthAt(x, y - r)) / (2 * r);
+
+      let nx = -dzdx * scale;
+      let ny = -dzdy * scale;
+      let nz = 1;
+
+      const length = Math.hypot(nx, ny, nz) || 1;
+
+      nx /= length;
+      ny /= length;
+      nz /= length;
+
+      return { x: nx, y: ny, z: nz, projection: Math.hypot(nx, ny) };
+    }
+
+    function normalAngleAt(x, y) {
+      const normal = normalAt(x, y);
+      const rotation = Number(controls.normalRotation.value) * Math.PI / 180;
+      const noise = Number(controls.angleNoise.value);
+      const projected = normal.projection;
+
+      let angle;
+
+      if (projected > 0.0008) {
+        angle = Math.atan2(normal.y, normal.x);
+      } else {
+        angle = hash01(Math.round(x), Math.round(y)) * Math.PI * 2;
+      }
+
+      angle += rotation;
+      angle += (hash01(Math.round(y), Math.round(x)) - 0.5) * noise;
+
+      return {
+        angle,
+        normal
+      };
+    }
+
+    function makePoints(random) {
+      const count = Number(controls.strokeCount.value);
+      const aspect = width / height;
+      const cols = Math.ceil(Math.sqrt(count * aspect));
+      const rows = Math.ceil(count / cols);
+      const cellW = width / cols;
+      const cellH = height / rows;
+      const jitter = Number(controls.positionJitter.value);
+      const points = [];
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          if (points.length >= count) {
+            break;
+          }
+
+          const x = clamp((col + 0.5) * cellW + (random() - 0.5) * cellW * jitter, 0, width - 1);
+          const y = clamp((row + 0.5) * cellH + (random() - 0.5) * cellH * jitter, 0, height - 1);
+          const color = colorAt(x, y);
+
+          if (color.a <= 0.04) {
+            continue;
+          }
+
+          points.push({
+            x,
+            y,
+            color,
+            depth: depthAt(x, y),
+            random: random()
+          });
+        }
+      }
+
+      return points;
+    }
+
+    function drawStroke(point) {
+      const direction = normalAngleAt(point.x, point.y);
+      const normal = direction.normal;
+
+      const lengthBase = Number(controls.strokeLength.value);
+      const widthBase = Number(controls.strokeWidth.value);
+      const alphaBase = Number(controls.strokeAlpha.value);
+      const depthLength = Number(controls.depthLength.value);
+
+      const slopeAmount = clamp(normal.projection * 5, 0, 1);
+      const depthScale = clamp(1 + (point.depth - 0.5) * depthLength, 0.15, 3);
+      const slopeScale = 0.78 + slopeAmount * 0.9;
+
+      const length = lengthBase * depthScale * slopeScale * (0.75 + point.random * 0.55);
+      const lineWidth = widthBase * (0.8 + slopeAmount * 0.65);
+      const alpha = clamp(alphaBase * point.color.a * (0.75 + slopeAmount * 0.5), 0, 1);
+
+      const angle = direction.angle;
+      const vx = Math.cos(angle);
+      const vy = Math.sin(angle);
+
+      const bendNormal = normalAt(point.x + vx * 4, point.y + vy * 4);
+      const bend = clamp((bendNormal.x * -vy + bendNormal.y * vx) * 18, -10, 10);
+
+      const px = -vy;
+      const py = vx;
+
+      const x1 = point.x - vx * length * 0.5;
+      const y1 = point.y - vy * length * 0.5;
+      const x2 = point.x + vx * length * 0.5;
+      const y2 = point.y + vy * length * 0.5;
+      const mx = point.x + px * bend;
+      const my = point.y + py * bend;
+
+      outputCtx.globalCompositeOperation = 'source-over';
+      outputCtx.lineCap = 'round';
+      outputCtx.lineJoin = 'round';
+      outputCtx.lineWidth = lineWidth;
+      outputCtx.globalAlpha = alpha;
+      outputCtx.strokeStyle = `rgb(${point.color.r}, ${point.color.g}, ${point.color.b})`;
+
+      outputCtx.beginPath();
+      outputCtx.moveTo(x1, y1);
+      outputCtx.quadraticCurveTo(mx, my, x2, y2);
+      outputCtx.stroke();
+
+      outputCtx.lineWidth = Math.max(0.25, lineWidth * 0.32);
+      outputCtx.globalAlpha = alpha * 0.28;
+      outputCtx.strokeStyle = `rgb(${clamp(point.color.r + 42, 0, 255)}, ${clamp(point.color.g + 42, 0, 255)}, ${clamp(point.color.b + 42, 0, 255)})`;
+
+      outputCtx.beginPath();
+      outputCtx.moveTo(x1 + px * lineWidth * 0.35, y1 + py * lineWidth * 0.35);
+      outputCtx.quadraticCurveTo(mx + px * lineWidth * 0.35, my + py * lineWidth * 0.35, x2 + px * lineWidth * 0.35, y2 + py * lineWidth * 0.35);
+      outputCtx.stroke();
+    }
+
+    async function renderStrokes() {
+      if (!sourceImageData || !depthImageData) {
+        return;
+      }
+
+      seed = (seed + 2654435761) >>> 0;
+      const random = makeRandom(seed);
+
+      outputCtx.clearRect(0, 0, width, height);
+
+      if (controls.whiteBackground.checked) {
+        outputCtx.globalAlpha = 1;
+        outputCtx.fillStyle = '#ffffff';
+        outputCtx.fillRect(0, 0, width, height);
+      }
+
+      outputCtx.globalAlpha = Number(controls.baseAlpha.value);
+      outputCtx.drawImage(sourceCanvas, 0, 0, width, height);
+      outputCtx.globalAlpha = 1;
+
+      const points = makePoints(random);
+      const total = points.length || 1;
+
+      for (let i = 0; i < points.length; i++) {
+        drawStroke(points[i]);
+
+        if (i % 350 === 0) {
+          setStatus('法線方向に沿ってストロークを描画しています。', (i / total) * 100);
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+      }
+
+      outputCtx.globalAlpha = 1;
+      emptyNotice.style.display = 'none';
+      setStatus('描画しました。', 100);
+    }
+
+    function downloadPng() {
+      const a = document.createElement('a');
+      a.download = 'depth-normal-stroke.png';
+      a.href = outputCanvas.toDataURL('image/png');
+      a.click();
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+
+      if (!file) {
+        return;
+      }
+
+      setLocked(true);
+
+      try {
+        await openImageFile(file);
+      } catch (error) {
+        console.error(error);
+        setStatus(error?.message || '画像を読み込めませんでした。', 0);
+      } finally {
+        setLocked(false);
+      }
+    });
+
+    runButton.addEventListener('click', runDepth);
+
+    rerenderButton.addEventListener('click', async () => {
+      setLocked(true);
+
+      try {
+        await renderStrokes();
+      } catch (error) {
+        console.error(error);
+        setStatus(error?.message || '再描画に失敗しました。', 0);
+      } finally {
+        setLocked(false);
+      }
+    });
+
+    downloadButton.addEventListener('click', downloadPng);
+
+    controls.maxEdge.addEventListener('input', () => {
+      syncLabels();
+
+      if (!sourceImage) {
+        return;
+      }
+
+      drawSource();
+      clearGenerated();
+
+      runButton.disabled = false;
+      rerenderButton.disabled = true;
+      downloadButton.disabled = true;
+      setStatus('最大辺を変更しました。深度検出を再実行してください。', 0);
+    });
+
+    for (const input of Object.values(controls)) {
+      input.addEventListener('input', syncLabels);
+      input.addEventListener('change', syncLabels);
+    }
+
+    syncLabels();
+  </script>
+</body>
+</html>

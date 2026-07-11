@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovelCraft Studio - ノベルゲーム制作ツール</title>
+    <meta name="description" content="直感的なWYSIWYGとイベント駆動型タイムラインを備えたノベルゲーム制作アプリ。立ち絵、背景の自由な配置とトランジション設定が可能。">
+    <meta name="page:icon" content="fa-solid fa-pen-nib">
+    <meta name="page:color" content="#ffffff">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b',
+                        editorBg: '#f8fafc',
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans JP"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+        /* スクロールバーのカスタマイズ */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* キャンバス領域（WYSIWYG） */
+        .canvas-bg {
+            background-color: #e2e8f0;
+            background-image: 
+                linear-gradient(#cbd5e1 1px, transparent 1px),
+                linear-gradient(90deg, #cbd5e1 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* ゲーム画面（16:9） */
+        .game-screen {
+            aspect-ratio: 16 / 9;
+            background-color: #000;
+            position: relative;
+            /* 画面外を半透明の白でマスクして可視化（WYSIWYGの肝） */
+            box-shadow: 0 0 0 9999px rgba(255, 255, 255, 0.7);
+            z-index: 10;
+        }
+
+        /* キャラクターオブジェクト */
+        .char-obj {
+            position: absolute;
+            transform-origin: bottom center; /* アンカーは足元中央 */
+            cursor: move;
+            user-select: none;
+            will-change: transform, opacity;
+        }
+        
+        .char-obj img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        /* プレイモード時のトランジション */
+        .play-mode .char-obj {
+            transition: transform var(--duration) var(--easing), opacity var(--duration) var(--easing);
+            cursor: default;
+        }
+
+        /* スピーカーフォーカス（非話者を暗くする） */
+        .char-obj.focus-out {
+            filter: brightness(0.6) grayscale(20%);
+            transition: filter 0.3s ease;
+        }
+
+        /* メッセージウィンドウ */
+        .msg-window {
+            position: absolute;
+            bottom: 5%;
+            left: 5%;
+            width: 90%;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            z-index: 50;
+            backdrop-filter: blur(4px);
+        }
+
+        /* ドラッグ中のハイライト */
+        .dragging {
+            outline: 2px dashed #3b82f6;
+            z-index: 100;
+        }
+
+        /* トグルスイッチ */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #3b82f6;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col text-gray-800 overflow-hidden">
+
+    <!-- ナビゲーションヘッダー -->
+    <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-4 flex-shrink-0 z-20 shadow-sm">
+        <div class="flex items-center gap-4">
+            <div class="font-bold text-lg tracking-tight text-gray-900 flex items-center gap-2">
+                <i class="fa-solid fa-pen-nib text-primary"></i> NovelCraft
+            </div>
+            <nav class="flex gap-1 ml-4">
+                <button onclick="switchMode('editor')" id="nav-editor" class="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-100 text-gray-900">エディタ</button>
+                <button onclick="switchMode('assets')" id="nav-assets" class="px-3 py-1.5 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-50">アセット＆キャラ管理</button>
+            </nav>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="startPlayMode()" class="bg-primary hover:bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 shadow-sm transition-colors">
+                <i class="fa-solid fa-play"></i> テストプレイ
+            </button>
+        </div>
+    </header>
+
+    <!-- メイン領域 (エディタモード) -->
+    <main id="mode-editor" class="flex-1 flex overflow-hidden">
+        
+        <!-- 左ペイン: タイムライン (イベント駆動型) -->
+        <section class="w-72 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-10">
+            <div class="p-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h2 class="text-sm font-bold text-gray-700 flex items-center gap-2">
+                    <i class="fa-solid fa-list-ul"></i> タイムライン
+                </h2>
+                <div class="relative group">
+                    <button class="bg-white border border-gray-200 shadow-sm text-gray-700 w-8 h-8 rounded-md flex items-center justify-center hover:bg-gray-50">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <!-- 追加メニュー -->
+                    <div class="absolute top-full left-0 mt-1 w-40 bg-white border border-gray-200 shadow-lg rounded-md hidden group-hover:block z-50 py-1">
+                        <button onclick="addEvent('dialog')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"><i class="fa-solid fa-comment-dots w-5 text-blue-500"></i> 会話・テキスト</button>
+                        <button onclick="addEvent('action')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"><i class="fa-solid fa-person-walking w-5 text-green-500"></i> キャラ配置・移動</button>
+                        <button onclick="addEvent('bg')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"><i class="fa-solid fa-image w-5 text-purple-500"></i> 背景変更</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="timeline-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <!-- イベントアイテムがここに動的に生成される -->
+            </div>
+        </section>
+
+        <!-- 中央ペイン: WYSIWYGキャンバス -->
+        <section class="flex-1 flex flex-col relative">
+            <div class="h-10 bg-white border-b border-gray-200 flex items-center px-4 justify-between text-xs text-gray-500 shadow-sm z-10">
+                <div class="flex items-center gap-3">
+                    <span><i class="fa-solid fa-display"></i> ライブプレビュー</span>
+                    <span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600">外側のグレー領域は画面外です</span>
+                </div>
+                <div id="canvas-status">1280x720 / 16:9</div>
+            </div>
+            
+            <div class="flex-1 canvas-bg flex items-center justify-center overflow-hidden relative" id="canvas-container">
+                <!-- ゲーム画面枠 (アスペクト比固定のラッパー) -->
+                <div class="game-screen w-[800px] max-w-full" id="game-screen">
+                    
+                    <!-- 背景画像レイヤー -->
+                    <div id="layer-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-500"></div>
+                    
+                    <!-- キャラクターレイヤー ( overflow: visible なので画面外にはみ出せる ) -->
+                    <div id="layer-chars" class="absolute inset-0 overflow-visible">
+                        <!-- キャラクターDOMがここに生成される -->
+                    </div>
+
+                    <!-- UI/メッセージレイヤー -->
+                    <div id="layer-ui" class="absolute inset-0 pointer-events-none overflow-hidden">
+                        <div id="msg-window" class="msg-window hidden pointer-events-auto">
+                            <div class="font-bold text-lg mb-1 text-primary drop-shadow-sm" id="msg-name">名前</div>
+                            <div class="text-gray-800 text-base leading-relaxed tracking-wide" id="msg-text">テキスト</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 右ペイン: インスペクタ (詳細設定) -->
+        <section class="w-80 bg-white border-l border-gray-200 flex flex-col flex-shrink-0 z-10">
+            <div class="p-3 border-b border-gray-100 bg-gray-50/50">
+                <h2 class="text-sm font-bold text-gray-700 flex items-center gap-2">
+                    <i class="fa-solid fa-sliders"></i> プロパティ
+                </h2>
+            </div>
+            <div id="inspector-content" class="flex-1 overflow-y-auto p-4">
+                <div class="text-center text-gray-400 mt-10 text-sm">
+                    タイムラインからイベントを選択してください
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- モード: アセット＆キャラ管理 (簡易モック) -->
+    <main id="mode-assets" class="flex-1 hidden overflow-y-auto p-8 bg-white">
+        <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">キャラクター管理</h2>
+        <p class="text-sm text-gray-500 mb-6">素材はすべてユーザーが持ち込みます。キャラクターごとに基本画像と表情差分を登録します。</p>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="asset-char-list">
+            <!-- JSで描画 -->
+        </div>
+        
+        <button class="mt-6 border-2 border-dashed border-gray-300 rounded-lg p-8 w-full text-center hover:bg-gray-50 hover:border-primary transition-colors text-gray-500">
+            <i class="fa-solid fa-plus text-2xl mb-2"></i><br>
+            新しいキャラクターを登録
+        </button>
+
+        <h2 class="text-2xl font-bold mt-12 mb-6 text-gray-800 border-b pb-2">背景素材管理</h2>
+        <div class="flex gap-4">
+            <div class="w-48 h-32 bg-gray-200 rounded-md bg-cover bg-center" style="background-image: url('https://images.unsplash.com/photo-1580193769210-b8d1c049a7d9?auto=format&fit=crop&w=800&q=80')"></div>
+            <div class="w-48 h-32 bg-gray-200 rounded-md bg-cover bg-center" style="background-image: url('https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80')"></div>
+            <div class="w-48 h-32 border-2 border-dashed border-gray-300 rounded-md flex items-center justify-center text-gray-400 hover:bg-gray-50 cursor-pointer">
+                <i class="fa-solid fa-upload"></i>
+            </div>
+        </div>
+    </main>
+
+    <!-- プレイモード オーバーレイ -->
+    <div id="play-overlay" class="fixed inset-0 bg-black z-50 hidden flex-col">
+        <div class="h-12 flex justify-between items-center px-4 bg-gradient-to-b from-black/80 to-transparent absolute top-0 w-full z-20">
+            <div class="text-white text-sm font-bold opacity-50"><i class="fa-solid fa-play"></i> テストプレイ中</div>
+            <button onclick="stopPlayMode()" class="bg-white/20 hover:bg-white/40 text-white rounded px-3 py-1 text-sm backdrop-blur">
+                <i class="fa-solid fa-xmark"></i> エディタに戻る
+            </button>
+        </div>
+        <div class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer" onclick="advancePlay()">
+            <!-- プレイ用キャンバスのクローンがここに配置される -->
+            <div id="play-screen" class="game-screen w-full max-w-6xl shadow-2xl play-mode relative overflow-hidden" style="box-shadow: none;">
+                <div id="play-layer-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-1000"></div>
+                <div id="play-layer-chars" class="absolute inset-0 overflow-visible"></div>
+                <div id="play-layer-ui" class="absolute inset-0 pointer-events-none">
+                    <div id="play-msg-window" class="msg-window hidden pointer-events-auto">
+                        <div class="font-bold text-xl mb-2 text-primary" id="play-msg-name"></div>
+                        <div class="text-gray-800 text-lg leading-relaxed" id="play-msg-text"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        /**
+         * アプリケーションの状態管理 (State)
+         */
+        
+        // モックデータ：キャラクターアセット
+        const characters = {
+            'c1': { 
+                id: 'c1', name: '葵 (Aoi)', color: '#ec4899', 
+                expressions: { 
+                    'normal': 'https://illust8.com/wp-content/uploads/2018/10/pose_stand_girl_1985.png', // ダミーの透過立ち絵URLの代わりにプレースホルダー
+                    'smile': 'https://illust8.com/wp-content/uploads/2018/10/pose_stand_girl_1985.png', // ※本来は差分画像
+                },
+                defaultWidth: 300, defaultHeight: 600
+            },
+            'c2': { 
+                id: 'c2', name: 'ハルキ (Haruki)', color: '#3b82f6', 
+                expressions: { 
+                    'normal': 'https://illust8.com/wp-content/uploads/2018/10/pose_stand_boy_1986.png',
+                },
+                defaultWidth: 320, defaultHeight: 620
+            }
+        };
+        // 今回のモック用に、シルエット画像を生成する関数を使用（外部画像リンク切れ防止）
+        function getMockImg(color) {
+            return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 200'%3E%3Cpath d='M30,50 Q50,10 70,50 Q80,90 60,110 L70,190 L30,190 L40,110 Q20,90 30,50' fill='${color.replace('#','%23')}' opacity='0.8'/%3E%3Ccircle cx='50' cy='35' r='15' fill='%23fff' opacity='0.5'/%3E%3C/svg%3E`;
+        }
+        characters.c1.expressions.normal = getMockImg(characters.c1.color);
+        characters.c1.expressions.smile = getMockImg('#f472b6'); // 少し明るく
+        characters.c2.expressions.normal = getMockImg(characters.c2.color);
+
+        const backgrounds = [
+            { id: 'bg1', name: '教室', url: 'https://images.unsplash.com/photo-1580193769210-b8d1c049a7d9?auto=format&fit=crop&w=1280&q=80' },
+            { id: 'bg2', name: '夜の街', url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1280&q=80' }
+        ];
+
+        // タイムラインイベントデータ (シーンの構成要素)
+        let events = [
+            { id: 'e1', type: 'bg', bgId: 'bg1' },
+            { id: 'e2', type: 'action', charId: 'c1', expr: 'normal', actionType: 'spawn', x: -20, y: 0, scale: 100, flip: false, opacity: 100, duration: 0, easing: 'linear' },
+            { id: 'e3', type: 'action', charId: 'c1', expr: 'normal', actionType: 'move', x: 20, y: 0, scale: 100, flip: false, opacity: 100, duration: 800, easing: 'ease-out' },
+            { id: 'e4', type: 'dialog', charId: 'c1', nameOver: '', text: 'おはよう！今日の授業、なんだっけ？', focus: true },
+            { id: 'e5', type: 'action', charId: 'c2', expr: 'normal', actionType: 'spawn', x: 75, y: 0, scale: 105, flip: true, opacity: 0, duration: 0, easing: 'linear' },
+            { id: 'e6', type: 'action', charId: 'c2', expr: 'normal', actionType: 'move', x: 75, y: 0, scale: 105, flip: true, opacity: 100, duration: 500, easing: 'linear' },
+            { id: 'e7', type: 'dialog', charId: 'c2', nameOver: '', text: 'えっと、歴史だった気がする。', focus: true },
+            { id: 'e8', type: 'action', charId: 'c1', expr: 'smile', actionType: 'move', x: 25, y: -5, scale: 110, flip: false, opacity: 100, duration: 300, easing: 'ease-out' },
+            { id: 'e9', type: 'dialog', charId: 'c1', nameOver: '', text: 'あちゃー、予習忘れてた！', focus: true },
+        ];
+
+        let activeEventId = 'e1';
+        let isPlaying = false;
+        let playIndex = 0;
+
+        /**
+         * UI レンダリング関連
+         */
+
+        function renderTimeline() {
+            const list = document.getElementById('timeline-list');
+            list.innerHTML = '';
+            
+            events.forEach((ev, index) => {
+                const item = document.createElement('div');
+                const isActive = ev.id === activeEventId;
+                
+                item.className = `p-2 rounded cursor-pointer border-l-4 text-sm flex items-center gap-2 transition-colors ${
+                    isActive ? 'bg-blue-50 border-blue-500' : 'bg-white border-transparent hover:bg-gray-50'
+                }`;
+                item.onclick = () => { selectEvent(ev.id); };
+
+                let icon = '';
+                let title = '';
+                let desc = '';
+
+                if (ev.type === 'bg') {
+                    icon = '<i class="fa-solid fa-image text-purple-500 w-4"></i>';
+                    title = '背景変更';
+                    desc = backgrounds.find(b => b.id === ev.bgId)?.name || '';
+                } else if (ev.type === 'action') {
+                    const charName = characters[ev.charId]?.name || '不明';
+                    if (ev.actionType === 'spawn') {
+                        icon = '<i class="fa-solid fa-user-plus text-green-500 w-4"></i>';
+                        title = `配置: ${charName}`;
+                    } else {
+                        icon = '<i class="fa-solid fa-person-walking text-green-500 w-4"></i>';
+                        title = `アニメ: ${charName}`;
+                        desc = `${ev.duration}ms`;
+                    }
+                } else if (ev.type === 'dialog') {
+                    icon = '<i class="fa-solid fa-comment-dots text-blue-500 w-4"></i>';
+                    const charName = ev.nameOver || characters[ev.charId]?.name || 'ナレーション';
+                    title = `会話: ${charName}`;
+                    desc = ev.text.substring(0, 10) + (ev.text.length > 10 ? '...' : '');
+                }
+
+                item.innerHTML = `
+                    <div class="flex-shrink-0 text-gray-400 text-xs w-4 text-right">${index + 1}</div>
+                    ${icon}
+                    <div class="flex-1 overflow-hidden">
+                        <div class="font-medium text-gray-800 truncate leading-tight">${title}</div>
+                        ${desc ? `<div class="text-xs text-gray-500 truncate">${desc}</div>` : ''}
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function renderInspector() {
+            const container = document.getElementById('inspector-content');
+            const ev = events.find(e => e.id === activeEventId);
+            
+            if (!ev) {
+                container.innerHTML = '<div class="text-center text-gray-400 mt-10">未選択</div>';
+                return;
+            }
+
+            let html = '';
+
+            const FormGroup = (label, content) => `
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-gray-600 mb-1">${label}</label>
+                    ${content}
+                </div>
+            `;
+
+            if (ev.type === 'bg') {
+                const options = backgrounds.map(b => `<option value="${b.id}" ${b.id === ev.bgId ? 'selected' : ''}>${b.name}</option>`).join('');
+                html += FormGroup('背景画像', `<select class="w-full border border-gray-300 rounded p-1.5 text-sm focus:outline-none focus:border-blue-500" onchange="updateEvent('${ev.id}', 'bgId', this.value)">${options}</select>`);
+            } 
+            else if (ev.type === 'dialog') {
+                const charOptions = Object.values(characters).map(c => `<option value="${c.id}" ${c.id === ev.charId ? 'selected' : ''}>${c.name}</option>`).join('');
+                html += FormGroup('キャラクター', `<select class="w-full border border-gray-300 rounded p-1.5 text-sm" onchange="updateEvent('${ev.id}', 'charId', this.value)"><option value="">なし（ナレーション）</option>${charOptions}</select>`);
+                html += FormGroup('名前表記上書き (空でデフォルト)', `<input type="text" class="w-full border border-gray-300 rounded p-1.5 text-sm" value="${ev.nameOver || ''}" onchange="updateEvent('${ev.id}', 'nameOver', this.value)">`);
+                html += FormGroup('テキスト', `<textarea class="w-full border border-gray-300 rounded p-1.5 text-sm h-24" oninput="updateEvent('${ev.id}', 'text', this.value)">${ev.text}</textarea>`);
+                
+                html += `
+                <div class="flex items-center justify-between mt-6 bg-gray-50 p-2 rounded border border-gray-100">
+                    <div class="text-xs font-bold text-gray-700">スピーカーフォーカス<br><span class="text-gray-400 font-normal">他のキャラを暗くする</span></div>
+                    <label class="relative inline-block w-10 h-5">
+                        <input type="checkbox" class="opacity-0 w-0 h-0 toggle-checkbox absolute" ${ev.focus ? 'checked' : ''} onchange="updateEvent('${ev.id}', 'focus', this.checked)">
+                        <span class="toggle-label absolute cursor-pointer inset-0 bg-gray-300 rounded-full transition-colors duration-300 before:absolute before:content-[''] before:h-3.5 before:w-3.5 before:left-1 before:bottom-0.5 before:bg-white before:rounded-full before:transition-transform"></span>
+                    </label>
+                </div>
+                `;
+            }
+            else if (ev.type === 'action') {
+                const charOptions = Object.values(characters).map(c => `<option value="${c.id}" ${c.id === ev.charId ? 'selected' : ''}>${c.name}</option>`).join('');
+                html += `<div class="bg-blue-50 text-blue-800 text-xs p-2 rounded mb-4 mb-2"><i class="fa-solid fa-circle-info"></i> キャンバス上で直接ドラッグして位置を調整できます。</div>`;
+                html += FormGroup('対象キャラクター', `<select class="w-full border border-gray-300 rounded p-1.5 text-sm" onchange="updateEvent('${ev.id}', 'charId', this.value)">${charOptions}</select>`);
+                
+                const char = characters[ev.charId];
+                if(char) {
+                    const expOptions = Object.keys(char.expressions).map(ex => `<option value="${ex}" ${ex === ev.expr ? 'selected' : ''}>${ex}</option>`).join('');
+                    html += FormGroup('表情', `<select class="w-full border border-gray-300 rounded p-1.5 text-sm" onchange="updateEvent('${ev.id}', 'expr', this.value)">${expOptions}</select>`);
+                }
+
+                html += FormGroup('X座標 (%) - 0は左端', `<input type="number" class="w-full border border-gray-300 rounded p-1.5 text-sm" value="${ev.x}" onchange="updateEvent('${ev.id}', 'x', parseFloat(this.value))">`);
+                html += FormGroup('Y座標 (%) - 0は底辺', `<input type="number" class="w-full border border-gray-300 rounded p-1.5 text-sm" value="${ev.y}" onchange="updateEvent('${ev.id}', 'y', parseFloat(this.value))">`);
+                html += FormGroup('スケール (%)', `<input type="range" min="10" max="300" class="w-full" value="${ev.scale}" oninput="document.getElementById('scale-val').innerText=this.value+'%'" onchange="updateEvent('${ev.id}', 'scale', parseInt(this.value))"><div class="text-right text-xs text-gray-500" id="scale-val">${ev.scale}%</div>`);
+                html += FormGroup('不透明度 (フェード %)', `<input type="range" min="0" max="100" class="w-full" value="${ev.opacity}" oninput="document.getElementById('op-val').innerText=this.value+'%'" onchange="updateEvent('${ev.id}', 'opacity', parseInt(this.value))"><div class="text-right text-xs text-gray-500" id="op-val">${ev.opacity}%</div>`);
+                
+                html += `
+                <div class="flex items-center justify-between mb-4">
+                    <label class="text-xs font-bold text-gray-600">左右反転</label>
+                    <input type="checkbox" ${ev.flip ? 'checked' : ''} onchange="updateEvent('${ev.id}', 'flip', this.checked)">
+                </div>`;
+
+                if (ev.actionType === 'move') {
+                    html += `<hr class="my-4 border-gray-200">`;
+                    html += FormGroup('所要時間 (ミリ秒)', `<input type="number" step="100" class="w-full border border-gray-300 rounded p-1.5 text-sm" value="${ev.duration}" onchange="updateEvent('${ev.id}', 'duration', parseInt(this.value))">`);
+                    html += FormGroup('イージング', `
+                        <select class="w-full border border-gray-300 rounded p-1.5 text-sm" onchange="updateEvent('${ev.id}', 'easing', this.value)">
+                            <option value="linear" ${ev.easing==='linear'?'selected':''}>Linear (一定)</option>
+                            <option value="ease-in" ${ev.easing==='ease-in'?'selected':''}>Ease-In (徐々に速く)</option>
+                            <option value="ease-out" ${ev.easing==='ease-out'?'selected':''}>Ease-Out (徐々に遅く)</option>
+                            <option value="ease-in-out" ${ev.easing==='ease-in-out'?'selected':''}>Ease-In-Out</option>
+                        </select>
+                    `);
+                }
+            }
+
+            html += `<div class="mt-8 text-right"><button onclick="deleteEvent('${ev.id}')" class="text-red-500 text-xs hover:underline"><i class="fa-solid fa-trash"></i> このイベントを削除</button></div>`;
+
+            container.innerHTML = html;
+        }
+
+        // 状態計算：指定インデックスまでの状態をシミュレート
+        function calculateState(uptoIndex) {
+            let state = {
+                bg: '',
+                chars: {}, // { charId: { x, y, scale, flip, opacity, expr } }
+                dialog: null
+            };
+
+            for (let i = 0; i <= uptoIndex; i++) {
+                const ev = events[i];
+                if (!ev) break;
+
+                if (ev.type === 'bg') {
+                    const bg = backgrounds.find(b => b.id === ev.bgId);
+                    if (bg) state.bg = bg.url;
+                } 
+                else if (ev.type === 'action') {
+                    if (!state.chars[ev.charId]) state.chars[ev.charId] = { x:50, y:0, scale:100, flip:false, opacity:100, expr:'normal' };
+                    state.chars[ev.charId] = { ...state.chars[ev.charId], x: ev.x, y: ev.y, scale: ev.scale, flip: ev.flip, opacity: ev.opacity, expr: ev.expr };
+                }
+                else if (ev.type === 'dialog') {
+                    state.dialog = ev;
+                }
+            }
+            return state;
+        }
+
+        // キャンバスの描画
+        function renderCanvas(targetIndex, prefix = '') {
+            const state = calculateState(targetIndex);
+            
+            const bgLayer = document.getElementById(`${prefix}layer-bg`);
+            const charsLayer = document.getElementById(`${prefix}layer-chars`);
+            const msgWindow = document.getElementById(`${prefix}msg-window`);
+            const msgName = document.getElementById(`${prefix}msg-name`);
+            const msgText = document.getElementById(`${prefix}msg-text`);
+
+            // 背景
+            if (state.bg) {
+                bgLayer.style.backgroundImage = `url('${state.bg}')`;
+            }
+
+            // キャラクター
+            charsLayer.innerHTML = '';
+            
+            // スピーカーフォーカスの判定
+            let speakingCharId = null;
+            let doFocus = false;
+            if (state.dialog && state.dialog.focus && state.dialog.charId) {
+                speakingCharId = state.dialog.charId;
+                doFocus = true;
+            }
+
+            Object.keys(state.chars).forEach(charId => {
+                const charState = state.chars[charId];
+                if (charState.opacity <= 0 && prefix === '') return; // エディタモードで見えないものはDOMから消す（プレイモードはアニメーションのため残す場合もあるが今回はシンプルに）
+
+                const charData = characters[charId];
+                if (!charData) return;
+
+                const el = document.createElement('div');
+                el.className = 'char-obj';
+                el.id = `${prefix}char-${charId}`;
+                
+                // エディタモードで現在選択されているアクションがこのキャラならハイライト
+                const currentEv = events.find(e => e.id === activeEventId);
+                if (prefix === '' && currentEv && currentEv.type === 'action' && currentEv.charId === charId) {
+                    el.classList.add('dragging'); // 枠線表示
+                }
+
+                // フォーカスアウト
+                if (doFocus && charId !== speakingCharId) {
+                    el.classList.add('focus-out');
+                }
+
+                // スタイル計算
+                // x: 0% = 左端, y: 0% = 底辺
+                el.style.left = `${charState.x}%`;
+                el.style.bottom = `${charState.y}%`;
+                
+                // アニメーション用変数
+                if (prefix === 'play-') {
+                    const ev = events[targetIndex];
+                    if (ev && ev.type === 'action' && ev.charId === charId) {
+                        el.style.setProperty('--duration', `${ev.duration}ms`);
+                        el.style.setProperty('--easing', ev.easing);
+                    } else {
+                        el.style.setProperty('--duration', `0ms`);
+                    }
+                }
+
+                const scaleFactor = charState.scale / 100;
+                const scaleX = charState.flip ? -scaleFactor : scaleFactor;
+                el.style.transform = `translateX(-50%) scale(${scaleX}, ${scaleFactor})`; // アンカーXを中央にするため translateX(-50%)
+                el.style.opacity = charState.opacity / 100;
+
+                // サイズ設定 (基準サイズ)
+                el.style.width = `${charData.defaultWidth}px`;
+                el.style.height = `${charData.defaultHeight}px`;
+
+                const imgUrl = charData.expressions[charState.expr] || charData.expressions['normal'];
+                el.innerHTML = `<img src="${imgUrl}" draggable="false" alt="${charData.name}">`;
+
+                // エディタモードのドラッグイベント
+                if (prefix === '') {
+                    el.onmousedown = (e) => startDrag(e, charId);
+                }
+
+                charsLayer.appendChild(el);
+            });
+
+            // メッセージウィンドウ
+            if (state.dialog) {
+                msgWindow.classList.remove('hidden');
+                const charData = characters[state.dialog.charId];
+                let dispName = state.dialog.nameOver || (charData ? charData.name : '');
+                
+                if (dispName) {
+                    msgName.style.display = 'block';
+                    msgName.innerText = dispName;
+                    msgName.style.color = charData ? charData.color : '#3b82f6';
+                } else {
+                    msgName.style.display = 'none';
+                }
+                
+                msgText.innerText = state.dialog.text;
+            } else {
+                msgWindow.classList.add('hidden');
+            }
+        }
+
+        /**
+         * インタラクション & ロジック
+         */
+
+        function selectEvent(id) {
+            activeEventId = id;
+            updateAll();
+        }
+
+        function updateEvent(id, key, value) {
+            const ev = events.find(e => e.id === id);
+            if (ev) {
+                ev[key] = value;
+                updateAll();
+            }
+        }
+
+        function addEvent(type) {
+            const newId = 'e' + Date.now();
+            let newEv = { id: newId, type: type };
+            
+            if (type === 'bg') {
+                newEv.bgId = backgrounds[0].id;
+            } else if (type === 'action') {
+                newEv.charId = Object.keys(characters)[0];
+                newEv.actionType = 'move';
+                newEv.expr = 'normal';
+                newEv.x = 50; newEv.y = 0; newEv.scale = 100; newEv.flip = false; newEv.opacity = 100;
+                newEv.duration = 500; newEv.easing = 'ease-out';
+            } else if (type === 'dialog') {
+                newEv.charId = Object.keys(characters)[0];
+                newEv.nameOver = '';
+                newEv.text = '新しいテキスト';
+                newEv.focus = false;
+            }
+
+            // 現在選択されているイベントの次に追加
+            const idx = events.findIndex(e => e.id === activeEventId);
+            if(idx >= 0) {
+                events.splice(idx + 1, 0, newEv);
+            } else {
+                events.push(newEv);
+            }
+            activeEventId = newId;
+            updateAll();
+            
+            // 下までスクロール
+            setTimeout(()=> {
+                const list = document.getElementById('timeline-list');
+                list.scrollTop = list.scrollHeight;
+            }, 50);
+        }
+
+        function deleteEvent(id) {
+            if(events.length <= 1) return alert('最低1つのイベントが必要です');
+            events = events.filter(e => e.id !== id);
+            activeEventId = events[0].id;
+            updateAll();
+        }
+
+        function updateAll() {
+            renderTimeline();
+            renderInspector();
+            const activeIndex = events.findIndex(e => e.id === activeEventId);
+            renderCanvas(activeIndex);
+        }
+
+        /**
+         * WYSIWYG ドラッグ＆ドロップ機能
+         */
+        let isDragging = false;
+        let dragTargetCharId = null;
+
+        function startDrag(e, charId) {
+            // 現在のイベントが、このキャラのactionイベントである場合のみドラッグ許可
+            const curEv = events.find(ev => ev.id === activeEventId);
+            if (!curEv || curEv.type !== 'action' || curEv.charId !== charId) {
+                // 違う場合は、そのキャラの最新のイベントを選択状態にする等の処理も考えられるが、
+                // 今回は分かりやすさのため、対象イベント選択時のみ編集可能とする
+                return;
+            }
+
+            isDragging = true;
+            dragTargetCharId = charId;
+            e.preventDefault();
+
+            document.addEventListener('mousemove', onDrag);
+            document.addEventListener('mouseup', endDrag);
+        }
+
+        function onDrag(e) {
+            if (!isDragging) return;
+            const container = document.getElementById('game-screen');
+            const rect = container.getBoundingClientRect();
+            
+            // マウス位置からコンテナ内の相対位置(%)を計算
+            let xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+            // Yは底辺からの％
+            let yPercent = ((rect.bottom - e.clientY) / rect.height) * 100;
+
+            // スナップや制限をつけない（画面外OK）
+            // 整数に丸める
+            xPercent = Math.round(xPercent);
+            yPercent = Math.round(yPercent);
+
+            // イベントデータ更新
+            const curEv = events.find(ev => ev.id === activeEventId);
+            if (curEv && curEv.type === 'action') {
+                curEv.x = xPercent;
+                curEv.y = yPercent;
+                
+                // Canvasのみ高速描画、Inspectorはmouseup時でも良いが、今回はリアルタイム更新
+                renderCanvas(events.findIndex(ev => ev.id === activeEventId));
+                // インスペクタの数値だけ更新（再描画するとフォーカスが外れるためDOM直接操作）
+                const xInput = document.querySelector('input[onchange*="\'x\'"]');
+                const yInput = document.querySelector('input[onchange*="\'y\'"]');
+                if(xInput) xInput.value = xPercent;
+                if(yInput) yInput.value = yPercent;
+            }
+        }
+
+        function endDrag() {
+            isDragging = false;
+            dragTargetCharId = null;
+            document.removeEventListener('mousemove', onDrag);
+            document.removeEventListener('mouseup', endDrag);
+            // 最終確定
+            updateAll();
+        }
+
+
+        /**
+         * モード切替
+         */
+        function switchMode(mode) {
+            document.getElementById('mode-editor').classList.add('hidden');
+            document.getElementById('mode-assets').classList.add('hidden');
+            document.getElementById('nav-editor').className = 'px-3 py-1.5 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-50';
+            document.getElementById('nav-assets').className = 'px-3 py-1.5 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-50';
+
+            document.getElementById(`mode-${mode}`).classList.remove('hidden');
+            document.getElementById(`nav-${mode}`).className = 'px-3 py-1.5 text-sm font-medium rounded-md bg-gray-100 text-gray-900';
+
+            if(mode === 'assets') {
+                renderAssets();
+            }
+        }
+
+        function renderAssets() {
+            const list = document.getElementById('asset-char-list');
+            list.innerHTML = '';
+            Object.values(characters).forEach(c => {
+                list.innerHTML += `
+                    <div class="border border-gray-200 rounded-lg overflow-hidden flex bg-gray-50">
+                        <div class="w-1/3 bg-gray-200 flex items-center justify-center relative overflow-hidden" style="background-color: ${c.color}20">
+                            <img src="${c.expressions.normal}" class="h-40 object-contain translate-y-4" alt="${c.name}">
+                        </div>
+                        <div class="p-4 w-2/3 bg-white">
+                            <div class="font-bold text-lg mb-1" style="color: ${c.color}">${c.name}</div>
+                            <div class="text-xs text-gray-500 mb-3">表情差分: ${Object.keys(c.expressions).length}種</div>
+                            <div class="flex gap-1 overflow-x-auto pb-2">
+                                ${Object.keys(c.expressions).map(ex => `<div class="bg-gray-100 px-2 py-1 rounded text-xs whitespace-nowrap">${ex}</div>`).join('')}
+                            </div>
+                            <button class="mt-2 text-xs text-blue-500 hover:underline"><i class="fa-solid fa-pen"></i> 編集</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        /**
+         * テストプレイ機能
+         */
+        function startPlayMode() {
+            isPlaying = true;
+            playIndex = 0;
+            document.getElementById('play-overlay').classList.remove('hidden');
+            document.getElementById('play-overlay').classList.add('flex');
+            
+            // 初期のキャンバス状態（インデックス-1の空状態から開始するか、最初のイベントを描画するか）
+            renderPlayCanvas(playIndex);
+        }
+
+        function stopPlayMode() {
+            isPlaying = false;
+            document.getElementById('play-overlay').classList.add('hidden');
+            document.getElementById('play-overlay').classList.remove('flex');
+        }
+
+        function advancePlay() {
+            if (!isPlaying) return;
+            if (playIndex < events.length - 1) {
+                playIndex++;
+                renderPlayCanvas(playIndex);
+            } else {
+                // 終了
+                const msg = document.getElementById('play-msg-text');
+                const name = document.getElementById('play-msg-name');
+                if(msg) {
+                    name.innerText = "System";
+                    msg.innerText = "ーーー シーン終了 ーーー";
+                }
+            }
+        }
+
+        function renderPlayCanvas(index) {
+            // エディタの関数を再利用、プレフィックスをつけて別DOMを操作
+            renderCanvas(index, 'play-');
+        }
+
+        /**
+         * 初期化
+         */
+        window.onload = () => {
+            // CSS変数のトグル用スタイルを動的に注入（TailwindのArbitrary variantsの代替）
+            updateAll();
+        };
+
+    </script>
+</body>
+</html>

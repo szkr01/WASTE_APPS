@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gaze MVP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/gh/jspsych/jspsych@jspsych@7.0.0/examples/js/webgazer/webgazer.js"></script>
+</head>
+<body class="h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100">
+  <canvas id="stage" class="fixed inset-0 z-0 h-screen w-screen"></canvas>
+
+  <header id="controlBar" class="fixed left-3 right-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-neutral-950/85 p-3 shadow-xl backdrop-blur">
+    <button id="startBtn" class="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-neutral-950">開始</button>
+    <button id="calibrateBtn" class="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-neutral-100 disabled:opacity-40" disabled>較正</button>
+    <button id="evaluateBtn" class="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-neutral-100 disabled:opacity-40" disabled>評価</button>
+    <button id="pauseBtn" class="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-neutral-100 disabled:opacity-40" disabled>停止</button>
+    <button id="clearBtn" class="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-neutral-100">初期化</button>
+    <button id="exportBtn" class="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-neutral-100">JSON</button>
+    <div class="ml-auto grid min-w-[280px] gap-1 text-right text-xs text-neutral-300">
+      <div id="statusText" class="font-semibold text-neutral-100">未開始</div>
+      <div><span id="modeText">idle</span> / <span id="pointText">0, 0</span> / <span id="sampleText">0 samples</span></div>
+    </div>
+  </header>
+
+  <section id="resultPanel" class="fixed bottom-3 left-3 z-20 max-w-xl rounded-2xl border border-white/10 bg-neutral-950/85 p-4 text-sm shadow-xl backdrop-blur" hidden>
+    <div class="font-semibold">評価結果</div>
+    <div id="resultText" class="mt-2 whitespace-pre-wrap font-mono text-xs text-neutral-300"></div>
+  </section>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const $ = (id) => document.getElementById(id);
+      const canvas = $('stage');
+      const ctx = canvas.getContext('2d', { alpha: false });
+
+      const ui = {
+        start: $('startBtn'),
+        calibrate: $('calibrateBtn'),
+        evaluate: $('evaluateBtn'),
+        pause: $('pauseBtn'),
+        clear: $('clearBtn'),
+        export: $('exportBtn'),
+        status: $('statusText'),
+        mode: $('modeText'),
+        point: $('pointText'),
+        samples: $('sampleText'),
+        resultPanel: $('resultPanel'),
+        result: $('resultText'),
+        controlBar: $('controlBar')
+      };
+
+      const state = {
+        running: false,
+        paused: false,
+        mode: 'idle',
+        webgazerReady: false,
+        gaze: null,
+        smooth: null,
+        alpha: 0.32,
+        samples: [],
+        maxSamples: 15000,
+        calibration: { index: 0, points: [], samplesPerPoint: 12, busy: false },
+        evaluation: { index: 0, points: [], phase: 'idle', samples: [], results: [] },
+        target: null,
+        message: '開始を押してください。'
+      };
+
+      function setStatus(mode, message) {
+        state.mode = mode;
+        state.message = message;
+        ui.mode.textContent = mode;
+        ui.status.textContent = message;
+        updateButtons();
+      }
+
+      function updateButtons() {
+        ui.start.disabled = state.running;
+        ui.calibrate.disabled = !state.running || state.mode === 'calibrating' || state.mode === 'evaluating';
+        ui.evaluate.disabled = !state.running || state.mode === 'calibrating' || state.mode === 'evaluating';
+        ui.pause.disabled = !state.running || state.mode === 'calibrating' || state.mode === 'evaluating';
+        ui.pause.textContent = state.paused ? '再開' : '停止';
+      }
+
+      function resizeCanvas() {
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        canvas.width = Math.floor(window.innerWidth * dpr);
+        canvas.height = Math.floor(window.innerHeight * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function clamp(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+      }
+
+      function delay(ms) {
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+      }
+
+      function nowIso() {
+        return new Date().toISOString();
+      }
+
+      function makePoints(percentPairs) {
+        return percentPairs.map(([px, py]) => ({
+          x: Math.round(window.innerWidth * px),
+          y: Math.round(window.innerHeight * py)
+        }));
+      }
+
+      function calibrationPoints() {
+        return makePoints([
+          [0.15, 0.20], [0.50, 0.20], [0.85, 0.20],
+          [0.15, 0.50], [0.50, 0.50], [0.85, 0.50],
+          [0.15, 0.80], [0.50, 0.80], [0.85, 0.80]
+        ]);
+      }
+
+      function evaluationPoints() {
+        return makePoints([
+          [0.30, 0.32], [0.70, 0.32], [0.50, 0.50],
+          [0.30, 0.72], [0.70, 0.72]
+        ]);
+      }
+
+      function safeWebgazer(method, ...args) {
+        const wg = window.webgazer;
+        if (!wg || typeof wg[method] !== 'function') return null;
+        try {
+          return wg[method](...args);
+        } catch (error) {
+          console.warn(`webgazer.${method} failed`, error);
+          return null;
+        }
+      }
+
+      function hideWebgazerDom() {
+        [
+          'webgazerVideoContainer',
+          'webgazerVideoFeed',
+          'webgazerVideoCanvas',
+          'webgazerFaceOverlay',
+          'webgazerFaceFeedbackBox',
+          'webgazerGazeDot'
+        ].forEach((id) => {
+          const element = document.getElementById(id);
+          if (element) element.hidden = true;
+        });
+      }
+
+      function configureWebgazer() {
+        safeWebgazer('setRegression', 'ridge');
+        safeWebgazer('showPredictionPoints', false);
+        safeWebgazer('showVideoPreview', false);
+        safeWebgazer('showFaceOverlay', false);
+        safeWebgazer('showFaceFeedbackBox', false);
+        safeWebgazer('saveDataAcrossSessions', false);
+        hideWebgazerDom();
+      }
+
+      function waitForWebgazer() {
+        return new Promise((resolve, reject) => {
+          const started = performance.now();
+          const tick = () => {
+            if (window.webgazer) return resolve();
+            if (performance.now() - started > 10000) return reject(new Error('WebGazer.js を読み込めませんでした。'));
+            window.setTimeout(tick, 80);
+          };
+          tick();
+        });
+      }
+
+      async function start() {
+        if (state.running) return;
+        if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+          setStatus('error', 'HTTPSまたはlocalhostで開いてください。');
+          return;
+        }
+        setStatus('starting', 'カメラとWebGazerを起動しています。');
+        try {
+          await waitForWebgazer();
+          configureWebgazer();
+          window.webgazer.setGazeListener(onGaze);
+          await window.webgazer.begin();
+          configureWebgazer();
+          state.running = true;
+          state.paused = false;
+          state.webgazerReady = true;
+          setStatus('tracking', '追跡中です。較正を実行してください。');
+        } catch (error) {
+          setStatus('error', error.message || String(error));
+        }
+      }
+
+      function onGaze(data, elapsedTime) {
+        if (!state.running || state.paused) return;
+        if (!data || typeof data.x !== 'number' || typeof data.y !== 'number') return;
+
+        const raw = {
+          x: clamp(data.x, 0, window.innerWidth),
+          y: clamp(data.y, 0, window.innerHeight),
+          t: Date.now(),
+          elapsedTime: elapsedTime || 0
+        };
+
+        if (!state.smooth) {
+          state.smooth = { x: raw.x, y: raw.y };
+        } else {
+          state.smooth.x = state.alpha * raw.x + (1 - state.alpha) * state.smooth.x;
+          state.smooth.y = state.alpha * raw.y + (1 - state.alpha) * state.smooth.y;
+        }
+
+        const sample = {
+          t: raw.t,
+          iso: nowIso(),
+          rawX: raw.x,
+          rawY: raw.y,
+          x: state.smooth.x,
+          y: state.smooth.y,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          mode: state.mode
+        };
+
+        state.gaze = sample;
+        state.samples.push(sample);
+        if (state.samples.length > state.maxSamples) state.samples.shift();
+        if (state.mode === 'evaluating' && state.evaluation.phase === 'recording') {
+          state.evaluation.samples.push(sample);
+        }
+
+        ui.point.textContent = `${Math.round(sample.x)}, ${Math.round(sample.y)}`;
+        ui.samples.textContent = `${state.samples.length} samples`;
+      }
+
+      async function startCalibration() {
+        if (!state.running) return;
+        state.calibration.points = calibrationPoints();
+        state.calibration.index = 0;
+        state.calibration.busy = false;
+        state.target = state.calibration.points[0];
+        setStatus('calibrating', `較正 1 / ${state.calibration.points.length}: 点を見たままクリックしてください。`);
+      }
+
+      async function captureCalibrationClick(event) {
+        if (state.mode !== 'calibrating' || state.calibration.busy) return;
+        if (ui.controlBar.contains(event.target)) return;
+        const point = state.calibration.points[state.calibration.index];
+        if (!point) return finishCalibration();
+
+        state.calibration.busy = true;
+        setStatus('calibrating', `較正 ${state.calibration.index + 1} / ${state.calibration.points.length}: サンプル取得中です。`);
+        for (let i = 0; i < state.calibration.samplesPerPoint; i += 1) {
+          safeWebgazer('recordScreenPosition', point.x, point.y, 'click');
+          await delay(65);
+        }
+        state.calibration.index += 1;
+        state.calibration.busy = false;
+
+        if (state.calibration.index >= state.calibration.points.length) {
+          finishCalibration();
+          return;
+        }
+        state.target = state.calibration.points[state.calibration.index];
+        setStatus('calibrating', `較正 ${state.calibration.index + 1} / ${state.calibration.points.length}: 点を見たままクリックしてください。`);
+      }
+
+      function finishCalibration() {
+        state.target = null;
+        setStatus('tracking', '較正が完了しました。評価を実行できます。');
+      }
+
+      async function startEvaluation() {
+        if (!state.running || state.mode === 'calibrating') return;
+        state.evaluation.points = evaluationPoints();
+        state.evaluation.index = 0;
+        state.evaluation.results = [];
+        state.evaluation.samples = [];
+        ui.resultPanel.hidden = true;
+        setStatus('evaluating', '評価を開始します。表示点を見続けてください。');
+
+        for (let i = 0; i < state.evaluation.points.length; i += 1) {
+          const point = state.evaluation.points[i];
+          state.evaluation.index = i;
+          state.target = point;
+          state.evaluation.phase = 'settling';
+          setStatus('evaluating', `評価 ${i + 1} / ${state.evaluation.points.length}: 点を見てください。`);
+          await delay(700);
+          state.evaluation.samples = [];
+          state.evaluation.phase = 'recording';
+          await delay(1400);
+          state.evaluation.phase = 'idle';
+          const samples = state.evaluation.samples.slice();
+          const mean = meanPoint(samples);
+          const errorPx = mean ? distance(mean, point) : null;
+          state.evaluation.results.push({ target: point, mean, errorPx, samples: samples.length });
+        }
+
+        finishEvaluation();
+      }
+
+      function meanPoint(samples) {
+        if (!samples.length) return null;
+        let sx = 0;
+        let sy = 0;
+        for (const sample of samples) {
+          sx += sample.x;
+          sy += sample.y;
+        }
+        return { x: sx / samples.length, y: sy / samples.length };
+      }
+
+      function distance(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+      }
+
+      function percentile(values, p) {
+        if (!values.length) return null;
+        const sorted = values.slice().sort((a, b) => a - b);
+        const index = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
+        return sorted[index];
+      }
+
+      function finishEvaluation() {
+        state.target = null;
+        const errors = state.evaluation.results.map((r) => r.errorPx).filter((n) => Number.isFinite(n));
+        const meanError = errors.length ? errors.reduce((a, b) => a + b, 0) / errors.length : null;
+        const medianError = percentile(errors, 50);
+        const p90Error = percentile(errors, 90);
+        const lines = [
+          `mean:   ${meanError === null ? 'n/a' : Math.round(meanError) + ' px'}`,
+          `median: ${medianError === null ? 'n/a' : Math.round(medianError) + ' px'}`,
+          `p90:    ${p90Error === null ? 'n/a' : Math.round(p90Error) + ' px'}`,
+          `points: ${state.evaluation.results.length}`
+        ];
+        ui.result.textContent = lines.join('\n');
+        ui.resultPanel.hidden = false;
+        setStatus('tracking', '評価が完了しました。');
+      }
+
+      function togglePause() {
+        if (!state.running) return;
+        state.paused = !state.paused;
+        if (state.paused) {
+          safeWebgazer('pause');
+          setStatus('paused', '停止中です。');
+        } else {
+          safeWebgazer('resume');
+          setStatus('tracking', '追跡中です。');
+        }
+      }
+
+      function clearAll() {
+        safeWebgazer('clearData');
+        try {
+          localStorage.removeItem('webgazerGlobalData');
+          localStorage.removeItem('webgazerGlobalSettings');
+        } catch (_) {}
+        state.samples = [];
+        state.gaze = null;
+        state.smooth = null;
+        state.target = null;
+        state.evaluation.results = [];
+        ui.resultPanel.hidden = true;
+        setStatus(state.running ? 'tracking' : 'idle', state.running ? '初期化しました。較正を実行してください。' : '未開始');
+      }
+
+      function exportJson() {
+        const payload = {
+          exportedAt: nowIso(),
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          samples: state.samples,
+          evaluation: state.evaluation.results
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gaze-session-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function drawBackground() {
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+      }
+
+      function drawTarget() {
+        if (!state.target) return;
+        const p = state.target;
+        ctx.save();
+        ctx.strokeStyle = state.mode === 'evaluating' ? '#fbbf24' : '#67e8f9';
+        ctx.fillStyle = state.mode === 'evaluating' ? '#f59e0b' : '#06b6d4';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(p.x - 36, p.y);
+        ctx.lineTo(p.x - 12, p.y);
+        ctx.moveTo(p.x + 12, p.y);
+        ctx.lineTo(p.x + 36, p.y);
+        ctx.moveTo(p.x, p.y - 36);
+        ctx.lineTo(p.x, p.y - 12);
+        ctx.moveTo(p.x, p.y + 12);
+        ctx.lineTo(p.x, p.y + 36);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawGaze() {
+        if (!state.gaze) return;
+        const history = state.samples.slice(-80);
+        ctx.save();
+        for (let i = 1; i < history.length; i += 1) {
+          const a = history[i - 1];
+          const b = history[i];
+          ctx.strokeStyle = `rgba(255,255,255,${0.03 + i / history.length * 0.22})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+        const p = state.gaze;
+        ctx.strokeStyle = '#e5e5e5';
+        ctx.fillStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawText() {
+        ctx.save();
+        ctx.fillStyle = '#a3a3a3';
+        ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+        ctx.fillText(`mode: ${state.mode}`, 16, window.innerHeight - 54);
+        ctx.fillText(`status: ${state.message}`, 16, window.innerHeight - 30);
+        if (state.mode === 'calibrating') {
+          ctx.fillText('target: look at the mark, then click anywhere outside the control bar', 16, window.innerHeight - 78);
+        }
+        ctx.restore();
+      }
+
+      function draw() {
+        hideWebgazerDom();
+        drawBackground();
+        drawTarget();
+        drawGaze();
+        drawText();
+        requestAnimationFrame(draw);
+      }
+
+      function onKey(event) {
+        if (event.repeat) return;
+        if (event.key === 'c' || event.key === 'C') startCalibration();
+        if (event.key === 'e' || event.key === 'E') startEvaluation();
+        if (event.key === ' ') {
+          event.preventDefault();
+          togglePause();
+        }
+      }
+
+      ui.start.addEventListener('click', start);
+      ui.calibrate.addEventListener('click', startCalibration);
+      ui.evaluate.addEventListener('click', startEvaluation);
+      ui.pause.addEventListener('click', togglePause);
+      ui.clear.addEventListener('click', clearAll);
+      ui.export.addEventListener('click', exportJson);
+      document.addEventListener('click', captureCalibrationClick);
+      document.addEventListener('keydown', onKey);
+      window.addEventListener('resize', resizeCanvas);
+
+      resizeCanvas();
+      setStatus('idle', '未開始');
+      updateButtons();
+      draw();
+    })();
+  </script>
+</body>
+</html>
