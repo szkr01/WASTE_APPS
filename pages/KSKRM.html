@@ -1,3 +1,8 @@
+<!--
+Context: Existing collage/jacket editor extended by request with a Fragment Post FX layer system.
+Implementation summary: Keeps the existing image/text/warp/filter/degrade workflow and uses reorderable WebGL2 post-FX layers focused on core color, tone, blur, sharpen, bloom, and transform operations.
+Each FX layer affects only the composited layers below it and exposes effect-specific editable parameters.
+-->
 <!DOCTYPE html>
 
 <html lang="ja">
@@ -5,7 +10,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>クソコラジャケット メーカー</title>
-    <meta name="description" content="A tool to create shitty collages by pasting images, applying chroma key, and intentionally degrading them with JPEG artifacts and downscaling.">
+    <meta name="description" content="A local collage jacket editor with image and text layers, stack-aware WebGL2 post-processing effects, chroma key, warping, and intentional JPEG degradation.">
     <meta name="page:icon" content="fas fa-layer-group">
     <meta name="page:color" content="#ffffff">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -44,6 +49,22 @@
     .layer-drop-after { box-shadow: inset 0 -3px 0 #3b82f6; }
     .canvas-context-menu { min-width: 190px; }
     .canvas-context-menu button:disabled { opacity: 0.55; cursor: wait; }
+    button { transition-property: transform, background-color, border-color, color, opacity, box-shadow; transition-duration: 160ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1); }
+    button:active:not(:disabled) { transform: scale(0.97); }
+    .fx-param-card { transition: border-color 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+    .fx-preview-grid {
+        background-color: #f8fafc;
+        background-image:
+            linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+            linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+            linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+        background-size: 18px 18px;
+        background-position: 0 0, 0 9px, 9px -9px, -9px 0px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        button, .fx-param-card { transition-duration: 0ms !important; }
+    }
     
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -78,9 +99,14 @@
                 </button>
             </div>
 
-            <button id="btnAddText" class="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2">
-                <i class="fas fa-font"></i> Add Text
-            </button>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btnAddText" class="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg shadow-sm flex items-center justify-center gap-2">
+                    <i class="fas fa-font"></i> Add Text
+                </button>
+                <button id="btnAddFragment" class="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium py-2.5 rounded-lg shadow-sm flex items-center justify-center gap-2">
+                    <i class="fas fa-wand-magic-sparkles"></i> Fragment FX
+                </button>
+            </div>
 
             <section class="bg-white">
                 <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -147,6 +173,81 @@
         <span>Copy Image</span>
     </button>
     <div id="ctxCopyStatus" class="hidden px-3 pb-2 text-[11px] text-slate-500"></div>
+</div>
+
+
+<!-- Fragment Post FX Editor Modal -->
+<div id="fragmentEditorModal" class="fixed inset-0 bg-slate-900/60 hidden z-50 items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200 pointer-events-none">
+    <div class="bg-white rounded-2xl shadow-2xl w-[980px] max-w-[96vw] max-h-[94vh] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200" id="fragmentEditorModalContent">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-fuchsia-100 text-fuchsia-600 flex items-center justify-center">
+                    <i class="fas fa-wand-magic-sparkles text-sm"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-800 leading-tight">Fragment Post FX</h3>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Affects the composited layers below this FX layer.</p>
+                </div>
+            </div>
+            <button id="fxBtnClose" class="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200"><i class="fas fa-times text-lg"></i></button>
+        </div>
+
+        <div class="p-5 grid grid-cols-[minmax(0,1fr)_360px] gap-5 overflow-y-auto">
+            <div class="min-w-0 space-y-3">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Preview</div>
+                        <div id="fxPreviewCaption" class="text-xs text-slate-500 mt-1">Previewing the full 1024 × 1024 board.</div>
+                    </div>
+                    <span class="text-[10px] font-bold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-100 px-2 py-1 rounded-full">WebGL2</span>
+                </div>
+                <div class="fx-preview-grid rounded-2xl border border-slate-200/80 overflow-hidden aspect-square flex items-center justify-center shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
+                    <canvas id="fxPreviewCanvas" width="520" height="520" class="block w-full h-full"></canvas>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs text-slate-600 leading-relaxed flex gap-2.5">
+                    <i class="fas fa-layer-group text-fuchsia-500 mt-0.5"></i>
+                    <p>FX is evaluated at its exact position in the layer stack. Moving it changes which lower layers are processed.</p>
+                </div>
+            </div>
+
+            <div class="min-w-0 space-y-5">
+                <section class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Post Effect</label>
+                        <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none">
+                            <input type="checkbox" id="fxEnabled" checked class="rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500">
+                            Enabled
+                        </label>
+                    </div>
+                    <select id="fxEffectSelect" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30 focus:border-fuchsia-400"></select>
+                    <div id="fxEffectDescription" class="text-xs text-slate-500 leading-relaxed"></div>
+                </section>
+
+                <section class="space-y-3">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-600 font-medium">Effect Opacity</span>
+                        <span id="fxOpacityVal" class="font-mono text-fuchsia-600 font-bold">100%</span>
+                    </div>
+                    <input type="range" id="fxOpacity" min="0" max="1" step="0.01" value="1" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                </section>
+
+                <section>
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Parameters</h4>
+                        <button id="fxResetParams" class="text-[11px] font-semibold text-slate-500 hover:text-fuchsia-700 px-2 py-1 rounded-md hover:bg-fuchsia-50">Reset</button>
+                    </div>
+                    <div id="fxParameterList" class="space-y-3"></div>
+                </section>
+            </div>
+        </div>
+
+        <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+            <button id="fxBtnCancel" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200">Cancel</button>
+            <button id="fxBtnApply" class="px-6 py-2 rounded-lg text-sm font-medium bg-fuchsia-600 hover:bg-fuchsia-700 active:bg-fuchsia-800 text-white shadow-md shadow-fuchsia-600/20 flex items-center gap-2">
+                <i class="fas fa-check"></i> Apply Post FX
+            </button>
+        </div>
+    </div>
 </div>
 
 <!-- Image Filter Modal -->
@@ -473,6 +574,7 @@
     const btnUndo = document.getElementById('btnUndo');
     const btnRedo = document.getElementById('btnRedo');
     const btnAddText = document.getElementById('btnAddText');
+    const btnAddFragment = document.getElementById('btnAddFragment');
     const canvasContextMenu = document.getElementById('canvasContextMenu');
     const ctxCopyImage = document.getElementById('ctxCopyImage');
     const ctxCopyStatus = document.getElementById('ctxCopyStatus');
@@ -573,6 +675,179 @@
         ]);
     }
 
+
+    const FRAGMENT_EFFECTS = {
+        colorAdjust: {
+            id: 1,
+            label: 'Color Adjust',
+            icon: 'fa-sliders',
+            description: 'Basic global color correction for brightness, contrast, saturation, and hue.',
+            params: [
+                { key: 'brightness', label: 'Brightness', min: -1, max: 1, step: 0.01, default: 0, decimals: 2 },
+                { key: 'contrast', label: 'Contrast', min: -1, max: 1, step: 0.01, default: 0, decimals: 2 },
+                { key: 'saturation', label: 'Saturation', min: 0, max: 2, step: 0.01, default: 1, decimals: 2 },
+                { key: 'hue', label: 'Hue', min: -180, max: 180, step: 1, default: 0, decimals: 0, suffix: '°' }
+            ]
+        },
+        exposureGamma: {
+            id: 2,
+            label: 'Exposure / Gamma',
+            icon: 'fa-sun',
+            description: 'Adjusts exposure in stops and gamma response for the composited image.',
+            params: [
+                { key: 'exposure', label: 'Exposure', min: -4, max: 4, step: 0.01, default: 0, decimals: 2, suffix: ' EV' },
+                { key: 'gamma', label: 'Gamma', min: 0.2, max: 3, step: 0.01, default: 1, decimals: 2 }
+            ]
+        },
+        levels: {
+            id: 3,
+            label: 'Levels',
+            icon: 'fa-chart-simple',
+            description: 'Remaps black point, white point, gamma, and output white level.',
+            params: [
+                { key: 'black', label: 'Black Point', min: 0, max: 0.95, step: 0.005, default: 0, decimals: 3 },
+                { key: 'white', label: 'White Point', min: 0.05, max: 1, step: 0.005, default: 1, decimals: 3 },
+                { key: 'gamma', label: 'Gamma', min: 0.2, max: 3, step: 0.01, default: 1, decimals: 2 },
+                { key: 'outputWhite', label: 'Output White', min: 0.05, max: 1, step: 0.005, default: 1, decimals: 3 }
+            ]
+        },
+        temperatureTint: {
+            id: 4,
+            label: 'Temperature / Tint',
+            icon: 'fa-temperature-half',
+            description: 'Shifts the white balance between cool/warm and green/magenta.',
+            params: [
+                { key: 'temperature', label: 'Temperature', min: -1, max: 1, step: 0.01, default: 0, decimals: 2 },
+                { key: 'tint', label: 'Tint', min: -1, max: 1, step: 0.01, default: 0, decimals: 2 }
+            ]
+        },
+        grayscale: {
+            id: 5,
+            label: 'Grayscale',
+            icon: 'fa-circle-half-stroke',
+            description: 'Converts the current composite toward luminance while preserving controllable mix amount.',
+            params: [
+                { key: 'amount', label: 'Amount', min: 0, max: 1, step: 0.01, default: 1, decimals: 2 }
+            ]
+        },
+        invert: {
+            id: 6,
+            label: 'Invert',
+            icon: 'fa-circle-half-stroke',
+            description: 'Inverts RGB values with a continuous amount control.',
+            params: [
+                { key: 'amount', label: 'Amount', min: 0, max: 1, step: 0.01, default: 1, decimals: 2 }
+            ]
+        },
+        threshold: {
+            id: 7,
+            label: 'Threshold',
+            icon: 'fa-adjust',
+            description: 'Converts luminance to black and white around an adjustable threshold.',
+            params: [
+                { key: 'threshold', label: 'Threshold', min: 0, max: 1, step: 0.005, default: 0.5, decimals: 3 },
+                { key: 'softness', label: 'Softness', min: 0, max: 0.5, step: 0.005, default: 0, decimals: 3 }
+            ]
+        },
+        blur: {
+            id: 8,
+            label: 'Blur',
+            icon: 'fa-droplet',
+            description: 'Applies a compact isotropic blur to all composited layers below this FX layer.',
+            params: [
+                { key: 'radius', label: 'Radius', min: 0, max: 40, step: 0.1, default: 6, decimals: 1, suffix: ' px' }
+            ]
+        },
+        sharpen: {
+            id: 9,
+            label: 'Sharpen',
+            icon: 'fa-crosshairs',
+            description: 'Sharpens local detail using an unsharp-mask style neighborhood sample.',
+            params: [
+                { key: 'amount', label: 'Amount', min: 0, max: 3, step: 0.01, default: 0.8, decimals: 2 },
+                { key: 'radius', label: 'Radius', min: 0.5, max: 8, step: 0.1, default: 1.5, decimals: 1, suffix: ' px' }
+            ]
+        },
+        bloom: {
+            id: 10,
+            label: 'Bloom',
+            icon: 'fa-sun',
+            description: 'Adds blurred light from pixels above a luminance threshold.',
+            params: [
+                { key: 'threshold', label: 'Threshold', min: 0, max: 1, step: 0.01, default: 0.72, decimals: 2 },
+                { key: 'intensity', label: 'Intensity', min: 0, max: 2.5, step: 0.01, default: 0.65, decimals: 2 },
+                { key: 'radius', label: 'Radius', min: 1, max: 48, step: 0.1, default: 12, decimals: 1, suffix: ' px' },
+                { key: 'softKnee', label: 'Soft Knee', min: 0, max: 0.5, step: 0.01, default: 0.12, decimals: 2 }
+            ]
+        },
+        pixelate: {
+            id: 11,
+            label: 'Pixelate',
+            icon: 'fa-border-all',
+            description: 'Quantizes sampling into square blocks measured in board pixels.',
+            params: [
+                { key: 'size', label: 'Pixel Size', min: 1, max: 96, step: 1, default: 12, decimals: 0, suffix: ' px' }
+            ]
+        },
+        posterize: {
+            id: 12,
+            label: 'Posterize',
+            icon: 'fa-layer-group',
+            description: 'Reduces each RGB channel to a fixed number of discrete levels.',
+            params: [
+                { key: 'levels', label: 'Levels', min: 2, max: 32, step: 1, default: 6, decimals: 0 }
+            ]
+        },
+        vignette: {
+            id: 13,
+            label: 'Vignette',
+            icon: 'fa-circle-dot',
+            description: 'Darkens the image toward the edges with adjustable radius and softness.',
+            params: [
+                { key: 'strength', label: 'Strength', min: 0, max: 1.5, step: 0.01, default: 0.55, decimals: 2 },
+                { key: 'radius', label: 'Radius', min: 0.2, max: 1.2, step: 0.01, default: 0.78, decimals: 2 },
+                { key: 'softness', label: 'Softness', min: 0.01, max: 0.8, step: 0.01, default: 0.3, decimals: 2 }
+            ]
+        },
+        chromaticAberration: {
+            id: 14,
+            label: 'Chromatic Aberration',
+            icon: 'fa-droplet',
+            description: 'Separates red and blue sampling in opposite directions by a precise pixel offset.',
+            params: [
+                { key: 'amount', label: 'Offset', min: 0, max: 40, step: 0.1, default: 4, decimals: 1, suffix: ' px' },
+                { key: 'angle', label: 'Angle', min: 0, max: 360, step: 1, default: 0, decimals: 0, suffix: '°' },
+                { key: 'edgeFade', label: 'Edge Fade', min: 0, max: 1, step: 0.01, default: 0.15, decimals: 2 }
+            ]
+        }
+    };
+
+    const FRAGMENT_EFFECT_ORDER = ['colorAdjust', 'exposureGamma', 'levels', 'temperatureTint', 'grayscale', 'invert', 'threshold', 'blur', 'sharpen', 'bloom', 'pixelate', 'posterize', 'vignette', 'chromaticAberration'];
+
+    function getDefaultFragmentParams(effectKey) {
+        const config = FRAGMENT_EFFECTS[effectKey] || FRAGMENT_EFFECTS.colorAdjust;
+        return Object.fromEntries(config.params.map(param => [param.key, param.default]));
+    }
+
+    function normalizeFragmentParams(effectKey, params = {}) {
+        const config = FRAGMENT_EFFECTS[effectKey] || FRAGMENT_EFFECTS.colorAdjust;
+        const normalized = {};
+        config.params.forEach(param => {
+            const value = Number(params[param.key]);
+            normalized[param.key] = Number.isFinite(value) ? clamp(value, param.min, param.max) : param.default;
+        });
+        return normalized;
+    }
+
+    function getFragmentParamVector(obj) {
+        const config = FRAGMENT_EFFECTS[obj?.effect] || FRAGMENT_EFFECTS.colorAdjust;
+        const params = normalizeFragmentParams(obj?.effect || 'colorAdjust', obj?.params || {});
+        return [0, 1, 2, 3].map(index => {
+            const param = config.params[index];
+            return param ? Number(params[param.key]) : 0;
+        });
+    }
+
     function createGpuLayerRenderer(targetCanvas, preserveDrawingBuffer = false) {
         const gl = targetCanvas.getContext('webgl2', {
             alpha: true,
@@ -581,9 +856,9 @@
             preserveDrawingBuffer,
             powerPreference: 'high-performance'
         });
-        if (!gl) throw new Error('WebGL2 is required for real-time four-corner warping.');
+        if (!gl) throw new Error('WebGL2 is required for layer rendering and Fragment Post FX effects.');
 
-        const vertexSource = `#version 300 es
+        const layerVertexSource = `#version 300 es
             precision highp float;
             layout(location = 0) in vec2 aCanonical;
             uniform mat3 uHomography;
@@ -603,7 +878,7 @@
             }
         `;
 
-        const fragmentSource = `#version 300 es
+        const layerFragmentSource = `#version 300 es
             precision highp float;
             uniform sampler2D uTexture;
             in vec2 vTexCoord;
@@ -614,8 +889,223 @@
             }
         `;
 
-        const program = createProgram(gl, vertexSource, fragmentSource);
-        const vao = gl.createVertexArray();
+        const fullscreenVertexSource = `#version 300 es
+            precision highp float;
+            layout(location = 0) in vec2 aPosition;
+            void main() {
+                gl_Position = vec4(aPosition, 0.0, 1.0);
+            }
+        `;
+
+        const fullscreenFragmentSource = `#version 300 es
+            precision highp float;
+
+            uniform sampler2D uScene;
+            uniform vec2 uResolution;
+            uniform vec2 uBoardSize;
+            uniform vec4 uBoardRect;
+            uniform int uEffect;
+            uniform vec4 uParams;
+            uniform float uOpacity;
+
+            out vec4 outColor;
+
+            const float PI = 3.141592653589793;
+
+            float hash21(vec2 p) {
+                p = fract(p * vec2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return fract(p.x * p.y);
+            }
+
+            vec2 boardToTextureUv(vec2 boardUv) {
+                vec2 screenTop = uBoardRect.xy + boardUv * uBoardRect.zw;
+                return vec2(screenTop.x / uResolution.x, 1.0 - screenTop.y / uResolution.y);
+            }
+
+            vec4 sampleScenePremul(vec2 boardUv) {
+                return texture(uScene, boardToTextureUv(clamp(boardUv, vec2(0.0), vec2(1.0))));
+            }
+
+            vec3 unpremul(vec4 value) {
+                return value.a > 0.00001 ? value.rgb / value.a : vec3(0.0);
+            }
+
+            vec3 sampleColor(vec2 boardUv) {
+                return unpremul(sampleScenePremul(boardUv));
+            }
+
+            float edgeMask(vec2 uv, float width) {
+                float d = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+                return smoothstep(0.0, max(0.0001, width), d);
+            }
+
+            void main() {
+                vec2 frag = gl_FragCoord.xy;
+                vec2 screenTop = vec2(frag.x, uResolution.y - frag.y);
+                vec2 boardUv = (screenTop - uBoardRect.xy) / uBoardRect.zw;
+                vec4 basePremul = texture(uScene, frag / uResolution);
+
+                if (uEffect == 0 || boardUv.x < 0.0 || boardUv.y < 0.0 || boardUv.x > 1.0 || boardUv.y > 1.0) {
+                    outColor = basePremul;
+                    return;
+                }
+
+                float alpha = basePremul.a;
+                vec3 base = unpremul(basePremul);
+                vec3 fx = base;
+
+                if (uEffect == 1) {
+                    float brightness = uParams.x;
+                    float contrast = uParams.y;
+                    float saturation = uParams.z;
+                    float hue = radians(uParams.w);
+                    vec3 color = base + vec3(brightness);
+                    color = (color - 0.5) * (1.0 + contrast * 1.5) + 0.5;
+                    float luma = dot(color, vec3(0.299, 0.587, 0.114));
+                    color = vec3(luma) + (color - vec3(luma)) * saturation;
+                    float Y = dot(color, vec3(0.299, 0.587, 0.114));
+                    float I = dot(color, vec3(0.596, -0.274, -0.322));
+                    float Q = dot(color, vec3(0.211, -0.523, 0.312));
+                    float c = cos(hue);
+                    float s = sin(hue);
+                    float Ir = I * c - Q * s;
+                    float Qr = I * s + Q * c;
+                    fx = vec3(
+                        Y + 0.956 * Ir + 0.621 * Qr,
+                        Y - 0.272 * Ir - 0.647 * Qr,
+                        Y - 1.106 * Ir + 1.703 * Qr
+                    );
+                } else if (uEffect == 2) {
+                    float exposure = uParams.x;
+                    float gamma = max(0.05, uParams.y);
+                    vec3 exposed = max(vec3(0.0), base * exp2(exposure));
+                    fx = pow(clamp(exposed, 0.0, 1.0), vec3(1.0 / gamma));
+                } else if (uEffect == 3) {
+                    float blackPoint = uParams.x;
+                    float whitePoint = max(blackPoint + 0.001, uParams.y);
+                    float gamma = max(0.05, uParams.z);
+                    float outputWhite = uParams.w;
+                    vec3 leveled = clamp((base - blackPoint) / (whitePoint - blackPoint), 0.0, 1.0);
+                    leveled = pow(leveled, vec3(1.0 / gamma));
+                    fx = leveled * outputWhite;
+                } else if (uEffect == 4) {
+                    float temperature = uParams.x;
+                    float tint = uParams.y;
+                    vec3 color = base;
+                    color.r += temperature * 0.12;
+                    color.b -= temperature * 0.12;
+                    color.r += tint * 0.05;
+                    color.b += tint * 0.05;
+                    color.g -= tint * 0.10;
+                    fx = color;
+                } else if (uEffect == 5) {
+                    float amount = uParams.x;
+                    float luma = dot(base, vec3(0.299, 0.587, 0.114));
+                    fx = mix(base, vec3(luma), amount);
+                } else if (uEffect == 6) {
+                    float amount = uParams.x;
+                    fx = mix(base, vec3(1.0) - base, amount);
+                } else if (uEffect == 7) {
+                    float thresholdValue = uParams.x;
+                    float softness = uParams.y;
+                    float luma = dot(base, vec3(0.299, 0.587, 0.114));
+                    float bw = softness <= 0.0001
+                        ? step(thresholdValue, luma)
+                        : smoothstep(thresholdValue - softness, thresholdValue + softness, luma);
+                    fx = vec3(bw);
+                } else if (uEffect == 8) {
+                    float radius = max(0.0, uParams.x);
+                    vec2 o = vec2(radius) / uBoardSize;
+                    vec3 sum = base * 0.20;
+                    sum += sampleColor(boardUv + vec2( o.x, 0.0)) * 0.12;
+                    sum += sampleColor(boardUv + vec2(-o.x, 0.0)) * 0.12;
+                    sum += sampleColor(boardUv + vec2(0.0,  o.y)) * 0.12;
+                    sum += sampleColor(boardUv + vec2(0.0, -o.y)) * 0.12;
+                    sum += sampleColor(boardUv + vec2( o.x,  o.y) * 0.7071) * 0.08;
+                    sum += sampleColor(boardUv + vec2(-o.x,  o.y) * 0.7071) * 0.08;
+                    sum += sampleColor(boardUv + vec2( o.x, -o.y) * 0.7071) * 0.08;
+                    sum += sampleColor(boardUv + vec2(-o.x, -o.y) * 0.7071) * 0.08;
+                    fx = sum;
+                } else if (uEffect == 9) {
+                    float amount = uParams.x;
+                    float radius = max(0.5, uParams.y);
+                    vec2 o = vec2(radius) / uBoardSize;
+                    vec3 blurred = (
+                        sampleColor(boardUv + vec2( o.x, 0.0)) +
+                        sampleColor(boardUv + vec2(-o.x, 0.0)) +
+                        sampleColor(boardUv + vec2(0.0,  o.y)) +
+                        sampleColor(boardUv + vec2(0.0, -o.y))
+                    ) * 0.25;
+                    fx = base + (base - blurred) * amount;
+                } else if (uEffect == 10) {
+                    float thresholdValue = uParams.x;
+                    float intensity = uParams.y;
+                    float radius = max(1.0, uParams.z);
+                    float softKnee = uParams.w;
+                    vec2 o = vec2(radius) / uBoardSize;
+                    vec3 c1 = sampleColor(boardUv + vec2( o.x, 0.0));
+                    vec3 c2 = sampleColor(boardUv + vec2(-o.x, 0.0));
+                    vec3 c3 = sampleColor(boardUv + vec2(0.0,  o.y));
+                    vec3 c4 = sampleColor(boardUv + vec2(0.0, -o.y));
+                    vec3 c5 = sampleColor(boardUv + vec2( o.x,  o.y) * 0.7071);
+                    vec3 c6 = sampleColor(boardUv + vec2(-o.x,  o.y) * 0.7071);
+                    vec3 c7 = sampleColor(boardUv + vec2( o.x, -o.y) * 0.7071);
+                    vec3 c8 = sampleColor(boardUv + vec2(-o.x, -o.y) * 0.7071);
+                    float l1 = dot(c1, vec3(0.299, 0.587, 0.114));
+                    float l2 = dot(c2, vec3(0.299, 0.587, 0.114));
+                    float l3 = dot(c3, vec3(0.299, 0.587, 0.114));
+                    float l4 = dot(c4, vec3(0.299, 0.587, 0.114));
+                    float l5 = dot(c5, vec3(0.299, 0.587, 0.114));
+                    float l6 = dot(c6, vec3(0.299, 0.587, 0.114));
+                    float l7 = dot(c7, vec3(0.299, 0.587, 0.114));
+                    float l8 = dot(c8, vec3(0.299, 0.587, 0.114));
+                    float g1 = softKnee <= 0.0001 ? step(thresholdValue, l1) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l1);
+                    float g2 = softKnee <= 0.0001 ? step(thresholdValue, l2) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l2);
+                    float g3 = softKnee <= 0.0001 ? step(thresholdValue, l3) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l3);
+                    float g4 = softKnee <= 0.0001 ? step(thresholdValue, l4) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l4);
+                    float g5 = softKnee <= 0.0001 ? step(thresholdValue, l5) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l5);
+                    float g6 = softKnee <= 0.0001 ? step(thresholdValue, l6) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l6);
+                    float g7 = softKnee <= 0.0001 ? step(thresholdValue, l7) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l7);
+                    float g8 = softKnee <= 0.0001 ? step(thresholdValue, l8) : smoothstep(thresholdValue - softKnee, thresholdValue + softKnee, l8);
+                    vec3 bloom = (c1*g1 + c2*g2 + c3*g3 + c4*g4 + c5*g5 + c6*g6 + c7*g7 + c8*g8) * 0.125;
+                    fx = base + bloom * intensity;
+                } else if (uEffect == 11) {
+                    float pixelSize = max(1.0, uParams.x);
+                    vec2 cells = max(vec2(1.0), uBoardSize / pixelSize);
+                    vec2 q = (floor(boardUv * cells) + 0.5) / cells;
+                    fx = sampleColor(q);
+                } else if (uEffect == 12) {
+                    float levels = max(2.0, floor(uParams.x + 0.5));
+                    fx = floor(clamp(base, 0.0, 1.0) * (levels - 1.0) + 0.5) / (levels - 1.0);
+                } else if (uEffect == 13) {
+                    float strength = uParams.x;
+                    float radius = uParams.y;
+                    float softness = max(0.001, uParams.z);
+                    vec2 p = (boardUv - 0.5) * vec2(uBoardSize.x / uBoardSize.y, 1.0);
+                    float d = length(p) * 1.41421356;
+                    float edge = smoothstep(max(0.0, radius - softness), radius, d);
+                    fx *= max(0.0, 1.0 - edge * strength);
+                } else if (uEffect == 14) {
+                    float amount = uParams.x;
+                    float angle = radians(uParams.y);
+                    float fadeWidth = uParams.z;
+                    vec2 delta = vec2(cos(angle), sin(angle)) * amount / uBoardSize;
+                    float fade = fadeWidth <= 0.0 ? 1.0 : edgeMask(boardUv, fadeWidth * 0.25);
+                    vec3 left = sampleColor(boardUv - delta * fade);
+                    vec3 right = sampleColor(boardUv + delta * fade);
+                    fx = vec3(right.r, base.g, left.b);
+                }
+
+                vec3 finalColor = mix(base, clamp(fx, 0.0, 1.0), clamp(uOpacity, 0.0, 1.0));
+                outColor = vec4(finalColor * alpha, alpha);
+            }
+        `;
+
+        const layerProgram = createProgram(gl, layerVertexSource, layerFragmentSource);
+        const fullscreenProgram = createProgram(gl, fullscreenVertexSource, fullscreenFragmentSource);
+
+        const layerVao = gl.createVertexArray();
         const vertexBuffer = gl.createBuffer();
         const indexBuffer = gl.createBuffer();
         const canonicalVertices = new Float32Array([
@@ -626,7 +1116,7 @@
         ]);
         const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
 
-        gl.bindVertexArray(vao);
+        gl.bindVertexArray(layerVao);
         gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, canonicalVertices, gl.STATIC_DRAW);
         gl.enableVertexAttribArray(0);
@@ -635,16 +1125,40 @@
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
         gl.bindVertexArray(null);
 
-        const uniforms = {
-            homography: gl.getUniformLocation(program, 'uHomography'),
-            viewport: gl.getUniformLocation(program, 'uViewport'),
-            view: gl.getUniformLocation(program, 'uView'),
-            texture: gl.getUniformLocation(program, 'uTexture')
+        const fullscreenVao = gl.createVertexArray();
+        const fullscreenBuffer = gl.createBuffer();
+        gl.bindVertexArray(fullscreenVao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, fullscreenBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+             3, -1,
+            -1,  3
+        ]), gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+
+        const layerUniforms = {
+            homography: gl.getUniformLocation(layerProgram, 'uHomography'),
+            viewport: gl.getUniformLocation(layerProgram, 'uViewport'),
+            view: gl.getUniformLocation(layerProgram, 'uView'),
+            texture: gl.getUniformLocation(layerProgram, 'uTexture')
+        };
+
+        const fullscreenUniforms = {
+            scene: gl.getUniformLocation(fullscreenProgram, 'uScene'),
+            resolution: gl.getUniformLocation(fullscreenProgram, 'uResolution'),
+            boardSize: gl.getUniformLocation(fullscreenProgram, 'uBoardSize'),
+            boardRect: gl.getUniformLocation(fullscreenProgram, 'uBoardRect'),
+            effect: gl.getUniformLocation(fullscreenProgram, 'uEffect'),
+            params: gl.getUniformLocation(fullscreenProgram, 'uParams'),
+            opacity: gl.getUniformLocation(fullscreenProgram, 'uOpacity')
         };
 
         const textureCache = new WeakMap();
 
         function getTextureSource(obj) {
+            if (obj?.type === 'fragment') return null;
             if (obj?.type === 'text') return getTextTexture(obj);
             if (obj?.img?.complete && obj.img.naturalWidth > 0) return obj.img;
             return null;
@@ -675,22 +1189,52 @@
             return entry.texture;
         }
 
+        function createRenderTarget() {
+            const texture = gl.createTexture();
+            const framebuffer = gl.createFramebuffer();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+            return { texture, framebuffer };
+        }
+
+        const targetA = createRenderTarget();
+        const targetB = createRenderTarget();
+        let bufferWidth = 0;
+        let bufferHeight = 0;
+
+        function allocateRenderTarget(target, width, height) {
+            gl.bindTexture(gl.TEXTURE_2D, target.texture);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target.texture, 0);
+            const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+            if (status !== gl.FRAMEBUFFER_COMPLETE) {
+                throw new Error(`Fragment Post FX framebuffer is incomplete: ${status}`);
+            }
+        }
+
         function resize(width, height) {
             const nextWidth = Math.max(1, Math.floor(width));
             const nextHeight = Math.max(1, Math.floor(height));
             if (targetCanvas.width !== nextWidth) targetCanvas.width = nextWidth;
             if (targetCanvas.height !== nextHeight) targetCanvas.height = nextHeight;
+            if (bufferWidth !== nextWidth || bufferHeight !== nextHeight) {
+                bufferWidth = nextWidth;
+                bufferHeight = nextHeight;
+                allocateRenderTarget(targetA, nextWidth, nextHeight);
+                allocateRenderTarget(targetB, nextWidth, nextHeight);
+            }
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
 
-        function render(layerObjects, currentView, boardWidth, boardHeight) {
-            resize(targetCanvas.width, targetCanvas.height);
-            gl.viewport(0, 0, targetCanvas.width, targetCanvas.height);
-            gl.disable(gl.DEPTH_TEST);
-            gl.enable(gl.BLEND);
-            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-
+        function getBoardClip(currentView, boardWidth, boardHeight) {
             const boardLeft = currentView.x;
             const boardTop = currentView.y;
             const boardRight = currentView.x + boardWidth * currentView.zoom;
@@ -699,32 +1243,133 @@
             const clipTop = Math.max(0, Math.floor(boardTop));
             const clipRight = Math.min(targetCanvas.width, Math.ceil(boardRight));
             const clipBottom = Math.min(targetCanvas.height, Math.ceil(boardBottom));
-            const clipWidth = Math.max(0, clipRight - clipLeft);
-            const clipHeight = Math.max(0, clipBottom - clipTop);
-            if (clipWidth === 0 || clipHeight === 0) return;
+            return {
+                left: clipLeft,
+                top: clipTop,
+                right: clipRight,
+                bottom: clipBottom,
+                width: Math.max(0, clipRight - clipLeft),
+                height: Math.max(0, clipBottom - clipTop)
+            };
+        }
 
+        function clearTarget(target) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+            gl.viewport(0, 0, targetCanvas.width, targetCanvas.height);
+            gl.disable(gl.SCISSOR_TEST);
+            gl.disable(gl.BLEND);
+            gl.clearColor(0, 0, 0, 0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+
+        function bindLayerState(target, currentView, clip) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+            gl.viewport(0, 0, targetCanvas.width, targetCanvas.height);
             gl.enable(gl.SCISSOR_TEST);
-            gl.scissor(clipLeft, targetCanvas.height - clipBottom, clipWidth, clipHeight);
-            gl.useProgram(program);
-            gl.bindVertexArray(vao);
-            gl.uniform2f(uniforms.viewport, targetCanvas.width, targetCanvas.height);
-            gl.uniform3f(uniforms.view, currentView.x, currentView.y, currentView.zoom);
-            gl.uniform1i(uniforms.texture, 0);
+            gl.scissor(clip.left, targetCanvas.height - clip.bottom, clip.width, clip.height);
+            gl.disable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            gl.useProgram(layerProgram);
+            gl.bindVertexArray(layerVao);
+            gl.uniform2f(layerUniforms.viewport, targetCanvas.width, targetCanvas.height);
+            gl.uniform3f(layerUniforms.view, currentView.x, currentView.y, currentView.zoom);
+            gl.uniform1i(layerUniforms.texture, 0);
+        }
 
-            for (const obj of layerObjects) {
-                const texture = getTexture(obj);
-                if (!texture) continue;
-                const quad = getObjectQuad(obj);
-                const homography = computeUnitSquareHomography(quad);
-                if (!homography) continue;
-                gl.uniformMatrix3fv(uniforms.homography, false, homography);
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, texture);
-                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+        function drawObjectToTarget(target, obj, currentView, clip) {
+            const texture = getTexture(obj);
+            if (!texture) return;
+            const quad = getObjectQuad(obj);
+            const homography = computeUnitSquareHomography(quad);
+            if (!homography) return;
+            bindLayerState(target, currentView, clip);
+            gl.uniformMatrix3fv(layerUniforms.homography, false, homography);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+        }
+
+        function runFullscreenPass(source, destination, effectId, params, opacity, currentView, boardWidth, boardHeight, clip, useScissor = true) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, destination ? destination.framebuffer : null);
+            gl.viewport(0, 0, targetCanvas.width, targetCanvas.height);
+            gl.disable(gl.DEPTH_TEST);
+            gl.disable(gl.BLEND);
+
+            if (destination) {
+                gl.disable(gl.SCISSOR_TEST);
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
             }
 
+            if (useScissor) {
+                gl.enable(gl.SCISSOR_TEST);
+                gl.scissor(clip.left, targetCanvas.height - clip.bottom, clip.width, clip.height);
+            } else {
+                gl.disable(gl.SCISSOR_TEST);
+            }
+
+            gl.useProgram(fullscreenProgram);
+            gl.bindVertexArray(fullscreenVao);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, source.texture);
+            gl.uniform1i(fullscreenUniforms.scene, 0);
+            gl.uniform2f(fullscreenUniforms.resolution, targetCanvas.width, targetCanvas.height);
+            gl.uniform2f(fullscreenUniforms.boardSize, boardWidth, boardHeight);
+            gl.uniform4f(
+                fullscreenUniforms.boardRect,
+                currentView.x,
+                currentView.y,
+                boardWidth * currentView.zoom,
+                boardHeight * currentView.zoom
+            );
+            gl.uniform1i(fullscreenUniforms.effect, effectId);
+            gl.uniform4f(fullscreenUniforms.params, params[0] || 0, params[1] || 0, params[2] || 0, params[3] || 0);
+            gl.uniform1f(fullscreenUniforms.opacity, opacity);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        }
+
+        function render(layerObjects, currentView, boardWidth, boardHeight) {
+            resize(targetCanvas.width, targetCanvas.height);
+            const clip = getBoardClip(currentView, boardWidth, boardHeight);
+
+            clearTarget(targetA);
+            clearTarget(targetB);
+
+            let current = targetA;
+            let alternate = targetB;
+
+            if (clip.width > 0 && clip.height > 0) {
+                // The white 1024×1024 board is the implicit bottom layer, so fragment
+                // effects can process the complete visible composite rather than only
+                // non-transparent image pixels.
+                gl.bindFramebuffer(gl.FRAMEBUFFER, current.framebuffer);
+                gl.enable(gl.SCISSOR_TEST);
+                gl.scissor(clip.left, targetCanvas.height - clip.bottom, clip.width, clip.height);
+                gl.clearColor(1, 1, 1, 1);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+
+                for (const obj of layerObjects) {
+                    if (obj?.type === 'fragment') {
+                        if (obj.enabled === false) continue;
+                        const config = FRAGMENT_EFFECTS[obj.effect] || FRAGMENT_EFFECTS.colorAdjust;
+                        const params = getFragmentParamVector(obj);
+                        const opacity = Number.isFinite(Number(obj.opacity)) ? clamp(Number(obj.opacity), 0, 1) : 1;
+                        runFullscreenPass(current, alternate, config.id, params, opacity, currentView, boardWidth, boardHeight, clip, true);
+                        const swap = current;
+                        current = alternate;
+                        alternate = swap;
+                        continue;
+                    }
+
+                    drawObjectToTarget(current, obj, currentView, clip);
+                }
+            }
+
+            runFullscreenPass(current, null, 0, [0, 0, 0, 0], 1, currentView, boardWidth, boardHeight, clip, false);
             gl.bindVertexArray(null);
             gl.disable(gl.SCISSOR_TEST);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
 
         return { gl, resize, render };
@@ -735,6 +1380,21 @@
     exportGpuCanvas.width = BOARD_W;
     exportGpuCanvas.height = BOARD_H;
     const exportGpuRenderer = createGpuLayerRenderer(exportGpuCanvas, true);
+
+    const fragmentEditorModal = document.getElementById('fragmentEditorModal');
+    const fragmentEditorModalContent = document.getElementById('fragmentEditorModalContent');
+    const fxBtnClose = document.getElementById('fxBtnClose');
+    const fxBtnCancel = document.getElementById('fxBtnCancel');
+    const fxBtnApply = document.getElementById('fxBtnApply');
+    const fxEnabled = document.getElementById('fxEnabled');
+    const fxEffectSelect = document.getElementById('fxEffectSelect');
+    const fxEffectDescription = document.getElementById('fxEffectDescription');
+    const fxOpacity = document.getElementById('fxOpacity');
+    const fxOpacityVal = document.getElementById('fxOpacityVal');
+    const fxParameterList = document.getElementById('fxParameterList');
+    const fxResetParams = document.getElementById('fxResetParams');
+    const fxPreviewCanvas = document.getElementById('fxPreviewCanvas');
+    const fxPreviewRenderer = createGpuLayerRenderer(fxPreviewCanvas, true);
 
     function isChoyenSpecialFont(fontFamily) {
         return fontFamily === CHOYEN_TOP_FONT_VALUE || fontFamily === CHOYEN_BOTTOM_FONT_VALUE;
@@ -783,6 +1443,7 @@
     let textCreateStart = { x: 0, y: 0 };
     let textCreateRect = null;
     let textEditorState = null;
+    let fragmentEditorState = null;
     let backgroundDirty = true;
     let renderFrameRequest = null;
 
@@ -814,6 +1475,10 @@
                 lineHeight: obj.lineHeight || 1.0,
                 strokeColor: obj.strokeColor || '#FFFFFF',
                 strokeWidth: obj.strokeWidth || 0,
+                effect: obj.type === 'fragment' ? (obj.effect || 'colorAdjust') : '',
+                enabled: obj.type === 'fragment' ? obj.enabled !== false : true,
+                opacity: obj.type === 'fragment' ? (Number.isFinite(Number(obj.opacity)) ? Number(obj.opacity) : 1) : 1,
+                params: obj.type === 'fragment' ? { ...(obj.params || {}) } : null,
                 quad: obj.quad ? obj.quad.map(point => ({ x: point.x, y: point.y })) : null,
                 x: obj.x,
                 y: obj.y,
@@ -849,6 +1514,10 @@
                 ao.lineHeight !== bo.lineHeight ||
                 ao.strokeColor !== bo.strokeColor ||
                 ao.strokeWidth !== bo.strokeWidth ||
+                ao.effect !== bo.effect ||
+                ao.enabled !== bo.enabled ||
+                ao.opacity !== bo.opacity ||
+                JSON.stringify(ao.params || null) !== JSON.stringify(bo.params || null) ||
                 !quadsEqual(ao.quad, bo.quad) ||
                 ao.x !== bo.x ||
                 ao.y !== bo.y ||
@@ -869,6 +1538,19 @@
 
     function restoreState(state) {
         objects = state.objects.map(obj => {
+            if (obj.type === 'fragment') {
+                const effect = FRAGMENT_EFFECTS[obj.effect] ? obj.effect : 'colorAdjust';
+                return {
+                    id: obj.id,
+                    type: 'fragment',
+                    name: obj.name || `${FRAGMENT_EFFECTS[effect].label} FX`,
+                    effect,
+                    enabled: obj.enabled !== false,
+                    opacity: Number.isFinite(Number(obj.opacity)) ? clamp(Number(obj.opacity), 0, 1) : 1,
+                    params: normalizeFragmentParams(effect, obj.params || {})
+                };
+            }
+
             if (obj.type === 'text') {
                 return {
                     id: obj.id,
@@ -1023,6 +1705,7 @@
     }
 
     function objectContainsPoint(obj, point) {
+        if (obj?.type === 'fragment') return false;
         if (obj?.type === 'image' && obj.quad) return pointInQuad(point, obj.quad);
         return point.x >= obj.x && point.x <= obj.x + obj.w &&
             point.y >= obj.y && point.y <= obj.y + obj.h;
@@ -1111,6 +1794,207 @@
             w: obj.w,
             h: obj.h
         };
+    }
+
+
+    function getDefaultFragmentObject(effect = 'colorAdjust', overrides = {}) {
+        const resolvedEffect = FRAGMENT_EFFECTS[effect] ? effect : 'colorAdjust';
+        return {
+            type: 'fragment',
+            name: `${FRAGMENT_EFFECTS[resolvedEffect].label} FX`,
+            effect: resolvedEffect,
+            enabled: true,
+            opacity: 1,
+            params: getDefaultFragmentParams(resolvedEffect),
+            ...overrides
+        };
+    }
+
+    function cloneFragmentObject(obj) {
+        const effect = FRAGMENT_EFFECTS[obj?.effect] ? obj.effect : 'colorAdjust';
+        return {
+            id: obj?.id,
+            type: 'fragment',
+            name: obj?.name || `${FRAGMENT_EFFECTS[effect].label} FX`,
+            effect,
+            enabled: obj?.enabled !== false,
+            opacity: Number.isFinite(Number(obj?.opacity)) ? clamp(Number(obj.opacity), 0, 1) : 1,
+            params: normalizeFragmentParams(effect, obj?.params || {})
+        };
+    }
+
+    function formatFragmentParamValue(param, value) {
+        const decimals = Number.isInteger(param.decimals) ? param.decimals : 2;
+        return `${Number(value).toFixed(decimals)}${param.suffix || ''}`;
+    }
+
+    function buildFragmentEffectSelect() {
+        fxEffectSelect.innerHTML = '';
+        FRAGMENT_EFFECT_ORDER.forEach(effectKey => {
+            const config = FRAGMENT_EFFECTS[effectKey];
+            const option = document.createElement('option');
+            option.value = effectKey;
+            option.textContent = config.label;
+            fxEffectSelect.appendChild(option);
+        });
+    }
+
+    function renderFragmentParameterControls() {
+        if (!fragmentEditorState?.draft) return;
+        const draft = fragmentEditorState.draft;
+        const config = FRAGMENT_EFFECTS[draft.effect] || FRAGMENT_EFFECTS.colorAdjust;
+        draft.params = normalizeFragmentParams(draft.effect, draft.params || {});
+
+        fxParameterList.innerHTML = '';
+        config.params.forEach(param => {
+            const card = document.createElement('div');
+            card.className = 'fx-param-card rounded-xl border border-slate-200 bg-white px-3 py-3';
+
+            const header = document.createElement('div');
+            header.className = 'flex items-center justify-between gap-3 mb-2';
+
+            const label = document.createElement('label');
+            label.className = 'text-xs font-medium text-slate-600';
+            label.textContent = param.label;
+
+            const value = document.createElement('span');
+            value.className = 'text-xs font-mono font-bold text-fuchsia-600 bg-fuchsia-50 px-2 py-0.5 rounded';
+            value.textContent = formatFragmentParamValue(param, draft.params[param.key]);
+
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.min = String(param.min);
+            input.max = String(param.max);
+            input.step = String(param.step);
+            input.value = String(draft.params[param.key]);
+            input.className = 'w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer';
+            input.dataset.fragmentParam = param.key;
+            input.addEventListener('input', () => {
+                if (!fragmentEditorState?.draft) return;
+                const next = Number(input.value);
+                fragmentEditorState.draft.params[param.key] = next;
+                value.textContent = formatFragmentParamValue(param, next);
+                renderFragmentPreview();
+            });
+
+            header.appendChild(label);
+            header.appendChild(value);
+            card.appendChild(header);
+            card.appendChild(input);
+            fxParameterList.appendChild(card);
+        });
+    }
+
+    function getFragmentPreviewScene() {
+        if (!fragmentEditorState?.draft) return objects;
+        const draft = cloneFragmentObject(fragmentEditorState.draft);
+
+        if (fragmentEditorState.mode === 'edit') {
+            return objects.map((obj, index) => index === fragmentEditorState.targetIndex ? draft : obj);
+        }
+
+        return [...objects, draft];
+    }
+
+    function renderFragmentPreview() {
+        if (!fragmentEditorState?.draft) return;
+        const size = 520;
+        fxPreviewRenderer.resize(size, size);
+        const scene = getFragmentPreviewScene();
+        fxPreviewRenderer.render(scene, { x: 0, y: 0, zoom: size / BOARD_W }, BOARD_W, BOARD_H);
+    }
+
+    function syncFragmentEditorForm() {
+        if (!fragmentEditorState?.draft) return;
+        const draft = fragmentEditorState.draft;
+        draft.enabled = !!fxEnabled.checked;
+        draft.opacity = clamp(Number(fxOpacity.value) || 0, 0, 1);
+        fxOpacityVal.textContent = `${Math.round(draft.opacity * 100)}%`;
+
+        const config = FRAGMENT_EFFECTS[draft.effect] || FRAGMENT_EFFECTS.colorAdjust;
+        fxEffectDescription.textContent = config.description;
+        renderFragmentPreview();
+    }
+
+    function populateFragmentEditorForm() {
+        if (!fragmentEditorState?.draft) return;
+        const draft = fragmentEditorState.draft;
+        if (fxEffectSelect.options.length === 0) buildFragmentEffectSelect();
+        fxEffectSelect.value = draft.effect;
+        fxEnabled.checked = draft.enabled !== false;
+        fxOpacity.value = String(draft.opacity ?? 1);
+        renderFragmentParameterControls();
+        syncFragmentEditorForm();
+    }
+
+    function openFragmentEditorModal() {
+        fragmentEditorModal.classList.remove('opacity-0', 'pointer-events-none', 'hidden');
+        fragmentEditorModal.classList.add('flex');
+        setTimeout(() => {
+            fragmentEditorModal.classList.remove('opacity-0');
+            fragmentEditorModalContent.classList.remove('scale-95');
+            fragmentEditorModalContent.classList.add('scale-100');
+        }, 10);
+        requestAnimationFrame(renderFragmentPreview);
+    }
+
+    function closeFragmentEditorModal() {
+        fragmentEditorModal.classList.add('opacity-0');
+        fragmentEditorModalContent.classList.remove('scale-100');
+        fragmentEditorModalContent.classList.add('scale-95');
+        setTimeout(() => {
+            fragmentEditorModal.classList.add('hidden', 'pointer-events-none');
+            fragmentEditorModal.classList.remove('flex');
+            fragmentEditorState = null;
+        }, 200);
+    }
+
+    function openFragmentEditorForCreate() {
+        fragmentEditorState = {
+            mode: 'create',
+            targetIndex: objects.length,
+            beforeSnapshot: captureState(),
+            draft: getDefaultFragmentObject('colorAdjust')
+        };
+        populateFragmentEditorForm();
+        openFragmentEditorModal();
+    }
+
+    function openFragmentEditorForEdit(index) {
+        const obj = objects[index];
+        if (!obj || obj.type !== 'fragment') return;
+        fragmentEditorState = {
+            mode: 'edit',
+            targetIndex: index,
+            beforeSnapshot: captureState(),
+            draft: cloneFragmentObject(obj)
+        };
+        populateFragmentEditorForm();
+        openFragmentEditorModal();
+    }
+
+    function applyFragmentEditorChanges() {
+        if (!fragmentEditorState?.draft) return;
+        const draft = cloneFragmentObject(fragmentEditorState.draft);
+        const config = FRAGMENT_EFFECTS[draft.effect] || FRAGMENT_EFFECTS.colorAdjust;
+        draft.name = `${config.label} FX`;
+
+        if (fragmentEditorState.mode === 'edit') {
+            const target = objects[fragmentEditorState.targetIndex];
+            if (!target || target.type !== 'fragment') return;
+            const id = target.id;
+            objects[fragmentEditorState.targetIndex] = { ...draft, id };
+            selectedIndex = fragmentEditorState.targetIndex;
+        } else {
+            objects.push({ ...draft, id: layerCounter });
+            layerCounter++;
+            selectedIndex = objects.length - 1;
+        }
+
+        pushHistorySnapshot(fragmentEditorState.beforeSnapshot);
+        updateLayerList();
+        render();
+        closeFragmentEditorModal();
     }
 
     function getTextRasterScale(obj, baseWidth, baseHeight) {
@@ -1873,7 +2757,13 @@
             const thumb = document.createElement('div');
             thumb.className = 'w-10 h-10 bg-slate-100 rounded-lg border border-slate-200/60 flex items-center justify-center overflow-hidden shrink-0 pointer-events-none relative';
 
-            if (obj.type === 'text') {
+            if (obj.type === 'fragment') {
+                thumb.className = 'w-10 h-10 bg-fuchsia-50 rounded-lg border border-fuchsia-100 flex items-center justify-center overflow-hidden shrink-0 pointer-events-none relative';
+                const fxIcon = document.createElement('i');
+                const effectConfig = FRAGMENT_EFFECTS[obj.effect] || FRAGMENT_EFFECTS.colorAdjust;
+                fxIcon.className = `fas ${effectConfig.icon} text-fuchsia-600 text-sm`;
+                thumb.appendChild(fxIcon);
+            } else if (obj.type === 'text') {
                 const thumbLabel = document.createElement('div');
                 thumbLabel.className = 'relative z-10 text-[11px] font-black text-slate-700 leading-none px-1 text-center break-all';
                 thumbLabel.innerText = (obj.text || 'T').slice(0, 4);
@@ -1883,11 +2773,11 @@
                 checkerboard.className = 'absolute inset-0 opacity-20';
                 checkerboard.style.backgroundImage = 'repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%)';
                 checkerboard.style.backgroundSize = '8px 8px';
-                
+
                 const thumbImg = document.createElement('img');
                 thumbImg.src = obj.img.src;
                 thumbImg.className = 'max-w-full max-h-full object-contain relative z-10';
-                
+
                 thumb.appendChild(checkerboard);
                 thumb.appendChild(thumbImg);
             }
@@ -1901,7 +2791,12 @@
             
             const subtitle = document.createElement('div');
             subtitle.className = 'text-[9px] text-slate-400 truncate mt-0.5 font-medium';
-            subtitle.innerText = `${obj.type === 'text' ? 'Text · ' : ''}${Math.round(obj.w)} x ${Math.round(obj.h)}`;
+            if (obj.type === 'fragment') {
+                const effectConfig = FRAGMENT_EFFECTS[obj.effect] || FRAGMENT_EFFECTS.colorAdjust;
+                subtitle.innerText = `Fragment FX · ${effectConfig.label}${obj.enabled === false ? ' · Off' : ''}`;
+            } else {
+                subtitle.innerText = `${obj.type === 'text' ? 'Text · ' : ''}${Math.round(obj.w)} x ${Math.round(obj.h)}`;
+            }
 
             titleContainer.appendChild(title);
             titleContainer.appendChild(subtitle);
@@ -1916,6 +2811,13 @@
             btnEditText.title = 'Edit Text';
             btnEditText.draggable = false;
             btnEditText.onclick = (e) => { e.stopPropagation(); editTextLayer(i); };
+
+            const btnEditFragment = document.createElement('button');
+            btnEditFragment.className = 'w-7 h-7 flex items-center justify-center text-slate-400 hover:text-fuchsia-600 rounded-md hover:bg-fuchsia-50 transition-colors';
+            btnEditFragment.innerHTML = '<i class="fas fa-wand-magic-sparkles text-xs"></i>';
+            btnEditFragment.title = 'Edit Fragment FX';
+            btnEditFragment.draggable = false;
+            btnEditFragment.onclick = (e) => { e.stopPropagation(); openFragmentEditorForEdit(i); };
 
             // Image Filter Button
             const btnChroma = document.createElement('button');
@@ -1946,7 +2848,8 @@
             btnDel.onclick = () => deleteLayer(i);
 
             if (obj.type === 'text') actions.appendChild(btnEditText);
-            if (obj.type !== 'text') actions.appendChild(btnChroma);
+            if (obj.type === 'fragment') actions.appendChild(btnEditFragment);
+            if (obj.type === 'image') actions.appendChild(btnChroma);
             actions.appendChild(btnUp);
             actions.appendChild(btnDown);
             actions.appendChild(btnDel);
@@ -2047,7 +2950,7 @@
         }
 
         const sel = getSelected();
-        if (!sel) return;
+        if (!sel || sel.type === 'fragment') return;
 
         ctx.save();
         ctx.translate(view.x, view.y);
@@ -2145,6 +3048,7 @@
         const activeTag = document.activeElement?.tagName;
         const isTypingTarget = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable;
         const isTextEditorOpen = !textEditorModal.classList.contains('hidden');
+        const isFragmentEditorOpen = !fragmentEditorModal.classList.contains('hidden');
         const isCanvasContextMenuOpen = !canvasContextMenu.classList.contains('hidden');
         const isUndoShortcut = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyZ';
         const isRedoShortcut = (e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || (e.shiftKey && e.code === 'KeyZ'));
@@ -2156,13 +3060,13 @@
             }
         }
 
-        if (!isTypingTarget && !isTextEditorOpen && isUndoShortcut) {
+        if (!isTypingTarget && !isTextEditorOpen && !isFragmentEditorOpen && isUndoShortcut) {
             e.preventDefault();
             undo();
             return;
         }
 
-        if (!isTypingTarget && !isTextEditorOpen && isRedoShortcut) {
+        if (!isTypingTarget && !isTextEditorOpen && !isFragmentEditorOpen && isRedoShortcut) {
             e.preventDefault();
             redo();
             return;
@@ -2171,6 +3075,10 @@
         if (!isTypingTarget && e.code === 'Escape') {
             if (isCanvasContextMenuOpen) {
                 hideCanvasContextMenu();
+                return;
+            }
+            if (!fragmentEditorModal.classList.contains('hidden')) {
+                closeFragmentEditorModal();
                 return;
             }
             if (!textEditorModal.classList.contains('hidden')) {
@@ -2184,19 +3092,19 @@
             }
         }
 
-        if (!isTypingTarget && e.code === 'KeyT') {
+        if (!isTypingTarget && !isTextEditorOpen && !isFragmentEditorOpen && e.code === 'KeyT') {
             e.preventDefault();
             setTextMode(!isTextMode);
             return;
         }
 
-        if (e.code === 'Space') {
+        if (!isTextEditorOpen && !isFragmentEditorOpen && e.code === 'Space') {
             isSpacePressed = true;
             canvas.classList.add('grab');
             e.preventDefault();
         }
         if ((e.code === 'Delete' || e.code === 'Backspace') && selectedIndex !== -1) {
-            if(!isTypingTarget) {
+            if(!isTypingTarget && !isTextEditorOpen && !isFragmentEditorOpen) {
                 deleteLayer(selectedIndex);
             }
         }
@@ -2275,7 +3183,7 @@
         const sel = getSelected();
         const hs = (HANDLE_SIZE * 1.5) / view.zoom;
 
-        if (sel) {
+        if (sel && sel.type !== 'fragment') {
             if ((e.ctrlKey || isCtrlPressed) && sel.type === 'image') {
                 const quad = getObjectQuad(sel);
                 for (let index = 0; index < quad.length; index++) {
@@ -2474,7 +3382,7 @@
             const sel = getSelected();
             const hs = (HANDLE_SIZE * 1.5) / view.zoom;
             
-            if (!isTextMode && sel) {
+            if (!isTextMode && sel && sel.type !== 'fragment') {
                 if ((e.ctrlKey || isCtrlPressed) && sel.type === 'image') {
                     for (const handle of getObjectQuad(sel)) {
                         if (Math.abs(wpos.x - handle.x) <= hs && Math.abs(wpos.y - handle.y) <= hs) {
@@ -2544,6 +3452,39 @@
 
     btnAddText.addEventListener('click', () => {
         setTextMode(!isTextMode);
+    });
+
+    btnAddFragment.addEventListener('click', openFragmentEditorForCreate);
+
+    fxEffectSelect.addEventListener('change', () => {
+        if (!fragmentEditorState?.draft) return;
+        const nextEffect = FRAGMENT_EFFECTS[fxEffectSelect.value] ? fxEffectSelect.value : 'colorAdjust';
+        fragmentEditorState.draft.effect = nextEffect;
+        fragmentEditorState.draft.params = getDefaultFragmentParams(nextEffect);
+        fragmentEditorState.draft.name = `${FRAGMENT_EFFECTS[nextEffect].label} FX`;
+        renderFragmentParameterControls();
+        syncFragmentEditorForm();
+    });
+
+    fxEnabled.addEventListener('change', syncFragmentEditorForm);
+    fxOpacity.addEventListener('input', syncFragmentEditorForm);
+
+    fxResetParams.addEventListener('click', () => {
+        if (!fragmentEditorState?.draft) return;
+        fragmentEditorState.draft.params = getDefaultFragmentParams(fragmentEditorState.draft.effect);
+        fragmentEditorState.draft.opacity = 1;
+        fragmentEditorState.draft.enabled = true;
+        fxOpacity.value = '1';
+        fxEnabled.checked = true;
+        renderFragmentParameterControls();
+        syncFragmentEditorForm();
+    });
+
+    fxBtnClose.addEventListener('click', closeFragmentEditorModal);
+    fxBtnCancel.addEventListener('click', closeFragmentEditorModal);
+    fxBtnApply.addEventListener('click', applyFragmentEditorChanges);
+    fragmentEditorModal.addEventListener('mousedown', (e) => {
+        if (e.target === fragmentEditorModal) closeFragmentEditorModal();
     });
 
     teTextInput.addEventListener('input', syncDraftFromTextEditorForm);
@@ -2718,7 +3659,7 @@
     const filterOutlineColor = document.getElementById('filterOutlineColor');
 
     function openChromaModal(index) {
-        if (!objects[index] || objects[index].type === 'text') return;
+        if (!objects[index] || objects[index].type !== 'image') return;
         targetLayerIndex = index;
         selectedIndex = index;
         const img = objects[index].img;
