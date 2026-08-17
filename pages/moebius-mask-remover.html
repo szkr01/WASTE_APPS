@@ -1,0 +1,1126 @@
+<!doctype html>
+<!--
+Context:
+- Single-file local HTML/CSS/JavaScript Moebius ONNX WebGPU inpainting editor.
+- Arbitrary source resolution is preserved. Each connected mask component is isolated, context-cropped, square-padded, normalized to 512x512, inferred, then composited only through that component's binary mask.
+- Editing is modeled as composable operations. Paint/erase strokes and inpaint mutations share one undo/redo history.
+- Visible editing surface is a canvas with pan/zoom camera. No separate "result" concept is exposed.
+- UI follows a restrained gray design with short, interruptible transitions and dedicated DOM ids for behavior.
+Reference implementation/model notes:
+- https://huggingface.co/simonw/Moebius-ONNX
+- https://github.com/simonw/moebius-web
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Moebius Mask Remover</title>
+  <meta name="description" content="A local WebGPU mask removal editor powered by Moebius ONNX. Paint opaque masks, pan and zoom the canvas, and remove masked regions while preserving the source resolution.">
+  <meta name="page:icon" content="fas fa-eraser">
+  <meta name="page:color" content="#525252">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151515;
+      --panel: #1d1d1d;
+      --panel-2: #242424;
+      --panel-3: #2b2b2b;
+      --line: #343434;
+      --line-strong: #444;
+      --text: #ececec;
+      --muted: #9b9b9b;
+      --dim: #707070;
+      --mask-fill: rgba(151, 205, 255, 0.5);
+      --mask-edge: rgba(112, 184, 255, 1);
+      --mask-edge-soft: rgba(74, 142, 230, 0.72);
+      --accent: #e4e4e4;
+      --accent-ink: #171717;
+      --danger: #d4d4d4;
+      --ease-out: cubic-bezier(.23,1,.32,1);
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    .app-shell { width: 100%; height: 100%; display: grid; grid-template-rows: 52px minmax(0,1fr) 28px; background: var(--bg); }
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: rgba(29,29,29,.98); border-bottom: 1px solid var(--line); z-index: 20; }
+    .brand { display: flex; align-items: center; gap: 9px; min-width: 188px; user-select: none; }
+    .brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line-strong); background: #262626; border-radius: 8px; font-size: 12px; color: #ddd; }
+    .brand-copy { line-height: 1.05; }
+    .brand-title { font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
+    .brand-sub { margin-top: 3px; color: var(--dim); font-size: 10px; font-weight: 550; letter-spacing: .02em; }
+    .top-divider { width: 1px; height: 22px; background: var(--line); margin: 0 2px; }
+    .spacer { flex: 1; }
+    .ui-btn { height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #232323; color: #d9d9d9; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 140ms var(--ease-out), border-color 140ms var(--ease-out), color 140ms var(--ease-out), transform 120ms var(--ease-out); }
+    .ui-btn:hover:not(:disabled) { background: #2b2b2b; border-color: #494949; color: #fff; }
+    .ui-btn:active:not(:disabled) { transform: scale(.97); }
+    .ui-btn:disabled { opacity: .36; cursor: default; }
+    .ui-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    .ui-btn.primary:hover:not(:disabled) { background: #fff; border-color: #fff; color: #101010; }
+    .ui-btn.icon-only { width: 32px; padding: 0; }
+    .workspace { min-height: 0; display: grid; grid-template-columns: 52px minmax(0,1fr); }
+    .toolbar { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; border-right: 1px solid var(--line); background: var(--panel); z-index: 15; }
+    .tool-btn { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 8px; color: #9a9a9a; background: transparent; cursor: pointer; transition: background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), color 120ms var(--ease-out), transform 120ms var(--ease-out); }
+    .tool-btn:hover { color: #e8e8e8; background: #272727; }
+    .tool-btn:active { transform: scale(.96); }
+    .tool-btn.active { color: #f5f5f5; background: #303030; border-color: #484848; box-shadow: inset 0 0 0 1px rgba(255,255,255,.025); }
+    .tool-divider { width: 24px; height: 1px; background: var(--line); margin: 2px 0; }
+    .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #171717; }
+    #viewport { display: block; width: 100%; height: 100%; outline: none; touch-action: none; cursor: crosshair; }
+    #viewport[data-tool="hand"] { cursor: grab; }
+    #viewport[data-panning="true"] { cursor: grabbing; }
+    #viewport[data-busy="true"] { cursor: progress; }
+    .empty-state { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; transition: opacity 160ms var(--ease-out); }
+    .empty-card { width: min(420px, calc(100% - 48px)); padding: 28px; border: 1px dashed #3b3b3b; border-radius: 16px; background: rgba(30,30,30,.72); text-align: center; backdrop-filter: blur(14px); }
+    .empty-icon { width: 46px; height: 46px; display: grid; place-items: center; margin: 0 auto 14px; border-radius: 12px; border: 1px solid #454545; background: #272727; color: #c8c8c8; font-size: 17px; }
+    .empty-title { font-size: 14px; font-weight: 650; }
+    .empty-copy { margin-top: 7px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .hud { position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 7px; z-index: 8; pointer-events: none; }
+    .hud-pill { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #383838; border-radius: 8px; background: rgba(28,28,28,.86); color: #aaa; font-size: 10px; font-weight: 600; backdrop-filter: blur(10px); box-shadow: 0 5px 18px rgba(0,0,0,.18); }
+    .hud-pill strong { color: #dedede; font-weight: 650; }
+    .brush-rail { width: 40px; min-height: 176px; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 8px 0 7px; border: 1px solid #343434; border-radius: 10px; background: #202020; }
+    .brush-rail-icon { color: #8f8f8f; font-size: 9px; line-height: 1; pointer-events: none; }
+    .brush-rail-track { height: 126px; display: grid; place-items: center; }
+    .brush-vertical { width: 18px; height: 126px; margin: 0; writing-mode: vertical-lr; direction: rtl; appearance: slider-vertical; -webkit-appearance: slider-vertical; accent-color: #d8d8d8; cursor: ns-resize; }
+    .brush-preview { position: absolute; left: 50%; top: 50%; display: grid; justify-items: center; gap: 10px; transform: translate(-50%, -50%) scale(.97); opacity: 0; pointer-events: none; z-index: 19; transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out); }
+    .brush-preview.open { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    .brush-preview-circle { width: 64px; height: 64px; border-radius: 999px; border: 2px solid rgba(194, 228, 255, .95); box-shadow: 0 0 0 1px rgba(68, 122, 180, .55), inset 0 0 0 1px rgba(255,255,255,.14); background: rgba(151, 205, 255, .1); backdrop-filter: blur(2px); }
+    .brush-preview-label { min-width: 72px; height: 28px; display: inline-grid; place-items: center; padding: 0 10px; border: 1px solid #4a4a4a; border-radius: 999px; background: rgba(28,28,28,.94); color: #e6e6e6; font-size: 11px; font-weight: 700; box-shadow: 0 10px 28px rgba(0,0,0,.26); }
+    .brush-vertical:disabled { opacity: .36; cursor: default; }
+    .brush-rail-value { width: 34px; color: #bcbcbc; font-size: 9px; font-weight: 650; line-height: 1; text-align: center; font-variant-numeric: tabular-nums; user-select: none; }
+    .progress-panel { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); width: min(520px, calc(100% - 48px)); padding: 10px 12px 11px; border: 1px solid #414141; border-radius: 10px; background: rgba(29,29,29,.96); box-shadow: 0 14px 42px rgba(0,0,0,.3); z-index: 18; opacity: 0; pointer-events: none; transition: opacity 150ms var(--ease-out); }
+    .crop-preview { position: absolute; right: 16px; top: 16px; width: 220px; padding: 10px; border: 1px solid #3f3f3f; border-radius: 12px; background: rgba(28,28,28,.95); box-shadow: 0 14px 44px rgba(0,0,0,.34); z-index: 17; opacity: 0; transform: scale(.98); transform-origin: top right; pointer-events: none; transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out); }
+    .crop-preview.open { opacity: 1; transform: scale(1); }
+    .crop-preview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .crop-preview-title { color: #dcdcdc; font-size: 11px; font-weight: 650; }
+    .crop-preview-meta { color: #8f8f8f; font-size: 10px; font-variant-numeric: tabular-nums; }
+    .crop-preview-frame { overflow: hidden; border: 1px solid #404040; border-radius: 10px; background: #161616; }
+    #cropPreviewCanvas { display: block; width: 100%; aspect-ratio: 1; background: #181818; }
+    .progress-panel.open { opacity: 1; }
+    .progress-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .progress-stage { color: #dedede; font-size: 11px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .progress-value { color: #8e8e8e; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .progress-track { height: 3px; margin-top: 9px; overflow: hidden; border-radius: 999px; background: #383838; }
+    .progress-bar { width: 0%; height: 100%; background: #d8d8d8; transition: width 100ms linear; }
+    .statusbar { display: flex; align-items: center; gap: 14px; padding: 0 10px; border-top: 1px solid var(--line); background: #1a1a1a; color: #777; font-size: 10px; white-space: nowrap; overflow: hidden; }
+    .status-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+    .status-item i { font-size: 8px; }
+    .status-main { overflow: hidden; text-overflow: ellipsis; color: #929292; }
+    .status-error { color: #efb4b4; }
+    .kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border: 1px solid #454545; border-bottom-color: #555; border-radius: 5px; background: #242424; color: #969696; font-size: 9px; font-weight: 650; line-height: 1; }
+    .drop-active::after { content: "画像をドロップ"; position: absolute; inset: 16px; display: grid; place-items: center; border: 1px dashed #646464; border-radius: 14px; background: rgba(25,25,25,.78); color: #dedede; font-size: 13px; font-weight: 650; z-index: 30; pointer-events: none; }
+    @media (max-width: 760px) {
+      .brand { min-width: auto; }
+      .brand-sub, .btn-label, #modelStateTop { display: none; }
+      .ui-btn { padding: 0 9px; }
+      .topbar { gap: 7px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ui-btn, .tool-btn, .empty-state, .progress-panel, .progress-bar, .crop-preview { transition-duration: 0ms; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark"><i class="fa-solid fa-eraser"></i></div>
+        <div class="brand-copy">
+          <div class="brand-title">Moebius Remover</div>
+          <div class="brand-sub">LOCAL · WEBGPU</div>
+        </div>
+      </div>
+      <div class="top-divider"></div>
+      <button id="openButton" class="ui-btn" type="button" title="画像を開く">
+        <i class="fa-regular fa-folder-open"></i><span class="btn-label">開く</span>
+      </button>
+      <input id="fileInput" type="file" accept="image/*" hidden>
+      <button id="undoButton" class="ui-btn icon-only" type="button" title="元に戻す  Ctrl+Z" disabled><i class="fa-solid fa-rotate-left"></i></button>
+      <button id="redoButton" class="ui-btn icon-only" type="button" title="やり直す  Ctrl+Shift+Z" disabled><i class="fa-solid fa-rotate-right"></i></button>
+      <div class="spacer"></div>
+      <div id="modelStateTop" class="text-[10px] font-semibold text-neutral-500 select-none">MODEL · IDLE</div>
+      <button id="removeButton" class="ui-btn primary" type="button" disabled title="マスク領域を削除">
+        <i class="fa-solid fa-wand-magic-sparkles"></i><span class="btn-label">削除</span>
+      </button>
+      <button id="saveButton" class="ui-btn" type="button" disabled title="PNGで保存">
+        <i class="fa-solid fa-arrow-down"></i><span class="btn-label">保存</span>
+      </button>
+    </header>
+
+    <main class="workspace">
+      <aside class="toolbar" aria-label="ツール">
+        <button id="paintTool" class="tool-btn active" type="button" aria-label="マスク" title="マスク  B"><i class="fa-solid fa-paintbrush"></i></button>
+        <button id="eraseTool" class="tool-btn" type="button" aria-label="マスク消しゴム" title="マスク消しゴム  E"><i class="fa-solid fa-eraser"></i></button>
+        <button id="handTool" class="tool-btn" type="button" aria-label="移動" title="移動  H / Space"><i class="fa-regular fa-hand"></i></button>
+        <div class="tool-divider"></div>
+        <div class="brush-rail" title="ブラシサイズ">
+          <i class="fa-solid fa-circle brush-rail-icon"></i>
+          <div class="brush-rail-track">
+            <input id="brushSize" class="brush-vertical" type="range" min="0" max="100" step="1" value="58" aria-label="ブラシサイズ">
+          </div>
+          <span id="brushValue" class="brush-rail-value">48 px</span>
+        </div>
+        <div class="tool-divider"></div>
+        <button id="fitButton" class="tool-btn" type="button" aria-label="画面に合わせる" title="画面に合わせる  0"><i class="fa-solid fa-expand"></i></button>
+      </aside>
+
+      <section id="stage" class="stage">
+        <canvas id="viewport" tabindex="0" aria-label="画像編集キャンバス" data-tool="paint" data-panning="false" data-busy="false"></canvas>
+        <div id="emptyState" class="empty-state">
+          <div class="empty-card">
+            <div class="empty-icon"><i class="fa-regular fa-image"></i></div>
+            <div class="empty-title">画像を開く</div>
+            <div class="empty-copy">ここへ画像をドロップするか、上の「開く」から選択するのだ。<br>元解像度のまま編集するのだ。</div>
+          </div>
+        </div>
+
+        <div id="progressPanel" class="progress-panel" aria-live="polite">
+          <div class="progress-head">
+            <span id="progressStage" class="progress-stage">準備中</span>
+            <span id="progressValue" class="progress-value"></span>
+          </div>
+          <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+        </div>
+
+        <div id="cropPreview" class="crop-preview" aria-live="polite">
+          <div class="crop-preview-head">
+            <span id="cropPreviewLabel" class="crop-preview-title">推論クロップ</span>
+            <span id="cropPreviewMeta" class="crop-preview-meta">512 × 512</span>
+          </div>
+          <div class="crop-preview-frame">
+            <canvas id="cropPreviewCanvas" width="192" height="192"></canvas>
+          </div>
+        </div>
+
+        <div id="brushPreview" class="brush-preview" aria-hidden="true">
+          <div id="brushPreviewCircle" class="brush-preview-circle"></div>
+          <div id="brushPreviewLabel" class="brush-preview-label">48 px</div>
+        </div>
+
+        <div class="hud">
+          <div class="hud-pill"><i class="fa-solid fa-magnifying-glass"></i><strong id="zoomHud">100%</strong></div>
+          <div class="hud-pill"><span class="kbd">Space</span> 移動</div>
+          <div class="hud-pill"><span class="kbd">Wheel</span> ズーム</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <div class="status-item"><i id="gpuDot" class="fa-solid fa-circle"></i><span id="gpuStatus">WebGPU確認中</span></div>
+      <div class="status-item"><span id="imageStatus">画像なし</span></div>
+      <div class="status-item status-main"><span id="statusText">準備完了</span></div>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.webgpu.min.js"></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const MODEL_BASE = 'https://huggingface.co/simonw/Moebius-ONNX/resolve/main';
+      const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
+      const CACHE_NAME = 'moebius-onnx-v2';
+      const IMG = 512;
+      const LAT = 64;
+      const SCALING_FACTOR = 0.13025;
+      const NOISE_OFFSET = 0.0357;
+      const HALF_IDS = 10;
+      const DEFAULT_STEPS = 20;
+      const DEFAULT_GUIDANCE = 2;
+      const MIN_ZOOM = 0.02;
+      const MAX_ZOOM = 24;
+      const $ = id => document.getElementById(id);
+
+      const ui = {
+        openButton: $('openButton'), fileInput: $('fileInput'), undoButton: $('undoButton'), redoButton: $('redoButton'), removeButton: $('removeButton'), saveButton: $('saveButton'),
+        paintTool: $('paintTool'), eraseTool: $('eraseTool'), handTool: $('handTool'), fitButton: $('fitButton'),
+        stage: $('stage'), viewport: $('viewport'), emptyState: $('emptyState'), brushSize: $('brushSize'), brushValue: $('brushValue'), brushPreview: $('brushPreview'), brushPreviewCircle: $('brushPreviewCircle'), brushPreviewLabel: $('brushPreviewLabel'),
+        progressPanel: $('progressPanel'), progressStage: $('progressStage'), progressValue: $('progressValue'), progressBar: $('progressBar'), cropPreview: $('cropPreview'), cropPreviewLabel: $('cropPreviewLabel'), cropPreviewMeta: $('cropPreviewMeta'), cropPreviewCanvas: $('cropPreviewCanvas'), zoomHud: $('zoomHud'),
+        gpuDot: $('gpuDot'), gpuStatus: $('gpuStatus'), imageStatus: $('imageStatus'), statusText: $('statusText'), modelStateTop: $('modelStateTop')
+      };
+
+      const viewportCtx = ui.viewport.getContext('2d', { alpha: false });
+      const maskView = document.createElement('canvas');
+      const maskViewCtx = maskView.getContext('2d');
+      const maskBinary = document.createElement('canvas');
+      const maskBinaryCtx = maskBinary.getContext('2d');
+      const maskOutlineSoft = document.createElement('canvas');
+      const maskOutlineSoftCtx = maskOutlineSoft.getContext('2d');
+      const maskOutline = document.createElement('canvas');
+      const maskOutlineCtx = maskOutline.getContext('2d');
+      const imageCanvas = document.createElement('canvas');
+      const imageCtx = imageCanvas.getContext('2d', { willReadFrequently: true });
+      const maskCanvas = document.createElement('canvas');
+      const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+      const cropPreviewCtx = ui.cropPreviewCanvas.getContext('2d');
+
+      let dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+      let viewCssW = 1;
+      let viewCssH = 1;
+      let hasImage = false;
+      let imageName = 'image';
+      let tool = 'paint';
+      let brushSize = 48;
+      let brushPreviewTimer = 0;
+      let spaceHeld = false;
+      let busy = false;
+      let pointerScreen = null;
+      let liveStroke = null;
+      let panDrag = null;
+      let pipelinePromise = null;
+      let cachedModelReady = false;
+      const camera = { x: 0, y: 0, zoom: 1 };
+
+      class History {
+        constructor() { this.past = []; this.future = []; this.maxEntries = 80; }
+        commit(operation) { this.past.push(operation); this.future.length = 0; if (this.past.length > this.maxEntries) this.past.shift(); this.sync(); }
+        undo() { if (!this.past.length || busy) return; const op = this.past.pop(); op.undo(); this.future.push(op); this.sync(); render(); setStatus(op.undoLabel || `元に戻す: ${op.label}`); }
+        redo() { if (!this.future.length || busy) return; const op = this.future.pop(); op.redo(); this.past.push(op); this.sync(); render(); setStatus(op.redoLabel || `やり直し: ${op.label}`); }
+        clear() { this.past.length = 0; this.future.length = 0; this.sync(); }
+        sync() { ui.undoButton.disabled = !this.past.length || busy; ui.redoButton.disabled = !this.future.length || busy; }
+      }
+
+      const history = new History();
+
+      function createPatchOperation(label, patches) {
+        return {
+          label,
+          undo() { for (let i = patches.length - 1; i >= 0; i--) applyPatchState(patches[i], 'before'); },
+          redo() { for (const patch of patches) applyPatchState(patch, 'after'); }
+        };
+      }
+
+      function applyPatchState(patch, side) {
+        const imageData = side === 'before' ? patch.beforeImage : patch.afterImage;
+        const maskData = side === 'before' ? patch.beforeMask : patch.afterMask;
+        if (imageData) imageCtx.putImageData(imageData, patch.x, patch.y);
+        if (maskData) maskCtx.putImageData(maskData, patch.x, patch.y);
+      }
+
+      function setStatus(text, isError = false) {
+        ui.statusText.textContent = text;
+        ui.statusText.parentElement.classList.toggle('status-error', isError);
+      }
+
+      function setBusy(value) {
+        busy = value;
+        ui.viewport.dataset.busy = String(value);
+        ui.openButton.disabled = value;
+        ui.removeButton.disabled = value || !hasImage || !maskHasPixels();
+        ui.saveButton.disabled = value || !hasImage;
+        ui.paintTool.disabled = value;
+        ui.eraseTool.disabled = value;
+        ui.handTool.disabled = value;
+        ui.brushSize.disabled = value;
+        ui.fitButton.disabled = value;
+        history.sync();
+      }
+
+      function setProgress(stage, current = 0, total = 0) {
+        ui.progressPanel.classList.add('open');
+        ui.progressStage.textContent = stage;
+        if (total > 0) {
+          const pct = Math.max(0, Math.min(100, current / total * 100));
+          ui.progressBar.style.width = `${pct}%`;
+          ui.progressValue.textContent = total > 100000 ? `${(current / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB` : `${current} / ${total}`;
+        } else {
+          ui.progressBar.style.width = '14%';
+          ui.progressValue.textContent = '';
+        }
+      }
+
+      function hideProgress() {
+        ui.progressPanel.classList.remove('open');
+        ui.progressBar.style.width = '0%';
+        ui.progressValue.textContent = '';
+      }
+
+      function showCropPreview(imageCanvasLike, maskCanvasLike, label = '推論クロップ', meta = '512 × 512') {
+        const canvas = ui.cropPreviewCanvas;
+        cropPreviewCtx.clearRect(0, 0, canvas.width, canvas.height);
+        cropPreviewCtx.fillStyle = '#171717';
+        cropPreviewCtx.fillRect(0, 0, canvas.width, canvas.height);
+        cropPreviewCtx.imageSmoothingEnabled = true;
+        cropPreviewCtx.imageSmoothingQuality = 'high';
+        cropPreviewCtx.drawImage(imageCanvasLike, 0, 0, imageCanvasLike.width, imageCanvasLike.height, 0, 0, canvas.width, canvas.height);
+        if (maskCanvasLike) {
+          const overlay = makeCanvas(canvas.width, canvas.height, true);
+          const octx = overlay.getContext('2d', { willReadFrequently: true });
+          octx.drawImage(maskCanvasLike, 0, 0, maskCanvasLike.width, maskCanvasLike.height, 0, 0, canvas.width, canvas.height);
+          octx.globalCompositeOperation = 'source-in';
+          octx.fillStyle = 'rgba(151, 205, 255, 0.5)';
+          octx.fillRect(0, 0, canvas.width, canvas.height);
+          octx.globalCompositeOperation = 'source-over';
+          cropPreviewCtx.drawImage(overlay, 0, 0);
+        }
+        ui.cropPreviewLabel.textContent = label;
+        ui.cropPreviewMeta.textContent = meta;
+        ui.cropPreview.classList.add('open');
+      }
+
+      function hideCropPreview() {
+        ui.cropPreview.classList.remove('open');
+      }
+
+      // 20260818-0318: brush preview uses screen-space diameter derived from image-space brush size and current camera zoom.
+      function showBrushPreview() {
+        const previewDiameter = Math.max(1, brushSize * camera.zoom);
+        ui.brushPreviewCircle.style.width = `${previewDiameter}px`;
+        ui.brushPreviewCircle.style.height = `${previewDiameter}px`;
+        ui.brushPreviewLabel.textContent = `${brushSize} px`;
+        ui.brushPreview.classList.add('open');
+        window.clearTimeout(brushPreviewTimer);
+        brushPreviewTimer = window.setTimeout(() => ui.brushPreview.classList.remove('open'), 720);
+      }
+
+      // 20260818-0318: adaptive brush default targets about 200px for a 3400x3000 image.
+      function adaptiveInitialBrushSize(width, height) {
+        const linearResolution = Math.sqrt(width * height);
+        return clamp(Math.round(linearResolution / 16), 16, 512);
+      }
+
+      function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+      function nextFrame() { return new Promise(resolve => requestAnimationFrame(resolve)); }
+      function makeCanvas(width, height, frequent = false) { const c = document.createElement('canvas'); c.width = width; c.height = height; c.getContext('2d', { willReadFrequently: frequent }); return c; }
+      function cloneImageData(data) { return new ImageData(new Uint8ClampedArray(data.data), data.width, data.height); }
+
+      function resizeViewport() {
+        const rect = ui.stage.getBoundingClientRect();
+        dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+        viewCssW = Math.max(1, Math.round(rect.width));
+        viewCssH = Math.max(1, Math.round(rect.height));
+        const pxW = Math.max(1, Math.round(viewCssW * dpr));
+        const pxH = Math.max(1, Math.round(viewCssH * dpr));
+        if (ui.viewport.width !== pxW || ui.viewport.height !== pxH) { ui.viewport.width = pxW; ui.viewport.height = pxH; maskView.width = pxW; maskView.height = pxH; maskBinary.width = pxW; maskBinary.height = pxH; maskOutlineSoft.width = pxW; maskOutlineSoft.height = pxH; maskOutline.width = pxW; maskOutline.height = pxH; }
+        render();
+      }
+
+      function cameraTransform(ctx) { ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * camera.x, dpr * camera.y); }
+      function resetTransform(ctx) { ctx.setTransform(1, 0, 0, 1, 0, 0); }
+
+      function drawBackdrop() {
+        resetTransform(viewportCtx);
+        viewportCtx.fillStyle = '#171717';
+        viewportCtx.fillRect(0, 0, ui.viewport.width, ui.viewport.height);
+        const step = Math.max(14, 22 * dpr);
+        viewportCtx.fillStyle = '#202020';
+        for (let y = step / 2; y < ui.viewport.height; y += step) for (let x = step / 2; x < ui.viewport.width; x += step) viewportCtx.fillRect(Math.round(x), Math.round(y), 1, 1);
+      }
+
+      function drawLiveStrokeToMaskBinary() {
+        if (!liveStroke || liveStroke.points.length === 0) return;
+        maskBinaryCtx.save();
+        cameraTransform(maskBinaryCtx);
+        drawStrokePath(maskBinaryCtx, liveStroke.points, liveStroke.brush, liveStroke.mode);
+        maskBinaryCtx.restore();
+      }
+
+      function buildMaskView() {
+        resetTransform(maskBinaryCtx);
+        maskBinaryCtx.clearRect(0, 0, maskBinary.width, maskBinary.height);
+        maskBinaryCtx.save();
+        cameraTransform(maskBinaryCtx);
+        maskBinaryCtx.imageSmoothingEnabled = false;
+        maskBinaryCtx.drawImage(maskCanvas, 0, 0);
+        maskBinaryCtx.restore();
+        drawLiveStrokeToMaskBinary();
+
+        resetTransform(maskViewCtx);
+        maskViewCtx.clearRect(0, 0, maskView.width, maskView.height);
+        maskViewCtx.drawImage(maskBinary, 0, 0);
+        maskViewCtx.globalCompositeOperation = 'source-in';
+        maskViewCtx.fillStyle = 'rgba(151, 205, 255, 0.5)';
+        maskViewCtx.fillRect(0, 0, maskView.width, maskView.height);
+        maskViewCtx.globalCompositeOperation = 'source-over';
+
+        resetTransform(maskOutlineSoftCtx);
+        maskOutlineSoftCtx.clearRect(0, 0, maskOutlineSoft.width, maskOutlineSoft.height);
+        const ring = Math.max(2, Math.round(2.35 * dpr));
+        const blurPx = Math.max(.85, ring * .42);
+        const samples = Math.max(20, ring * 12);
+        maskOutlineSoftCtx.filter = `blur(${blurPx}px)`;
+        for (let i = 0; i < samples; i++) {
+          const theta = i / samples * Math.PI * 2;
+          const ox = Math.cos(theta) * ring;
+          const oy = Math.sin(theta) * ring;
+          maskOutlineSoftCtx.drawImage(maskBinary, ox, oy);
+        }
+        maskOutlineSoftCtx.filter = 'none';
+
+        resetTransform(maskOutlineCtx);
+        maskOutlineCtx.clearRect(0, 0, maskOutline.width, maskOutline.height);
+        maskOutlineCtx.drawImage(maskOutlineSoft, 0, 0);
+        maskOutlineCtx.globalCompositeOperation = 'destination-out';
+        maskOutlineCtx.drawImage(maskBinary, 0, 0);
+        maskOutlineCtx.globalCompositeOperation = 'source-in';
+        maskOutlineCtx.fillStyle = 'rgba(112, 184, 255, 0.98)';
+        maskOutlineCtx.fillRect(0, 0, maskOutline.width, maskOutline.height);
+        maskOutlineCtx.globalCompositeOperation = 'source-over';
+      }
+
+      function render() {
+        drawBackdrop();
+        if (!hasImage) return;
+        viewportCtx.save();
+        cameraTransform(viewportCtx);
+        viewportCtx.imageSmoothingEnabled = true;
+        viewportCtx.imageSmoothingQuality = 'high';
+        viewportCtx.shadowColor = 'rgba(0,0,0,.45)';
+        viewportCtx.shadowBlur = 28 / Math.max(camera.zoom, .001);
+        viewportCtx.shadowOffsetY = 8 / Math.max(camera.zoom, .001);
+        viewportCtx.drawImage(imageCanvas, 0, 0);
+        viewportCtx.shadowColor = 'transparent';
+        viewportCtx.lineWidth = 1 / camera.zoom;
+        viewportCtx.strokeStyle = '#4a4a4a';
+        viewportCtx.strokeRect(.5 / camera.zoom, .5 / camera.zoom, imageCanvas.width - 1 / camera.zoom, imageCanvas.height - 1 / camera.zoom);
+        viewportCtx.restore();
+        buildMaskView();
+        resetTransform(viewportCtx);
+        viewportCtx.drawImage(maskOutline, 0, 0);
+        viewportCtx.drawImage(maskView, 0, 0);
+        drawBrushCursor();
+      }
+
+      function drawBrushCursor() {
+        if (!pointerScreen || busy || !hasImage || (tool !== 'paint' && tool !== 'erase') || spaceHeld) return;
+        resetTransform(viewportCtx);
+        const r = brushSize * camera.zoom * dpr / 2;
+        const x = pointerScreen.x * dpr;
+        const y = pointerScreen.y * dpr;
+        viewportCtx.beginPath();
+        viewportCtx.arc(x, y, Math.max(2, r), 0, Math.PI * 2);
+        viewportCtx.lineWidth = Math.max(1, dpr);
+        viewportCtx.strokeStyle = 'rgba(0,0,0,.85)';
+        viewportCtx.stroke();
+        viewportCtx.beginPath();
+        viewportCtx.arc(x, y, Math.max(2, r - dpr), 0, Math.PI * 2);
+        viewportCtx.lineWidth = Math.max(1, dpr * .8);
+        viewportCtx.strokeStyle = 'rgba(255,255,255,.92)';
+        viewportCtx.stroke();
+      }
+
+      function fitImage() {
+        if (!hasImage) return;
+        const pad = 52;
+        const zx = Math.max(.0001, (viewCssW - pad * 2) / imageCanvas.width);
+        const zy = Math.max(.0001, (viewCssH - pad * 2) / imageCanvas.height);
+        camera.zoom = clamp(Math.min(zx, zy), MIN_ZOOM, MAX_ZOOM);
+        camera.x = (viewCssW - imageCanvas.width * camera.zoom) / 2;
+        camera.y = (viewCssH - imageCanvas.height * camera.zoom) / 2;
+        syncZoomHud();
+        render();
+      }
+
+      function syncZoomHud() { ui.zoomHud.textContent = `${Math.round(camera.zoom * 100)}%`; }
+      function screenToWorld(x, y) { return { x: (x - camera.x) / camera.zoom, y: (y - camera.y) / camera.zoom }; }
+      function pointInsideImage(point) { return point.x >= 0 && point.y >= 0 && point.x < imageCanvas.width && point.y < imageCanvas.height; }
+
+      function setTool(nextTool) {
+        tool = nextTool;
+        ui.viewport.dataset.tool = nextTool === 'hand' ? 'hand' : nextTool;
+        ui.paintTool.classList.toggle('active', nextTool === 'paint');
+        ui.eraseTool.classList.toggle('active', nextTool === 'erase');
+        ui.handTool.classList.toggle('active', nextTool === 'hand');
+        render();
+      }
+
+      function drawStrokePath(ctx, points, size, mode) {
+        if (!points.length) return;
+        ctx.save();
+        ctx.globalCompositeOperation = mode === 'erase' ? 'destination-out' : 'source-over';
+        ctx.strokeStyle = '#fff';
+        ctx.fillStyle = '#fff';
+        ctx.lineWidth = size;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (points.length === 1) { ctx.beginPath(); ctx.arc(points[0].x, points[0].y, size / 2, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function strokeBounds(points, size) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of points) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+        const pad = size / 2 + 3;
+        const x = clamp(Math.floor(minX - pad), 0, imageCanvas.width);
+        const y = clamp(Math.floor(minY - pad), 0, imageCanvas.height);
+        const right = clamp(Math.ceil(maxX + pad), 0, imageCanvas.width);
+        const bottom = clamp(Math.ceil(maxY + pad), 0, imageCanvas.height);
+        return { x, y, w: Math.max(0, right - x), h: Math.max(0, bottom - y) };
+      }
+
+      function binarizeMaskRect(x, y, w, h) {
+        const data = maskCtx.getImageData(x, y, w, h);
+        for (let p = 0; p < data.data.length; p += 4) {
+          const on = data.data[p + 3] >= 128;
+          data.data[p] = on ? 255 : 0;
+          data.data[p + 1] = on ? 255 : 0;
+          data.data[p + 2] = on ? 255 : 0;
+          data.data[p + 3] = on ? 255 : 0;
+        }
+        maskCtx.putImageData(data, x, y);
+      }
+
+      function commitLiveStroke() {
+        if (!liveStroke || !liveStroke.points.length) { liveStroke = null; return; }
+        const bounds = strokeBounds(liveStroke.points, liveStroke.brush);
+        if (!bounds.w || !bounds.h) { liveStroke = null; render(); return; }
+        const beforeMask = maskCtx.getImageData(bounds.x, bounds.y, bounds.w, bounds.h);
+        drawStrokePath(maskCtx, liveStroke.points, liveStroke.brush, liveStroke.mode);
+        binarizeMaskRect(bounds.x, bounds.y, bounds.w, bounds.h);
+        const afterMask = maskCtx.getImageData(bounds.x, bounds.y, bounds.w, bounds.h);
+        const patch = { x: bounds.x, y: bounds.y, beforeImage: null, afterImage: null, beforeMask, afterMask };
+        const label = liveStroke.mode === 'erase' ? 'マスク消去' : 'マスク描画';
+        history.commit(createPatchOperation(label, [patch]));
+        liveStroke = null;
+        render();
+        updateRemoveState();
+      }
+
+      async function loadImageFile(file) {
+        setBusy(true);
+        setStatus(`画像を読み込み中: ${file.name}`);
+        try {
+          const bitmap = await createImageBitmap(file);
+          const imageWidth = bitmap.width;
+          const imageHeight = bitmap.height;
+          imageCanvas.width = imageWidth;
+          imageCanvas.height = imageHeight;
+          maskCanvas.width = imageWidth;
+          maskCanvas.height = imageHeight;
+          imageCtx.clearRect(0, 0, imageWidth, imageHeight);
+          imageCtx.drawImage(bitmap, 0, 0);
+          bitmap.close();
+          maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+          hasImage = true;
+          imageName = file.name || 'image';
+          ui.emptyState.style.opacity = '0';
+          ui.emptyState.style.pointerEvents = 'none';
+          ui.imageStatus.textContent = `${imageCanvas.width} × ${imageCanvas.height}`;
+          history.clear();
+          hideCropPreview();
+          setBrushSize(adaptiveInitialBrushSize(imageWidth, imageHeight), false);
+          fitImage();
+          setStatus(imageName);
+        } catch (error) {
+          console.error(error);
+          setStatus(`画像読み込みエラー: ${error.message || error}`, true);
+        }
+        setBusy(false);
+        updateRemoveState();
+        render();
+      }
+
+      function maskHasPixels() {
+        if (!hasImage) return false;
+        const data = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
+        return false;
+      }
+
+      function updateRemoveState() {
+        ui.removeButton.disabled = busy || !hasImage || !maskHasPixels();
+        ui.saveButton.disabled = busy || !hasImage;
+      }
+
+      function findConnectedComponents() {
+        const w = maskCanvas.width;
+        const h = maskCanvas.height;
+        const n = w * h;
+        const rgba = maskCtx.getImageData(0, 0, w, h).data;
+        const active = new Uint8Array(n);
+        let activeCount = 0;
+        for (let i = 0; i < n; i++) { const on = rgba[i * 4 + 3] > 0 ? 1 : 0; active[i] = on; activeCount += on; }
+        if (!activeCount) return [];
+        const queue = new Uint32Array(n);
+        const components = [];
+        for (let start = 0; start < n; start++) {
+          if (!active[start]) continue;
+          let head = 0, tail = 0;
+          queue[tail++] = start;
+          active[start] = 0;
+          let minX = w, minY = h, maxX = 0, maxY = 0;
+          while (head < tail) {
+            const idx = queue[head++];
+            const x = idx % w;
+            const y = (idx / w) | 0;
+            minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+            const y0 = Math.max(0, y - 1), y1 = Math.min(h - 1, y + 1), x0 = Math.max(0, x - 1), x1 = Math.min(w - 1, x + 1);
+            for (let ny = y0; ny <= y1; ny++) for (let nx = x0; nx <= x1; nx++) { const ni = ny * w + nx; if (active[ni]) { active[ni] = 0; queue[tail++] = ni; } }
+          }
+          const pixels = new Uint32Array(tail);
+          pixels.set(queue.subarray(0, tail));
+          components.push({ pixels, minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 });
+        }
+        return components;
+      }
+
+      function componentMaskCanvas(component) {
+        const local = makeCanvas(component.width, component.height, true);
+        const ctx = local.getContext('2d', { willReadFrequently: true });
+        const data = new ImageData(component.width, component.height);
+        const imageW = imageCanvas.width;
+        for (let i = 0; i < component.pixels.length; i++) {
+          const idx = component.pixels[i];
+          const x = idx % imageW - component.minX;
+          const y = ((idx / imageW) | 0) - component.minY;
+          const p = (y * component.width + x) * 4;
+          data.data[p] = 255; data.data[p + 1] = 255; data.data[p + 2] = 255; data.data[p + 3] = 255;
+        }
+        ctx.putImageData(data, 0, 0);
+        return local;
+      }
+
+      function buildNormalizedPatch(component) {
+        const minMaskCoverage = .25;
+        const side = Math.max(64, Math.ceil(Math.sqrt(component.width*component.height / (minMaskCoverage*minMaskCoverage))));
+        const cx = (component.minX + component.maxX + 1) / 2;
+        const cy = (component.minY + component.maxY + 1) / 2;
+        let x0 = Math.round(cx - side / 2);
+        let y0 = Math.round(cy - side / 2);
+        if (side <= imageCanvas.width) x0 = clamp(x0, 0, imageCanvas.width - side);
+        else x0 = Math.floor((imageCanvas.width - side) / 2);
+        if (side <= imageCanvas.height) y0 = clamp(y0, 0, imageCanvas.height - side);
+        else y0 = Math.floor((imageCanvas.height - side) / 2);
+        const scale = IMG / side;
+        // Raw inference image: copied only from imageCanvas. UI mask colors never enter this canvas.
+        const patchImage = makeCanvas(IMG, IMG, true);
+        const pctx = patchImage.getContext('2d', { willReadFrequently: true });
+        pctx.fillStyle = '#000';
+        pctx.fillRect(0, 0, IMG, IMG);
+        pctx.imageSmoothingEnabled = true;
+        pctx.imageSmoothingQuality = 'high';
+        const sx = Math.max(0, x0), sy = Math.max(0, y0), ex = Math.min(imageCanvas.width, x0 + side), ey = Math.min(imageCanvas.height, y0 + side);
+        const sw = Math.max(0, ex - sx), sh = Math.max(0, ey - sy);
+        if (sw > 0 && sh > 0) pctx.drawImage(imageCanvas, sx, sy, sw, sh, (sx - x0) * scale, (sy - y0) * scale, sw * scale, sh * scale);
+        const patchMask = makeCanvas(IMG, IMG, true);
+        const pmctx = patchMask.getContext('2d', { willReadFrequently: true });
+        const localMask = componentMaskCanvas(component);
+        pmctx.imageSmoothingEnabled = false;
+        pmctx.drawImage(localMask, (component.minX - x0) * scale, (component.minY - y0) * scale, component.width * scale, component.height * scale);
+        return { image: patchImage, mask: patchMask, x0, y0, side, scale, minMaskCoverage };
+      }
+
+      function canvasToCHW(canvas) {
+        const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, IMG, IMG).data;
+        const plane = IMG * IMG;
+        const out = new Float32Array(3 * plane);
+        for (let p = 0; p < plane; p++) { out[p] = data[p * 4] / 127.5 - 1; out[plane + p] = data[p * 4 + 1] / 127.5 - 1; out[2 * plane + p] = data[p * 4 + 2] / 127.5 - 1; }
+        return out;
+      }
+
+      function maskCanvasToBinary(canvas) {
+        const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, IMG, IMG).data;
+        const out = new Float32Array(IMG * IMG);
+        for (let p = 0; p < out.length; p++) out[p] = data[p * 4 + 3] > 0 ? 1 : 0;
+        return out;
+      }
+
+      function makeMaskedCHW(img, mask) {
+        const out = new Float32Array(img.length);
+        const plane = IMG * IMG;
+        for (let c = 0; c < 3; c++) for (let p = 0; p < plane; p++) out[c * plane + p] = img[c * plane + p] * (1 - mask[p]);
+        return out;
+      }
+
+      function maskToLatent(mask) {
+        const out = new Float32Array(LAT * LAT);
+        const ratio = IMG / LAT;
+        for (let y = 0; y < LAT; y++) for (let x = 0; x < LAT; x++) out[y * LAT + x] = mask[y * ratio * IMG + x * ratio];
+        return out;
+      }
+
+      function chwToImageData(chw) {
+        const plane = IMG * IMG;
+        const out = new ImageData(IMG, IMG);
+        for (let p = 0; p < plane; p++) {
+          for (let c = 0; c < 3; c++) { const v = clamp((chw[c * plane + p] + 1) / 2, 0, 1); out.data[p * 4 + c] = Math.round(v * 255); }
+          out.data[p * 4 + 3] = 255;
+        }
+        return out;
+      }
+
+      function mulberry32(seed) {
+        let s = seed >>> 0;
+        return () => { s |= 0; s = s + 0x6d2b79f5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+      }
+
+      function randn(n, seed) {
+        const rng = mulberry32(seed);
+        const out = new Float32Array(n);
+        for (let i = 0; i < n; i++) { let u = 0, v = 0; while (u === 0) u = rng(); while (v === 0) v = rng(); out[i] = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+        return out;
+      }
+
+      function makeDDIM(numSteps, strength = .99) {
+        const train = 1000, betaStart = .00085, betaEnd = .012;
+        const betas = new Float64Array(train);
+        const a = Math.sqrt(betaStart), b = Math.sqrt(betaEnd);
+        for (let i = 0; i < train; i++) { const s = a + (b - a) * (i / (train - 1)); betas[i] = s * s; }
+        const alphasCumprod = new Float64Array(train);
+        let acc = 1;
+        for (let i = 0; i < train; i++) { acc *= 1 - betas[i]; alphasCumprod[i] = acc; }
+        const stepRatio = Math.floor(train / numSteps);
+        const ts = [];
+        for (let i = 0; i < numSteps; i++) ts.push(Math.round(i * stepRatio));
+        ts.reverse();
+        const initTimestep = Math.min(Math.floor(numSteps * strength), numSteps);
+        const tStart = Math.max(numSteps - initTimestep, 0);
+        return { alphasCumprod, timesteps: ts.slice(tStart) };
+      }
+
+      function ddimStep(eps, sample, t, prevT, ddim) {
+        const acT = ddim.alphasCumprod[t], acPrev = prevT >= 0 ? ddim.alphasCumprod[prevT] : 1;
+        const sqrtAcT = Math.sqrt(acT), sqrtBetaT = Math.sqrt(1 - acT), sqrtAcPrev = Math.sqrt(acPrev), sqrtOneMinusAcPrev = Math.sqrt(1 - acPrev);
+        const out = new Float32Array(sample.length);
+        for (let i = 0; i < sample.length; i++) { const predX0 = (sample[i] - sqrtBetaT * eps[i]) / sqrtAcT; out[i] = sqrtAcPrev * predX0 + sqrtOneMinusAcPrev * eps[i]; }
+        return out;
+      }
+
+      async function requestPersistentStorage() {
+        if (!navigator.storage || !navigator.storage.persist) return false;
+        try { if (await navigator.storage.persisted()) return true; return await navigator.storage.persist(); } catch (error) { console.warn('Persistent storage unavailable:', error); return false; }
+      }
+
+      async function openCache() {
+        if (!('caches' in window)) return null;
+        try { return await caches.open(CACHE_NAME); } catch (error) { console.warn('Cache Storage unavailable:', error); return null; }
+      }
+
+      async function loadModelBytes(url, label, index) {
+        const cache = await openCache();
+        if (cache) {
+          const hit = await cache.match(url);
+          if (hit) { const buf = await hit.arrayBuffer(); setProgress(`${label} · キャッシュ`, buf.byteLength, buf.byteLength); return new Uint8Array(buf); }
+        }
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`${label} download failed: HTTP ${response.status}`);
+        const total = Number(response.headers.get('content-length')) || 0;
+        const reader = response.body && response.body.getReader ? response.body.getReader() : null;
+        let bytes;
+        if (reader && total > 0) {
+          bytes = new Uint8Array(total);
+          let loaded = 0;
+          for (;;) { const chunk = await reader.read(); if (chunk.done) break; bytes.set(chunk.value, loaded); loaded += chunk.value.length; setProgress(`${label} · ${index}/3`, loaded, total); }
+        } else {
+          const buf = await response.arrayBuffer();
+          bytes = new Uint8Array(buf);
+          setProgress(`${label} · ${index}/3`, bytes.length, bytes.length);
+        }
+        if (cache) {
+          try { await cache.put(url, new Response(bytes.buffer, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(bytes.length) } })); } catch (error) { console.warn('Model cache write failed:', error); }
+        }
+        return bytes;
+      }
+
+      class MoebiusPipeline {
+        constructor() { this.enc = null; this.dec = null; this.unet = null; }
+        async load() {
+          if (!navigator.gpu) throw new Error('WebGPU is not available in this browser');
+          if (!window.ort) throw new Error('ONNX Runtime Web failed to load');
+          ort.env.wasm.wasmPaths = ORT_BASE;
+          ort.env.wasm.numThreads = 1;
+          await requestPersistentStorage();
+          const opts = { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' };
+          ui.modelStateTop.textContent = 'MODEL · LOADING';
+          setProgress('VAE encoder を読み込み中');
+          this.enc = await ort.InferenceSession.create(await loadModelBytes(`${MODEL_BASE}/vae_encoder.onnx`, 'VAE encoder', 1), opts);
+          setProgress('VAE decoder を読み込み中');
+          this.dec = await ort.InferenceSession.create(await loadModelBytes(`${MODEL_BASE}/vae_decoder.onnx`, 'VAE decoder', 2), opts);
+          setProgress('UNet を読み込み中');
+          this.unet = await ort.InferenceSession.create(await loadModelBytes(`${MODEL_BASE}/unet.onnx`, 'UNet', 3), opts);
+          ui.modelStateTop.textContent = 'MODEL · READY';
+          cachedModelReady = true;
+        }
+        async encode(chw) {
+          const tensor = new ort.Tensor('float32', chw, [1, 3, IMG, IMG]);
+          const result = await this.enc.run({ image: tensor });
+          const moments = result.moments.data;
+          const out = new Float32Array(4 * LAT * LAT);
+          for (let i = 0; i < out.length; i++) out[i] = moments[i] * SCALING_FACTOR;
+          return out;
+        }
+        async decode(latent) {
+          const scaled = new Float32Array(latent.length);
+          for (let i = 0; i < latent.length; i++) scaled[i] = latent[i] / SCALING_FACTOR;
+          const result = await this.dec.run({ latent: new ort.Tensor('float32', scaled, [1, 4, LAT, LAT]) });
+          return chwToImageData(result.image.data);
+        }
+        async unetCFG(latents, mask64, maskedLat, t, guidance) {
+          const plane = LAT * LAT;
+          const nine = new Float32Array(9 * plane);
+          nine.set(latents.subarray(0, 4 * plane), 0);
+          nine.set(mask64, 4 * plane);
+          nine.set(maskedLat.subarray(0, 4 * plane), 5 * plane);
+          const nine2 = new Float32Array(2 * 9 * plane);
+          nine2.set(nine, 0); nine2.set(nine, 9 * plane);
+          const ids = new BigInt64Array(2 * HALF_IDS);
+          for (let i = 0; i < HALF_IDS; i++) { ids[i] = BigInt(HALF_IDS + i); ids[HALF_IDS + i] = BigInt(i); }
+          const ts = new BigInt64Array([BigInt(t), BigInt(t)]);
+          const result = await this.unet.run({ latent: new ort.Tensor('float32', nine2, [2, 9, LAT, LAT]), timesteps: new ort.Tensor('int64', ts, [2]), input_ids: new ort.Tensor('int64', ids, [2, HALF_IDS]) });
+          const noise = result.noise.data;
+          const n = 4 * plane;
+          const cfg = new Float32Array(n);
+          for (let i = 0; i < n; i++) cfg[i] = noise[i] + guidance * (noise[n + i] - noise[i]);
+          return cfg;
+        }
+        async runPatch(imagePatch, maskPatch, seed, progressPrefix) {
+          const ddim = makeDDIM(DEFAULT_STEPS);
+          const img = canvasToCHW(imagePatch);
+          const mask = maskCanvasToBinary(maskPatch);
+          const masked = makeMaskedCHW(img, mask);
+          const mask64 = maskToLatent(mask);
+          setProgress(`${progressPrefix} · エンコード`);
+          const maskedLat = await this.encode(masked);
+          const plane = LAT * LAT;
+          let latents = randn(4 * plane, seed);
+          const offset = randn(4, seed ^ 0x9e3779b9);
+          for (let c = 0; c < 4; c++) for (let p = 0; p < plane; p++) latents[c * plane + p] += NOISE_OFFSET * offset[c];
+          for (let i = 0; i < ddim.timesteps.length; i++) {
+            const t = ddim.timesteps[i], prevT = i + 1 < ddim.timesteps.length ? ddim.timesteps[i + 1] : -1;
+            setProgress(`${progressPrefix} · 推論`, i + 1, ddim.timesteps.length);
+            const eps = await this.unetCFG(latents, mask64, maskedLat, t, DEFAULT_GUIDANCE);
+            latents = ddimStep(eps, latents, t, prevT, ddim);
+            await nextFrame();
+          }
+          setProgress(`${progressPrefix} · デコード`);
+          return await this.decode(latents);
+        }
+      }
+
+      async function ensurePipeline() {
+        if (pipelinePromise) return pipelinePromise;
+        pipelinePromise = (async () => { const p = new MoebiusPipeline(); await p.load(); return p; })();
+        return pipelinePromise;
+      }
+
+      function outputCanvasFromImageData(imageData) {
+        const c = makeCanvas(IMG, IMG, true);
+        c.getContext('2d', { willReadFrequently: true }).putImageData(imageData, 0, 0);
+        return c;
+      }
+
+      function applyGeneratedComponent(component, normalized, outputCanvas) {
+        const x = component.minX, y = component.minY, w = component.width, h = component.height;
+        const beforeImage = imageCtx.getImageData(x, y, w, h);
+        const beforeMask = maskCtx.getImageData(x, y, w, h);
+        const generated = makeCanvas(w, h, true);
+        const gctx = generated.getContext('2d', { willReadFrequently: true });
+        gctx.imageSmoothingEnabled = true;
+        gctx.imageSmoothingQuality = 'high';
+        const srcX = (x - normalized.x0) * normalized.scale;
+        const srcY = (y - normalized.y0) * normalized.scale;
+        const srcW = w * normalized.scale;
+        const srcH = h * normalized.scale;
+        gctx.drawImage(outputCanvas, srcX, srcY, srcW, srcH, 0, 0, w, h);
+        const generatedData = gctx.getImageData(0, 0, w, h);
+        // Only decoded model RGB is written to imageCanvas. Mask visualization remains a separate render-only layer.
+        const afterImage = cloneImageData(beforeImage);
+        const afterMask = cloneImageData(beforeMask);
+        const imageW = imageCanvas.width;
+        for (let i = 0; i < component.pixels.length; i++) {
+          const idx = component.pixels[i];
+          const px = idx % imageW - x;
+          const py = ((idx / imageW) | 0) - y;
+          const p = (py * w + px) * 4;
+          afterImage.data[p] = generatedData.data[p];
+          afterImage.data[p + 1] = generatedData.data[p + 1];
+          afterImage.data[p + 2] = generatedData.data[p + 2];
+          afterImage.data[p + 3] = beforeImage.data[p + 3];
+          afterMask.data[p] = 0; afterMask.data[p + 1] = 0; afterMask.data[p + 2] = 0; afterMask.data[p + 3] = 0;
+        }
+        imageCtx.putImageData(afterImage, x, y);
+        maskCtx.putImageData(afterMask, x, y);
+        return { x, y, beforeImage, afterImage, beforeMask, afterMask };
+      }
+
+      async function removeMaskedRegions() {
+        if (!hasImage || busy) return;
+        setBusy(true);
+        const started = performance.now();
+        try {
+          setStatus('連結マスクを解析中');
+          setProgress('連結マスクを解析中');
+          await nextFrame();
+          const components = findConnectedComponents();
+          if (!components.length) { setStatus('削除するマスクがないのだ'); hideProgress(); setBusy(false); return; }
+          const pipe = await ensurePipeline();
+          const outputs = [];
+          const seedBase = Date.now() >>> 0;
+          for (let i = 0; i < components.length; i++) {
+            const component = components[i];
+            const normalized = buildNormalizedPatch(component);
+            const prefix = `${i + 1}/${components.length}`;
+            showCropPreview(normalized.image, normalized.mask, `推論クロップ ${prefix}`, `${normalized.side}px → 512px`);
+            const result = await pipe.runPatch(normalized.image, normalized.mask, seedBase + i * 7919, prefix);
+            outputs.push({ component, normalized, output: outputCanvasFromImageData(result) });
+          }
+          const patches = [];
+          for (const job of outputs) patches.push(applyGeneratedComponent(job.component, job.normalized, job.output));
+          history.commit(createPatchOperation('削除推論', patches));
+          const seconds = ((performance.now() - started) / 1000).toFixed(1);
+          setStatus(`${components.length}領域を削除 · ${seconds}s`);
+          hideProgress();
+          hideCropPreview();
+          render();
+        } catch (error) {
+          console.error(error);
+          if (!cachedModelReady) { pipelinePromise = null; ui.modelStateTop.textContent = 'MODEL · ERROR'; }
+          setStatus(`推論エラー: ${error.message || error}`, true);
+          hideProgress();
+          hideCropPreview();
+        }
+        setBusy(false);
+        updateRemoveState();
+      }
+
+      function saveImage() {
+        if (!hasImage || busy) return;
+        imageCanvas.toBlob(blob => {
+          if (!blob) { const error = new Error('PNG export failed'); console.error(error); setStatus(error.message, true); return; }
+          const base = imageName.replace(/\.[^.]+$/, '') || 'image';
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${base}-cleaned.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          setStatus(`${base}-cleaned.png を保存`);
+        }, 'image/png');
+      }
+
+      function zoomAt(screenX, screenY, factor) {
+        const before = screenToWorld(screenX, screenY);
+        camera.zoom = clamp(camera.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+        camera.x = screenX - before.x * camera.zoom;
+        camera.y = screenY - before.y * camera.zoom;
+        syncZoomHud();
+        render();
+      }
+
+      function pointerPosition(event) {
+        const rect = ui.viewport.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      }
+
+      ui.viewport.addEventListener('pointerdown', event => {
+        ui.viewport.focus({ preventScroll: true });
+        const p = pointerPosition(event);
+        pointerScreen = p;
+        const panIntent = event.button === 1 || spaceHeld || tool === 'hand';
+        if (panIntent) { panDrag = { pointerId: event.pointerId, startX: p.x, startY: p.y, cameraX: camera.x, cameraY: camera.y }; ui.viewport.setPointerCapture(event.pointerId); ui.viewport.dataset.panning = 'true'; event.preventDefault(); return; }
+        if (busy || !hasImage || event.button !== 0 || (tool !== 'paint' && tool !== 'erase')) return;
+        const world = screenToWorld(p.x, p.y);
+        if (!pointInsideImage(world)) return;
+        liveStroke = { pointerId: event.pointerId, mode: tool, brush: brushSize, points: [world] };
+        ui.viewport.setPointerCapture(event.pointerId);
+        render();
+      });
+
+      ui.viewport.addEventListener('pointermove', event => {
+        const p = pointerPosition(event);
+        pointerScreen = p;
+        if (panDrag && panDrag.pointerId === event.pointerId) { camera.x = panDrag.cameraX + p.x - panDrag.startX; camera.y = panDrag.cameraY + p.y - panDrag.startY; render(); return; }
+        if (liveStroke && liveStroke.pointerId === event.pointerId) {
+          const world = screenToWorld(p.x, p.y);
+          const clamped = { x: clamp(world.x, 0, imageCanvas.width - .001), y: clamp(world.y, 0, imageCanvas.height - .001) };
+          const last = liveStroke.points[liveStroke.points.length - 1];
+          const dx = clamped.x - last.x, dy = clamped.y - last.y;
+          if (dx * dx + dy * dy >= Math.max(1, brushSize * .04) ** 2) liveStroke.points.push(clamped);
+          render();
+          return;
+        }
+        render();
+      });
+
+      function endPointer(event) {
+        if (panDrag && panDrag.pointerId === event.pointerId) { panDrag = null; ui.viewport.dataset.panning = 'false'; render(); }
+        if (liveStroke && liveStroke.pointerId === event.pointerId) commitLiveStroke();
+      }
+
+      ui.viewport.addEventListener('pointerup', endPointer);
+      ui.viewport.addEventListener('pointercancel', endPointer);
+      ui.viewport.addEventListener('pointerleave', () => { if (!liveStroke && !panDrag) { pointerScreen = null; render(); } });
+      ui.viewport.addEventListener('contextmenu', event => event.preventDefault());
+      ui.viewport.addEventListener('wheel', event => { event.preventDefault(); const p = pointerPosition(event); const factor = Math.exp(-event.deltaY * .0014); zoomAt(p.x, p.y, factor); }, { passive: false });
+
+      ui.openButton.addEventListener('click', () => ui.fileInput.click());
+      ui.viewport.addEventListener('click', event => { if (busy || hasImage || event.defaultPrevented) return; ui.fileInput.click(); });
+      ui.fileInput.addEventListener('change', event => { const file = event.target.files && event.target.files[0]; if (file) loadImageFile(file); event.target.value = ''; });
+      ui.undoButton.addEventListener('click', () => history.undo());
+      ui.redoButton.addEventListener('click', () => history.redo());
+      ui.removeButton.addEventListener('click', removeMaskedRegions);
+      ui.saveButton.addEventListener('click', saveImage);
+      ui.paintTool.addEventListener('click', () => setTool('paint'));
+      ui.eraseTool.addEventListener('click', () => setTool('erase'));
+      ui.handTool.addEventListener('click', () => setTool('hand'));
+      ui.fitButton.addEventListener('click', fitImage);
+      function brushSizeToSlider(size) {
+        return Math.round(Math.log(size / 16) / Math.log(512 / 16) * 100);
+      }
+
+      function sliderToBrushSize(value) {
+        return Math.round(16 * Math.pow(512 / 16, Number(value) / 100));
+      }
+
+      function syncBrushControls() {
+        ui.brushSize.value = String(brushSizeToSlider(brushSize));
+        ui.brushValue.textContent = `${brushSize} px`;
+        ui.brushPreviewLabel.textContent = `${brushSize} px`;
+      }
+
+      function setBrushSize(nextSize, revealPreview = true) {
+        brushSize = clamp(Math.round(Number(nextSize) || 48), 16, 512);
+        syncBrushControls();
+        if (revealPreview) showBrushPreview();
+        render();
+      }
+
+      ui.brushSize.addEventListener('input', event => setBrushSize(sliderToBrushSize(event.target.value)));
+      document.addEventListener('keydown', event => {
+        if (event.target instanceof HTMLInputElement) return;
+        if (event.code === 'Space') { spaceHeld = true; render(); event.preventDefault(); return; }
+        if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') { history.undo(); event.preventDefault(); return; }
+        if ((event.ctrlKey || event.metaKey) && ((event.shiftKey && event.key.toLowerCase() === 'z') || event.key.toLowerCase() === 'y')) { history.redo(); event.preventDefault(); return; }
+        if (event.key.toLowerCase() === 'b') setTool('paint');
+        if (event.key.toLowerCase() === 'e') setTool('erase');
+        if (event.key.toLowerCase() === 'h') setTool('hand');
+        if (event.key === '0') fitImage();
+        if (event.key === '[') setBrushSize(brushSize / 1.18);
+        if (event.key === ']') setBrushSize(brushSize * 1.18);
+      });
+      document.addEventListener('keyup', event => { if (event.code === 'Space') { spaceHeld = false; render(); } });
+      window.addEventListener('blur', () => { spaceHeld = false; if (liveStroke) commitLiveStroke(); panDrag = null; ui.viewport.dataset.panning = 'false'; });
+
+      ui.stage.addEventListener('dragover', event => { event.preventDefault(); ui.stage.classList.add('drop-active'); });
+      ui.stage.addEventListener('dragleave', event => { if (!ui.stage.contains(event.relatedTarget)) ui.stage.classList.remove('drop-active'); });
+      ui.stage.addEventListener('drop', event => { event.preventDefault(); ui.stage.classList.remove('drop-active'); const file = event.dataTransfer.files && event.dataTransfer.files[0]; if (file && file.type.startsWith('image/')) loadImageFile(file); });
+
+      async function inspectEnvironment() {
+        if (navigator.gpu) { ui.gpuDot.style.color = '#bdbdbd'; ui.gpuStatus.textContent = 'WebGPU'; }
+        else { ui.gpuDot.style.color = '#8a5b5b'; ui.gpuStatus.textContent = 'WebGPU unavailable'; setStatus('WebGPU対応ブラウザが必要なのだ', true); }
+        const cache = await openCache();
+        if (!cache) return;
+        const keys = await cache.keys();
+        let total = 0;
+        for (const request of keys) { const response = await cache.match(request); total += Number(response && response.headers.get('content-length')) || 0; }
+        if (total > 1_200_000_000) { cachedModelReady = true; ui.modelStateTop.textContent = 'MODEL · CACHED'; }
+      }
+
+      new ResizeObserver(resizeViewport).observe(ui.stage);
+      resizeViewport();
+      syncZoomHud();
+      syncBrushControls();
+      inspectEnvironment();
+      updateRemoveState();
+    })();
+  </script>
+</body>
+</html>
