@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <!--
+    Context: アップロードした動画をアスペクト比を無視して正方形へ強制変形し、1辺・動画bps・音声bpsを指定してFFmpegでMP4へ書き出し保存するローカル向け1画面アプリ。
+    Implementation: @ffmpeg/core (WebAssembly) をインラインWorkerラッパーから読み込み、scale=W:H でcrop/padせず正方形化。ビットレートは1bps以上の生値を直接FFmpegへ渡し、エラーを隠さず表示する。
+  -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Square Video Exporter</title>
+  <meta name="description" content="Force any video into an exact square and export it with explicitly specified video and audio bitrates using FFmpeg in the browser.">
+  <meta name="page:icon" content="fas fa-compress-arrows-alt">
+  <meta name="page:color" content="#111111">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <style>
+    :root {
+      --ease-out: cubic-bezier(.23,1,.32,1);
+      --border: #e7e7e7;
+      --ink: #111111;
+      --muted: #777777;
+      --soft: #f7f7f7;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, label, input { -webkit-tap-highlight-color: transparent; }
+    .pressable { transition: transform 140ms var(--ease-out), background-color 160ms ease, border-color 160ms ease, opacity 160ms ease; }
+    .pressable:active { transform: scale(.98); }
+    .drop-active { border-color: #111 !important; background: #fafafa !important; }
+    .field:focus { outline: none; border-color: #111; box-shadow: 0 0 0 3px rgba(17,17,17,.07); }
+    .progress-fill { transition: transform 180ms var(--ease-out); transform-origin: left center; }
+    .error-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+    .error-scroll::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 999px; }
+    @media (prefers-reduced-motion: reduce) {
+      .pressable, .progress-fill { transition-duration: 0ms; }
+    }
+  </style>
+</head>
+<body>
+  <main class="mx-auto flex min-h-screen w-full max-w-[1120px] flex-col px-5 py-6 sm:px-8 sm:py-8">
+    <header class="mb-7 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-200 bg-white text-[14px] shadow-sm">
+          <i class="fa-solid fa-compress"></i>
+        </div>
+        <div>
+          <h1 class="text-[16px] font-semibold tracking-[-0.02em]">Square Video Exporter</h1>
+          <p class="mt-0.5 text-[12px] text-neutral-400">FFmpeg / local processing</p>
+        </div>
+      </div>
+      <div id="engineBadge" class="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-[11px] font-medium text-neutral-500">FFmpeg 未読込</div>
+    </header>
+
+    <section class="grid flex-1 gap-7 lg:grid-cols-[minmax(0,1.35fr)_360px] lg:items-start">
+      <div class="min-w-0">
+        <input id="fileInput" type="file" accept="video/*" class="hidden">
+
+        <div id="dropZone" role="button" tabindex="0" class="pressable group relative flex aspect-square w-full max-h-[690px] min-h-[360px] cursor-pointer items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-neutral-300 bg-neutral-50 text-left">
+          <div id="emptyState" class="pointer-events-none flex flex-col items-center px-6 text-center">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-sm">
+              <i class="fa-solid fa-arrow-up-from-bracket text-[14px]"></i>
+            </div>
+            <p class="text-[15px] font-medium tracking-[-0.01em]">動画を選択</p>
+            <p class="mt-1.5 text-[12px] leading-5 text-neutral-400">クリックまたはドロップ</p>
+          </div>
+
+          <video id="preview" class="hidden h-full w-full object-fill" controls playsinline></video>
+
+          <div id="filePill" class="pointer-events-none absolute bottom-4 left-4 right-4 hidden items-center justify-between gap-4 rounded-2xl border border-black/10 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md">
+            <div class="min-w-0">
+              <p id="fileName" class="truncate text-[12px] font-medium"></p>
+              <p id="fileMeta" class="mt-0.5 text-[11px] text-neutral-500"></p>
+            </div>
+            <div class="shrink-0 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[10px] font-medium text-neutral-500">変更</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="rounded-[22px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,.02),0_12px_38px_rgba(0,0,0,.04)] sm:p-6">
+        <div class="mb-5">
+          <h2 class="text-[14px] font-semibold tracking-[-0.01em]">出力設定</h2>
+          <p class="mt-1 text-[11px] leading-5 text-neutral-400">縦横比は保持せず、指定した正方形へ直接変形します。</p>
+        </div>
+
+        <div class="space-y-4">
+          <label class="block">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-[12px] font-medium text-neutral-700">1辺の長さ</span>
+              <span class="text-[10px] text-neutral-400">px</span>
+            </div>
+            <div class="relative">
+              <input id="sideInput" type="number" inputmode="numeric" min="1" step="1" value="512" class="field h-11 w-full rounded-xl border border-neutral-200 bg-white px-3.5 pr-12 text-[13px] font-medium tabular-nums transition-[border-color,box-shadow] duration-150">
+              <span class="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-[11px] text-neutral-400">px</span>
+            </div>
+          </label>
+
+          <label class="block">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-[12px] font-medium text-neutral-700">動画ビットレート</span>
+              <span class="text-[10px] text-neutral-400">bps</span>
+            </div>
+            <div class="relative">
+              <input id="videoBitrateInput" type="number" inputmode="numeric" min="1" step="1" value="100000" class="field h-11 w-full rounded-xl border border-neutral-200 bg-white px-3.5 pr-12 text-[13px] font-medium tabular-nums transition-[border-color,box-shadow] duration-150">
+              <span class="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-[11px] text-neutral-400">bps</span>
+            </div>
+          </label>
+
+          <label class="block">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-[12px] font-medium text-neutral-700">音声ビットレート</span>
+              <span class="text-[10px] text-neutral-400">bps</span>
+            </div>
+            <div class="relative">
+              <input id="audioBitrateInput" type="number" inputmode="numeric" min="1" step="1" value="32000" class="field h-11 w-full rounded-xl border border-neutral-200 bg-white px-3.5 pr-12 text-[13px] font-medium tabular-nums transition-[border-color,box-shadow] duration-150">
+              <span class="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-[11px] text-neutral-400">bps</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="my-5 h-px bg-neutral-100"></div>
+
+        <div class="grid grid-cols-2 gap-3 text-[11px]">
+          <div class="rounded-xl bg-neutral-50 px-3 py-2.5">
+            <p class="text-neutral-400">映像</p>
+            <p class="mt-1 font-medium text-neutral-700">H.264 / MP4</p>
+          </div>
+          <div class="rounded-xl bg-neutral-50 px-3 py-2.5">
+            <p class="text-neutral-400">音声</p>
+            <p class="mt-1 font-medium text-neutral-700">AAC</p>
+          </div>
+        </div>
+
+        <div id="progressBlock" class="mt-5 hidden">
+          <div class="mb-2 flex items-center justify-between text-[11px]">
+            <span id="progressLabel" class="font-medium text-neutral-600">変換中</span>
+            <span id="progressText" class="tabular-nums text-neutral-400">0%</span>
+          </div>
+          <div class="h-1.5 overflow-hidden rounded-full bg-neutral-100">
+            <div id="progressFill" class="progress-fill h-full w-full rounded-full bg-neutral-900" style="transform:scaleX(0)"></div>
+          </div>
+        </div>
+
+        <button id="exportButton" type="button" disabled class="pressable mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 text-[13px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-35">
+          <i id="buttonIcon" class="fa-solid fa-download text-[11px]"></i>
+          <span id="buttonLabel">書き出して保存</span>
+        </button>
+
+        <p class="mt-3 text-center text-[10px] leading-4 text-neutral-400">入力値は 1 bps から指定可能。実際の符号化可否は FFmpeg / encoder に依存します。</p>
+
+        <div id="errorBox" class="mt-4 hidden rounded-xl border border-red-200 bg-red-50 p-3">
+          <div class="mb-2 flex items-center gap-2 text-[11px] font-semibold text-red-700">
+            <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
+            FFmpeg error
+          </div>
+          <pre id="errorText" class="error-scroll max-h-36 overflow-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-700"></pre>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
+
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const emptyState = document.getElementById('emptyState');
+    const preview = document.getElementById('preview');
+    const filePill = document.getElementById('filePill');
+    const fileName = document.getElementById('fileName');
+    const fileMeta = document.getElementById('fileMeta');
+    const sideInput = document.getElementById('sideInput');
+    const videoBitrateInput = document.getElementById('videoBitrateInput');
+    const audioBitrateInput = document.getElementById('audioBitrateInput');
+    const exportButton = document.getElementById('exportButton');
+    const buttonLabel = document.getElementById('buttonLabel');
+    const buttonIcon = document.getElementById('buttonIcon');
+    const progressBlock = document.getElementById('progressBlock');
+    const progressLabel = document.getElementById('progressLabel');
+    const progressText = document.getElementById('progressText');
+    const progressFill = document.getElementById('progressFill');
+    const errorBox = document.getElementById('errorBox');
+    const errorText = document.getElementById('errorText');
+    const engineBadge = document.getElementById('engineBadge');
+
+    let sourceFile = null;
+    let previewUrl = null;
+    let outputUrl = null;
+    let durationSeconds = 0;
+    let engine = null;
+    let engineLoadPromise = null;
+    let lastLogs = [];
+
+    function ffmpegWorkerMain() {
+      let ffmpeg = null;
+
+      function reply(id, type, data, transfer) {
+        self.postMessage({ id, type, data }, transfer || []);
+      }
+
+      self.onmessage = async (event) => {
+        const { id, type, data } = event.data;
+        try {
+          if (type === 'LOAD') {
+            importScripts(data.coreURL);
+            if (typeof self.createFFmpegCore !== 'function') {
+              throw new Error('createFFmpegCore was not created by ffmpeg-core.js');
+            }
+            const locator = btoa(JSON.stringify({ wasmURL: data.wasmURL, workerURL: '' }));
+            ffmpeg = await self.createFFmpegCore({ mainScriptUrlOrBlob: data.coreURL + '#' + locator });
+            if (typeof ffmpeg.setLogger === 'function') {
+              ffmpeg.setLogger((payload) => self.postMessage({ id: 0, type: 'LOG', data: payload }));
+            }
+            if (typeof ffmpeg.setProgress === 'function') {
+              ffmpeg.setProgress((payload) => self.postMessage({ id: 0, type: 'PROGRESS', data: payload }));
+            }
+            reply(id, type, true);
+            return;
+          }
+
+          if (!ffmpeg) throw new Error('FFmpeg is not loaded');
+
+          if (type === 'WRITE_FILE') {
+            ffmpeg.FS.writeFile(data.path, data.bytes);
+            reply(id, type, true);
+            return;
+          }
+
+          if (type === 'EXEC') {
+            if (typeof ffmpeg.setTimeout === 'function') ffmpeg.setTimeout(-1);
+            ffmpeg.exec(...data.args);
+            const code = ffmpeg.ret;
+            if (typeof ffmpeg.reset === 'function') ffmpeg.reset();
+            reply(id, type, code);
+            return;
+          }
+
+          if (type === 'READ_FILE') {
+            const bytes = ffmpeg.FS.readFile(data.path);
+            reply(id, type, bytes, [bytes.buffer]);
+            return;
+          }
+
+          if (type === 'DELETE_FILE') {
+            try { ffmpeg.FS.unlink(data.path); } catch (_) {}
+            reply(id, type, true);
+            return;
+          }
+
+          throw new Error('Unknown worker message: ' + type);
+        } catch (error) {
+          reply(id, 'ERROR', error instanceof Error ? error.stack || error.message : String(error));
+        }
+      };
+    }
+
+    class FFmpegCoreBridge {
+      constructor() {
+        this.worker = null;
+        this.nextId = 1;
+        this.pending = new Map();
+        this.onLog = null;
+        this.onProgress = null;
+        this.urls = [];
+      }
+
+      async blobUrl(url, mime) {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('FFmpeg core fetch failed: ' + response.status + ' ' + url);
+        const buffer = await response.arrayBuffer();
+        const blobUrl = URL.createObjectURL(new Blob([buffer], { type: mime }));
+        this.urls.push(blobUrl);
+        return blobUrl;
+      }
+
+      createWorker() {
+        const workerSource = '(' + ffmpegWorkerMain.toString() + ')();';
+        const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
+        this.urls.push(workerUrl);
+        this.worker = new Worker(workerUrl);
+        this.worker.onmessage = (event) => {
+          const { id, type, data } = event.data;
+          if (type === 'LOG') {
+            if (this.onLog) this.onLog(data);
+            return;
+          }
+          if (type === 'PROGRESS') {
+            if (this.onProgress) this.onProgress(data);
+            return;
+          }
+          const task = this.pending.get(id);
+          if (!task) return;
+          this.pending.delete(id);
+          if (type === 'ERROR') task.reject(new Error(data));
+          else task.resolve(data);
+        };
+        this.worker.onerror = (event) => {
+          const error = new Error(event.message || 'FFmpeg worker crashed');
+          for (const task of this.pending.values()) task.reject(error);
+          this.pending.clear();
+        };
+      }
+
+      call(type, data, transfer = []) {
+        return new Promise((resolve, reject) => {
+          const id = this.nextId++;
+          this.pending.set(id, { resolve, reject });
+          this.worker.postMessage({ id, type, data }, transfer);
+        });
+      }
+
+      async load() {
+        this.createWorker();
+        const [coreURL, wasmURL] = await Promise.all([
+          this.blobUrl(CORE_BASE + '/ffmpeg-core.js', 'text/javascript'),
+          this.blobUrl(CORE_BASE + '/ffmpeg-core.wasm', 'application/wasm')
+        ]);
+        await this.call('LOAD', { coreURL, wasmURL });
+      }
+
+      async writeFile(path, bytes) {
+        return this.call('WRITE_FILE', { path, bytes }, [bytes.buffer]);
+      }
+
+      async exec(args) {
+        return this.call('EXEC', { args });
+      }
+
+      async readFile(path) {
+        return this.call('READ_FILE', { path });
+      }
+
+      async deleteFile(path) {
+        return this.call('DELETE_FILE', { path });
+      }
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes)) return '—';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let value = bytes;
+      let i = 0;
+      while (value >= 1000 && i < units.length - 1) {
+        value /= 1000;
+        i++;
+      }
+      return (i === 0 ? value.toFixed(0) : value.toFixed(value >= 10 ? 1 : 2)) + ' ' + units[i];
+    }
+
+    function formatDuration(seconds) {
+      if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+      const total = Math.round(seconds);
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+    }
+
+    function showError(message) {
+      errorText.textContent = message;
+      errorBox.classList.remove('hidden');
+    }
+
+    function clearError() {
+      errorBox.classList.add('hidden');
+      errorText.textContent = '';
+    }
+
+    function setProgress(value, label = '変換中') {
+      const normalized = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+      progressBlock.classList.remove('hidden');
+      progressLabel.textContent = label;
+      progressText.textContent = Math.round(normalized * 100) + '%';
+      progressFill.style.transform = `scaleX(${normalized})`;
+    }
+
+    function setBusy(busy) {
+      exportButton.disabled = busy || !sourceFile;
+      sideInput.disabled = busy;
+      videoBitrateInput.disabled = busy;
+      audioBitrateInput.disabled = busy;
+      dropZone.disabled = busy;
+      if (busy) {
+        buttonIcon.className = 'fa-solid fa-circle-notch fa-spin text-[11px]';
+        buttonLabel.textContent = '変換中';
+      } else {
+        buttonIcon.className = 'fa-solid fa-download text-[11px]';
+        buttonLabel.textContent = '書き出して保存';
+      }
+    }
+
+    function chooseFile(file) {
+      if (!file || !file.type.startsWith('video/')) {
+        showError('動画ファイルを選択してください。');
+        return;
+      }
+      clearError();
+      sourceFile = file;
+      exportButton.disabled = false;
+      durationSeconds = 0;
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(file);
+      preview.src = previewUrl;
+      preview.classList.remove('hidden');
+      emptyState.classList.add('hidden');
+      filePill.classList.remove('hidden');
+      filePill.classList.add('flex');
+      fileName.textContent = file.name;
+      fileMeta.textContent = formatBytes(file.size);
+
+      preview.onloadedmetadata = () => {
+        durationSeconds = preview.duration || 0;
+        fileMeta.textContent = `${formatBytes(file.size)} · ${preview.videoWidth}×${preview.videoHeight} · ${formatDuration(durationSeconds)}`;
+      };
+    }
+
+    async function ensureEngine() {
+      if (engine) return engine;
+      if (engineLoadPromise) return engineLoadPromise;
+
+      engineLoadPromise = (async () => {
+        engineBadge.textContent = 'FFmpeg 読込中';
+        const bridge = new FFmpegCoreBridge();
+        bridge.onLog = ({ message }) => {
+          if (!message) return;
+          lastLogs.push(message);
+          if (lastLogs.length > 80) lastLogs.shift();
+        };
+        bridge.onProgress = ({ progress }) => {
+          if (Number.isFinite(progress) && progress >= 0 && progress <= 1) setProgress(progress);
+        };
+        await bridge.load();
+        engine = bridge;
+        engineBadge.textContent = 'FFmpeg ready';
+        engineBadge.className = 'rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-medium text-emerald-700';
+        return bridge;
+      })().catch((error) => {
+        engineLoadPromise = null;
+        engineBadge.textContent = 'FFmpeg load error';
+        engineBadge.className = 'rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-medium text-red-700';
+        throw error;
+      });
+
+      return engineLoadPromise;
+    }
+
+    function validatedInteger(input, label) {
+      const value = Number(input.value);
+      if (!Number.isInteger(value) || value < 1) throw new Error(label + ' は 1 以上の整数で指定してください。');
+      return value;
+    }
+
+    async function exportVideo() {
+      if (!sourceFile) return;
+      clearError();
+      lastLogs = [];
+
+      let side, videoBps, audioBps;
+      try {
+        side = validatedInteger(sideInput, '1辺の長さ');
+        videoBps = validatedInteger(videoBitrateInput, '動画ビットレート');
+        audioBps = validatedInteger(audioBitrateInput, '音声ビットレート');
+      } catch (error) {
+        showError(error.message);
+        return;
+      }
+
+      setBusy(true);
+      setProgress(0, 'FFmpeg 読込中');
+
+      const extMatch = sourceFile.name.match(/\.([a-zA-Z0-9]{1,8})$/);
+      const ext = extMatch ? extMatch[1].toLowerCase() : 'bin';
+      const inputPath = 'input.' + ext;
+      const outputPath = 'output.mp4';
+
+      try {
+        const ff = await ensureEngine();
+        setProgress(0, '入力準備中');
+
+        const bytes = new Uint8Array(await sourceFile.arrayBuffer());
+        await ff.writeFile(inputPath, bytes);
+
+        const pixFmt = side % 2 === 0 ? 'yuv420p' : 'yuv444p';
+        const args = [
+          '-hide_banner',
+          '-i', inputPath,
+          '-map', '0:v:0',
+          '-map', '0:a?',
+          '-vf', `scale=${side}:${side}:flags=lanczos,setsar=1`,
+          '-c:v', 'libx264',
+          '-preset', 'veryfast',
+          '-b:v', String(videoBps),
+          '-pix_fmt', pixFmt,
+          '-c:a', 'aac',
+          '-b:a', String(audioBps),
+          '-movflags', '+faststart',
+          '-y', outputPath
+        ];
+
+        setProgress(0.01, '変換中');
+        const code = await ff.exec(args);
+        if (code !== 0) {
+          throw new Error('FFmpeg exited with code ' + code + '\n\n' + lastLogs.slice(-24).join('\n'));
+        }
+
+        setProgress(0.98, '出力準備中');
+        const out = await ff.readFile(outputPath);
+        const blob = new Blob([out.buffer], { type: 'video/mp4' });
+        if (outputUrl) URL.revokeObjectURL(outputUrl);
+        outputUrl = URL.createObjectURL(blob);
+
+        const base = sourceFile.name.replace(/\.[^.]+$/, '') || 'video';
+        const a = document.createElement('a');
+        a.href = outputUrl;
+        a.download = `${base}_${side}x${side}_${videoBps}bps.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        setProgress(1, '完了');
+        progressText.textContent = formatBytes(blob.size);
+      } catch (error) {
+        const details = error instanceof Error ? (error.stack || error.message) : String(error);
+        const logs = lastLogs.length ? '\n\n--- FFmpeg log ---\n' + lastLogs.slice(-30).join('\n') : '';
+        showError(details + logs);
+        progressLabel.textContent = '失敗';
+      } finally {
+        if (engine) {
+          try { await engine.deleteFile(inputPath); } catch (_) {}
+          try { await engine.deleteFile(outputPath); } catch (_) {}
+        }
+        setBusy(false);
+      }
+    }
+
+    dropZone.addEventListener('click', (event) => {
+      if (event.target.closest('video') && sourceFile) return;
+      fileInput.click();
+    });
+
+    dropZone.addEventListener('keydown', (event) => {
+      if (dropZone.disabled) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        fileInput.click();
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      chooseFile(fileInput.files && fileInput.files[0]);
+      fileInput.value = '';
+    });
+
+    for (const type of ['dragenter', 'dragover']) {
+      dropZone.addEventListener(type, (event) => {
+        event.preventDefault();
+        if (!dropZone.disabled) dropZone.classList.add('drop-active');
+      });
+    }
+
+    for (const type of ['dragleave', 'drop']) {
+      dropZone.addEventListener(type, (event) => {
+        event.preventDefault();
+        dropZone.classList.remove('drop-active');
+      });
+    }
+
+    dropZone.addEventListener('drop', (event) => {
+      if (dropZone.disabled) return;
+      chooseFile(event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]);
+    });
+
+    exportButton.addEventListener('click', exportVideo);
+  </script>
+</body>
+</html>
