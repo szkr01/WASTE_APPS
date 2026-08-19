@@ -3,245 +3,402 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Gallery</title>
-
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
-
+    <meta name="color-scheme" content="dark">
+    <title>WASTE APPS</title>
     <style>
+        :root {
+            color-scheme: dark;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #080808;
+            color: #f5f5f5;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { background: #080808; }
+
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F8FAFC; /* slate-50 */
-            background-image:
-                radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0);
-            background-size: 2rem 2rem;
-            color: #334155; /* slate-700 */
+            margin: 0;
+            min-width: 320px;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at 50% -10%, rgba(255,255,255,.065), transparent 34rem),
+                #080808;
+            color: #f5f5f5;
         }
-        .card {
-            background-color: rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px); /* Safari support */
-            border: 1px solid rgba(0, 0, 0, 0.05);
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8) inset, 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            transform: perspective(1000px);
+
+        button,
+        input { font: inherit; }
+
+        a { color: inherit; }
+
+        .shell {
+            width: min(100% - 32px, 920px);
+            margin: 0 auto;
+            padding: 64px 0 40px;
         }
-        .card:hover {
-            border-color: var(--card-color, rgba(0, 0, 0, 0.1));
-            transform: translateY(-10px) rotateX(5deg) scale(1.03);
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8) inset, 0 25px 50px -12px rgba(0,0,0,0.1), 0 0 25px var(--card-glow-color, rgba(0,0,0,0.05));
+
+        .header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 24px;
+            margin-bottom: 30px;
         }
-        .card-icon-wrapper {
-            background: radial-gradient(circle, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0) 70%);
+
+        .eyebrow {
+            margin: 0 0 8px;
+            color: #737373;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: .14em;
+            text-transform: uppercase;
         }
-        .card-icon {
-            color: var(--card-color, #475569); /* slate-600 */
-            text-shadow: 0 0 20px var(--card-glow-color, rgba(0, 0, 0, 0.2));
-            transition: color 0.3s ease;
+
+        h1 {
+            margin: 0;
+            font-size: clamp(34px, 7vw, 58px);
+            line-height: .95;
+            letter-spacing: -.055em;
+            font-weight: 780;
         }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+
+        .repo-link {
+            flex: none;
+            color: #8a8a8a;
+            font-size: 13px;
+            text-decoration: none;
+            transition: color 120ms ease;
         }
-        .card-container > a {
-            opacity: 0;
-            animation: fadeIn 0.5s ease-out forwards;
+
+        .repo-link:hover { color: #fff; }
+
+        .search-wrap {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            padding: 12px 0 14px;
+            background: linear-gradient(#080808 72%, rgba(8,8,8,0));
         }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+
+        .search {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 12px;
+            height: 52px;
+            padding: 0 14px;
+            border: 1px solid #272727;
+            border-radius: 14px;
+            background: rgba(18,18,18,.96);
+            box-shadow: 0 10px 30px rgba(0,0,0,.22);
+            transition: border-color 120ms ease, background 120ms ease;
         }
-        .loader {
-            border-width: 4px;
-            border-style: solid;
-            border-color: #E2E8F0; /* slate-200 */
-            border-top-color: #475569; /* slate-600 */
-            animation: spin 1s linear infinite;
+
+        .search:focus-within {
+            border-color: #505050;
+            background: #151515;
+        }
+
+        .search-icon {
+            width: 18px;
+            height: 18px;
+            color: #737373;
+        }
+
+        #search-input {
+            width: 100%;
+            min-width: 0;
+            border: 0;
+            outline: 0;
+            background: transparent;
+            color: #f5f5f5;
+            font-size: 16px;
+        }
+
+        #search-input::placeholder { color: #666; }
+
+        kbd {
+            padding: 3px 7px;
+            border: 1px solid #303030;
+            border-bottom-color: #3b3b3b;
+            border-radius: 6px;
+            background: #1b1b1b;
+            color: #777;
+            font-family: inherit;
+            font-size: 11px;
+            line-height: 1;
+        }
+
+        .meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            min-height: 44px;
+            padding: 0 4px;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .list {
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            border: 1px solid #202020;
+            border-radius: 16px;
+            background: #0d0d0d;
+            list-style: none;
+        }
+
+        .app-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 18px;
+            min-height: 68px;
+            padding: 12px 18px;
+            border-bottom: 1px solid #1c1c1c;
+            text-decoration: none;
+            transition: background 100ms ease;
+        }
+
+        .app-row:last-child { border-bottom: 0; }
+
+        .app-row:hover,
+        .app-row:focus-visible {
+            outline: 0;
+            background: #151515;
+        }
+
+        .app-main {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .index {
+            width: 30px;
+            flex: none;
+            color: #4e4e4e;
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .app-text { min-width: 0; }
+
+        .app-title {
+            overflow: hidden;
+            margin: 0;
+            color: #eaeaea;
+            font-size: 15px;
+            font-weight: 620;
+            line-height: 1.35;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .app-file {
+            overflow: hidden;
+            margin: 4px 0 0;
+            color: #626262;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            font-size: 11px;
+            line-height: 1.3;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .arrow {
+            color: #454545;
+            font-size: 20px;
+            line-height: 1;
+            transition: color 100ms ease, transform 100ms ease;
+        }
+
+        .app-row:hover .arrow,
+        .app-row:focus-visible .arrow {
+            color: #bcbcbc;
+            transform: translateX(2px);
+        }
+
+        .state {
+            padding: 42px 20px;
+            border: 1px dashed #262626;
+            border-radius: 16px;
+            color: #666;
+            text-align: center;
+        }
+
+        .error {
+            border-color: #482222;
+            color: #d48a8a;
+            white-space: pre-wrap;
+        }
+
+        .footer {
+            padding-top: 28px;
+            color: #454545;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        [hidden] { display: none !important; }
+
+        @media (max-width: 620px) {
+            .shell {
+                width: min(100% - 20px, 920px);
+                padding-top: 38px;
+            }
+
+            .header {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 12px;
+                margin-bottom: 18px;
+            }
+
+            .repo-link { display: none; }
+            .app-row { min-height: 64px; padding-inline: 13px; }
+            .index { display: none; }
+            kbd { display: none; }
         }
     </style>
 </head>
-<body class="antialiased min-h-screen">
-
-    <div class="relative isolate min-h-screen flex flex-col">
-        <!-- Background Gradient -->
-        <div class="absolute inset-x-0 -top-40 -z-10 transform-gpu overflow-hidden blur-3xl sm:-top-80" aria-hidden="true">
-            <div class="relative left-[calc(50%-11rem)] aspect-[1155/678] w-[36.125rem] -translate-x-1/2 rotate-[30deg] bg-gradient-to-tr from-[#ff80b5] to-[#9089fc] opacity-30 sm:left-[calc(50%-30rem)] sm:w-[72.1875rem]" style="clip-path: polygon(74.1% 44.1%, 100% 61.6%, 97.5% 26.9%, 85.5% 0.1%, 80.7% 2%, 72.5% 32.5%, 60.2% 62.4%, 52.4% 68.1%, 47.5% 58.3%, 45.2% 34.5%, 27.5% 76.7%, 0.1% 64.9%, 17.9% 100%, 27.6% 76.8%, 76.1% 97.7%, 74.1% 44.1%)"></div>
-        </div>
-
-        <header class="py-12 md:py-20 text-center">
-            <div class="container mx-auto px-6">
-                <h1 class="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 tracking-tighter">
-                    A Waste Collection Gallery
-                </h1>
-                <p class="mt-4 max-w-2xl mx-auto text-lg text-slate-600">
-                </p>
+<body>
+    <main class="shell">
+        <header class="header">
+            <div>
+                <p class="eyebrow">A Waste Collection</p>
+                <h1>WASTE APPS</h1>
             </div>
+            <a class="repo-link" href="https://github.com/szkr01/WASTE_APPS" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
         </header>
 
-        <main class="flex-grow">
-            <div class="container mx-auto px-6">
-                <div id="gallery-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 pb-20 card-container">
-                    <div id="loader-wrapper" class="col-span-full flex flex-col items-center justify-center min-h-[40vh]">
-                        <div class="loader w-12 h-12 rounded-full"></div>
-                        <p class="mt-4 text-slate-500">Fetching projects...</p>
-                    </div>
-                </div>
-            </div>
-        </main>
+        <div class="search-wrap">
+            <label class="search" for="search-input">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"></circle>
+                    <path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                </svg>
+                <input id="search-input" type="search" placeholder="Search apps..." autocomplete="off" spellcheck="false">
+                <kbd>/</kbd>
+            </label>
+        </div>
 
-        <footer class="py-6 text-center">
-            <p id="footer-text" class="text-sm text-slate-500">
-                © 2024. All rights reserved.
-            </p>
-        </footer>
-    </div>
+        <div class="meta">
+            <span id="result-count">Loading…</span>
+            <span>Enter to open first result</span>
+        </div>
+
+        <ul id="app-list" class="list" hidden></ul>
+        <div id="empty-state" class="state" hidden>No matching apps.</div>
+        <div id="error-state" class="state error" hidden></div>
+
+        <footer class="footer">© <span id="year"></span> szkr01</footer>
+    </main>
 
     <script>
+        const OWNER = 'szkr01';
+        const REPO = 'WASTE_APPS';
+        const BRANCH = 'main';
         const PAGES_DIR = 'pages';
-        const LOCAL_PAGES_LIST = [
-            '1_creative_canvas.html',
-            "depth_map.html",
-        ];
+        const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PAGES_DIR}?ref=${BRANCH}`;
+        const elements = {
+            search: document.getElementById('search-input'),
+            list: document.getElementById('app-list'),
+            count: document.getElementById('result-count'),
+            empty: document.getElementById('empty-state'),
+            error: document.getElementById('error-state')
+        };
+        let apps = [];
+        let visibleApps = [];
 
-        function createPageCard(pageData, index) {
-            const card = document.createElement('a');
-            card.href = pageData.url;
-            card.className = 'card block rounded-xl p-6 relative overflow-hidden group';
-            // Set CSS custom properties for dynamic colors
-            card.style.setProperty('--card-color', pageData.color);
-            card.style.setProperty('--card-glow-color', `${pageData.color}30`); // Use a less intense glow for light theme
-            card.style.animationDelay = `${index * 100}ms`;
-
-            card.innerHTML = `
-                <div class="relative z-10">
-                    <div class="card-icon-wrapper w-20 h-20 rounded-full flex items-center justify-center mb-6">
-                        <i class="card-icon ${pageData.icon} text-4xl"></i>
-                    </div>
-                    <h3 class="font-bold text-xl text-slate-800 tracking-tight mb-2">${pageData.title}</h3>
-                    <p class="text-slate-600 text-sm leading-relaxed">${pageData.description}</p>
-                </div>
-            `;
-            return card;
+        function titleFromFilename(filename) {
+            return filename
+                .replace(/\.html$/i, '')
+                .replace(/[_-]+/g, ' ')
+                .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+                .replace(/\s+/g, ' ')
+                .trim();
         }
 
-        function displayError(message) {
-            const container = document.getElementById('gallery-container');
-            container.innerHTML = `
-                <div class="col-span-full flex flex-col items-center justify-center min-h-[40vh] bg-red-50 border border-red-200 rounded-lg p-8 text-center">
-                    <i class="fas fa-exclamation-triangle text-4xl text-red-500"></i>
-                    <h3 class="mt-4 text-xl font-bold text-red-800">Error</h3>
-                    <p class="mt-2 text-red-600">${message}</p>
-                    <p class="mt-4 text-xs text-slate-500">
-                        Please ensure the '${PAGES_DIR}' directory exists and contains valid HTML files with metadata.<br>
-                        If running locally, check if the LOCAL_PAGES_LIST array in the script is correct.
-                    </p>
-                </div>
-            `;
+        function normalize(text) {
+            return text.toLocaleLowerCase().normalize('NFKC');
         }
 
-        async function renderGallery(fileList) {
-            const galleryContainer = document.getElementById('gallery-container');
-            const loader = document.getElementById('loader-wrapper');
+        function createRow(app, index) {
+            const item = document.createElement('li');
+            const link = document.createElement('a');
+            const main = document.createElement('div');
+            const number = document.createElement('span');
+            const text = document.createElement('div');
+            const title = document.createElement('p');
+            const file = document.createElement('p');
+            const arrow = document.createElement('span');
 
-            if (!fileList || fileList.length === 0) {
-                displayError(`No HTML files found to display.`);
-                return;
-            }
+            link.className = 'app-row';
+            link.href = `${PAGES_DIR}/${encodeURIComponent(app.filename)}`;
+            main.className = 'app-main';
+            number.className = 'index';
+            text.className = 'app-text';
+            title.className = 'app-title';
+            file.className = 'app-file';
+            arrow.className = 'arrow';
+            number.textContent = String(index + 1).padStart(2, '0');
+            title.textContent = app.title;
+            file.textContent = app.filename;
+            arrow.textContent = '›';
+            arrow.setAttribute('aria-hidden', 'true');
 
-            try {
-                const pageDataPromises = fileList.map(async (filename) => {
-                    const pageUrl = `${PAGES_DIR}/${filename}`;
-                    const pageResponse = await fetch(pageUrl);
-                    if (!pageResponse.ok) return null;
-
-                    const htmlText = await pageResponse.text();
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(htmlText, 'text/html');
-
-                    return {
-                        url: pageUrl,
-                        title: doc.querySelector('title')?.innerText || filename.replace('.html', ''),
-                        description: doc.querySelector('meta[name="description"]')?.getAttribute('content') || 'No description provided.',
-                        icon: doc.querySelector('meta[name="page:icon"]')?.getAttribute('content') || 'fas fa-file-code',
-                        color: doc.querySelector('meta[name="page:color"]')?.getAttribute('content') || '#475569' // Default color slate-600
-                    };
-                });
-
-                const pagesData = (await Promise.all(pageDataPromises)).filter(p => p !== null).sort((a, b) => a.title.localeCompare(b.title));
-
-                if(loader) loader.remove();
-                
-                if (pagesData.length === 0) {
-                     displayError(`Could not load metadata from any HTML file.`);
-                     return;
-                }
-                
-                pagesData.forEach((data, index) => {
-                    const cardElement = createPageCard(data, index);
-                    galleryContainer.appendChild(cardElement);
-                });
-
-            } catch (error) {
-                console.error('Failed to render gallery:', error);
-                displayError(error.message);
-            }
-        }
-        
-        async function fetchFromGitHub() {
-            let owner, repo;
-            try {
-                owner = window.location.hostname.split('.')[0];
-                const pathParts = window.location.pathname.split('/').filter(p => p);
-                repo = pathParts[0];
-
-                if (!owner || !repo || owner === "github" || owner === "www") {
-                    throw new Error('Could not determine GitHub repository from the URL. Trying local mode.');
-                }
-                
-                document.getElementById('footer-text').innerHTML = `
-                    © ${new Date().getFullYear()} ${owner}. Powered by GitHub Pages. View on <a href="https://github.com/${owner}/${repo}" target="_blank" rel="noopener noreferrer" class="font-medium text-slate-600 hover:text-slate-900 transition-colors">GitHub</a>.
-                `;
-
-                const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${PAGES_DIR}`;
-                const response = await fetch(apiUrl);
-
-                if (!response.ok) {
-                    throw new Error(`GitHub API Error: ${response.status} ${response.statusText}. Trying local mode.`);
-                }
-                const contents = await response.json();
-                if (!Array.isArray(contents)) {
-                    throw new Error(`The '${PAGES_DIR}' directory was not found or is empty in the repository. Trying local mode.`);
-                }
-                
-                const htmlFiles = contents
-                    .filter(file => file.type === 'file' && file.name.endsWith('.html'))
-                    .map(file => file.name);
-                
-                await renderGallery(htmlFiles);
-
-            } catch (error) {
-                console.warn(error.message);
-                console.log("Falling back to local mode.");
-                document.getElementById('footer-text').innerHTML += ' (Local Fallback)';
-                await renderGallery(LOCAL_PAGES_LIST);
-            }
+            text.append(title, file);
+            main.append(number, text);
+            link.append(main, arrow);
+            item.append(link);
+            return item;
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const isLocal = window.location.protocol === 'file:' || 
-                            window.location.hostname === 'localhost' || 
-                            window.location.hostname === '127.0.0.1';
-            
-            if (isLocal) {
-                console.log("Running in local mode.");
-                document.getElementById('footer-text').innerHTML += ' (Local Mode)';
-                renderGallery(LOCAL_PAGES_LIST);
-            } else {
-                console.log("Running in GitHub Pages mode.");
-                fetchFromGitHub();
-            }
+        function render() {
+            const query = normalize(elements.search.value.trim());
+            visibleApps = query ? apps.filter(app => app.searchText.includes(query)) : apps;
+            elements.list.replaceChildren(...visibleApps.map(createRow));
+            elements.list.hidden = visibleApps.length === 0;
+            elements.empty.hidden = visibleApps.length !== 0;
+            elements.count.textContent = query ? `${visibleApps.length} / ${apps.length} apps` : `${apps.length} apps`;
+        }
+
+        async function loadApps() {
+            const response = await fetch(apiUrl, { headers: { Accept: 'application/vnd.github+json' } });
+            if (!response.ok) throw new Error(`GitHub API ${response.status}: ${response.statusText}`);
+            const contents = await response.json();
+            if (!Array.isArray(contents)) throw new Error(`Unexpected GitHub API response for /${PAGES_DIR}.`);
+
+            apps = contents
+                .filter(file => file.type === 'file' && /\.html$/i.test(file.name))
+                .map(file => {
+                    const title = titleFromFilename(file.name);
+                    return { filename: file.name, title, searchText: normalize(`${title} ${file.name}`) };
+                })
+                .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
+
+            render();
+        }
+
+        elements.search.addEventListener('input', render);
+        elements.search.addEventListener('keydown', event => { if (event.key === 'Enter' && visibleApps.length > 0) window.location.href = `${PAGES_DIR}/${encodeURIComponent(visibleApps[0].filename)}`; });
+        document.addEventListener('keydown', event => { if (event.key === '/' && document.activeElement !== elements.search) { event.preventDefault(); elements.search.focus(); } if (event.key === 'Escape' && document.activeElement === elements.search) { elements.search.value = ''; render(); elements.search.blur(); } });
+        document.getElementById('year').textContent = new Date().getFullYear();
+
+        loadApps().catch(error => {
+            console.error(error);
+            elements.list.hidden = true;
+            elements.empty.hidden = true;
+            elements.error.hidden = false;
+            elements.error.textContent = `Failed to load apps.\n${error.message}`;
+            elements.count.textContent = 'Load failed';
         });
     </script>
 </body>
