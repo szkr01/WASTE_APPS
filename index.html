@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
-    <meta name="build:updated" content="2026-08-20T02:29:09+09:00">
+    <meta name="build:updated" content="2026-08-20T02:40:15+09:00">
     <title>WASTE APPS</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
@@ -71,36 +71,15 @@
         .error { border-color: #512626; color: #d98d8d; white-space: pre-wrap; }
         .hint { margin: 10px 3px 0; color: #484848; font-size: 10px; }
         .footer { padding-top: 20px; color: #3e3e3e; font-size: 10px; text-align: center; }
-        @media (max-width: 980px) {
-            .workspace { grid-template-columns: 1fr; }
-            .preview-panel { position: relative; top: 0; height: min(72vh, 720px); min-height: 420px; }
-        }
-        @media (max-width: 620px) {
-            .topbar-inner, .shell { width: min(100% - 18px, 1480px); }
-            .topbar-inner { padding-top: 9px; }
-            .shell { padding-top: 112px; }
-            .repo-link, kbd { display: none; }
-            .controls { grid-template-columns: minmax(0,1fr) 46px; gap: 7px; }
-            .favorite-filter { min-width: 0; width: 46px; padding: 0; justify-content: center; }
-            .favorite-filter span:not(.favorite-count) { display: none; }
-            .favorite-count { display: none; }
-            .app-row { grid-template-columns: 40px minmax(0,1fr) auto; gap: 10px; min-height: 76px; padding: 9px 7px 9px 10px; }
-            .app-icon { width: 40px; height: 40px; border-radius: 9px; }
-            .app-file { display: none; }
-            .app-description { -webkit-line-clamp: 1; }
-            .icon-button { width: 29px; height: 29px; }
-            .preview-panel { height: 70vh; }
-        }
+        @media (max-width: 980px) { .workspace { grid-template-columns: 1fr; } .preview-panel { position: relative; top: 0; height: min(72vh, 720px); min-height: 420px; } }
+        @media (max-width: 620px) { .topbar-inner, .shell { width: min(100% - 18px, 1480px); } .topbar-inner { padding-top: 9px; } .shell { padding-top: 112px; } .repo-link, kbd { display: none; } .controls { grid-template-columns: minmax(0,1fr) 46px; gap: 7px; } .favorite-filter { min-width: 0; width: 46px; padding: 0; justify-content: center; } .favorite-filter span:not(.favorite-count), .favorite-count { display: none; } .app-row { grid-template-columns: 40px minmax(0,1fr) auto; gap: 10px; min-height: 76px; padding: 9px 7px 9px 10px; } .app-icon { width: 40px; height: 40px; border-radius: 9px; } .app-file { display: none; } .app-description { -webkit-line-clamp: 1; } .icon-button { width: 29px; height: 29px; } .preview-panel { height: 70vh; } }
     </style>
 </head>
 <body>
     <header class="topbar">
         <div class="topbar-inner">
             <div class="topline">
-                <div class="brand">
-                    <h1>WASTE APPS</h1>
-                    <span id="result-count" class="count">Loading…</span>
-                </div>
+                <div class="brand"><h1>WASTE APPS</h1><span id="result-count" class="count">Loading…</span></div>
                 <a class="repo-link" href="https://github.com/szkr01/WASTE_APPS" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
             </div>
             <div class="controls">
@@ -109,11 +88,7 @@
                     <input id="search-input" type="search" placeholder="Search title, description, file..." autocomplete="off" spellcheck="false">
                     <kbd>/</kbd>
                 </label>
-                <button id="favorite-filter" class="favorite-filter" type="button" aria-pressed="false">
-                    <i class="fas fa-star" aria-hidden="true"></i>
-                    <span>Favorites</span>
-                    <span id="favorite-count" class="favorite-count">0</span>
-                </button>
+                <button id="favorite-filter" class="favorite-filter" type="button" aria-pressed="false"><i class="fas fa-star" aria-hidden="true"></i><span>Favorites</span><span id="favorite-count" class="favorite-count">0</span></button>
             </div>
         </div>
     </header>
@@ -126,22 +101,18 @@
                 <div id="error-state" class="state error" hidden></div>
                 <div class="hint">Click preview · ★ favorite · ↗ open · / search · Esc clear</div>
             </section>
-
             <aside id="preview-panel" class="preview-panel" aria-label="Preview">
                 <div id="preview-empty" class="preview-empty">Select an app to preview.</div>
                 <div id="preview-shell" class="preview-shell" hidden>
                     <div class="preview-header" id="preview-header">
                         <div class="preview-icon" id="preview-icon"><i class="fas fa-file-code" aria-hidden="true"></i></div>
-                        <div class="preview-meta">
-                            <p id="preview-title" class="preview-title"></p>
-                            <p id="preview-description" class="preview-description"></p>
-                        </div>
+                        <div class="preview-meta"><p id="preview-title" class="preview-title"></p><p id="preview-description" class="preview-description"></p></div>
                         <div class="preview-actions">
                             <button id="preview-favorite" class="icon-button favorite-button" type="button" aria-label="Toggle favorite"><i class="fas fa-star" aria-hidden="true"></i></button>
                             <a id="preview-open" class="icon-button open-button" href="#" target="_blank" rel="noopener noreferrer" aria-label="Open app"><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
                         </div>
                     </div>
-                    <iframe id="preview-frame" title="App preview" sandbox="" referrerpolicy="no-referrer"></iframe>
+                    <iframe id="preview-frame" title="App preview" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
                 </div>
             </aside>
         </div>
@@ -157,25 +128,13 @@
         const META_RANGE = 'bytes=0-16383';
         const CONCURRENCY = 6;
         const FAVORITES_KEY = 'waste-app-favorites:v1';
-        const PREVIEW_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; script-src 'none'; connect-src 'none'; worker-src 'none'; child-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; font-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'";
+        const PREVIEW_NONCE = 'waste-preview';
+        const PREVIEW_CSP = `default-src 'none'; style-src 'unsafe-inline' https:; script-src 'nonce-${PREVIEW_NONCE}' https://cdn.tailwindcss.com 'unsafe-eval'; connect-src 'none'; worker-src 'none'; child-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; font-src https: data:; img-src https: data: blob:; manifest-src 'none'; base-uri 'none'; form-action 'none'`;
+        const HEAVY_RESOURCE_RE = /\.(?:onnx|safetensors|gguf|ggml|bin|pt|pth|ckpt|tflite|wasm|npz|npy|zip|7z|tar|gz|mp4|webm|mov|mkv|wav|flac)(?:[?#]|$)/i;
+        const HEAVY_HOST_RE = /(^|\.)(?:huggingface\.co|hf\.co|hf-mirror\.com|cdn-lfs\.huggingface\.co)$/i;
         const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PAGES_DIR}?ref=${BRANCH}`;
         const elements = {
-            search: document.getElementById('search-input'),
-            list: document.getElementById('app-list'),
-            count: document.getElementById('result-count'),
-            empty: document.getElementById('empty-state'),
-            error: document.getElementById('error-state'),
-            favoriteFilter: document.getElementById('favorite-filter'),
-            favoriteCount: document.getElementById('favorite-count'),
-            previewEmpty: document.getElementById('preview-empty'),
-            previewShell: document.getElementById('preview-shell'),
-            previewHeader: document.getElementById('preview-header'),
-            previewIcon: document.getElementById('preview-icon'),
-            previewTitle: document.getElementById('preview-title'),
-            previewDescription: document.getElementById('preview-description'),
-            previewFavorite: document.getElementById('preview-favorite'),
-            previewOpen: document.getElementById('preview-open'),
-            previewFrame: document.getElementById('preview-frame')
+            search: document.getElementById('search-input'), list: document.getElementById('app-list'), count: document.getElementById('result-count'), empty: document.getElementById('empty-state'), error: document.getElementById('error-state'), favoriteFilter: document.getElementById('favorite-filter'), favoriteCount: document.getElementById('favorite-count'), previewEmpty: document.getElementById('preview-empty'), previewShell: document.getElementById('preview-shell'), previewHeader: document.getElementById('preview-header'), previewIcon: document.getElementById('preview-icon'), previewTitle: document.getElementById('preview-title'), previewDescription: document.getElementById('preview-description'), previewFavorite: document.getElementById('preview-favorite'), previewOpen: document.getElementById('preview-open'), previewFrame: document.getElementById('preview-frame')
         };
         let apps = [];
         let visibleApps = [];
@@ -186,44 +145,14 @@
         let previewLoadedFilename = '';
         let previewRequest = 0;
 
-        function titleFromFilename(filename) {
-            return filename.replace(/\.html$/i, '').replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
-        }
-
-        function normalize(text) {
-            return text.toLocaleLowerCase().normalize('NFKC');
-        }
-
-        function buildSearchText(app) {
-            return normalize(`${app.title} ${app.description} ${app.filename}`);
-        }
-
-        function appUrl(app) {
-            return `${PAGES_DIR}/${encodeURIComponent(app.filename)}`;
-        }
-
-        function readFavorites() {
-            const raw = localStorage.getItem(FAVORITES_KEY);
-            if (!raw) return new Set();
-            const values = JSON.parse(raw);
-            if (!Array.isArray(values)) return new Set();
-            return new Set(values);
-        }
-
-        function writeFavorites() {
-            localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]));
-        }
-
-        function isFavorite(app) {
-            return favorites.has(app.filename);
-        }
-
-        function toggleFavorite(app) {
-            if (isFavorite(app)) favorites.delete(app.filename); else favorites.add(app.filename);
-            writeFavorites();
-            render();
-            updatePreview(app);
-        }
+        function titleFromFilename(filename) { return filename.replace(/\.html$/i, '').replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/\s+/g, ' ').trim(); }
+        function normalize(text) { return text.toLocaleLowerCase().normalize('NFKC'); }
+        function buildSearchText(app) { return normalize(`${app.title} ${app.description} ${app.filename}`); }
+        function appUrl(app) { return `${PAGES_DIR}/${encodeURIComponent(app.filename)}`; }
+        function readFavorites() { const raw = localStorage.getItem(FAVORITES_KEY); if (!raw) return new Set(); const values = JSON.parse(raw); if (!Array.isArray(values)) return new Set(); return new Set(values); }
+        function writeFavorites() { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites])); }
+        function isFavorite(app) { return favorites.has(app.filename); }
+        function toggleFavorite(app) { if (isFavorite(app)) favorites.delete(app.filename); else favorites.add(app.filename); writeFavorites(); render(); updatePreview(app); }
 
         function createRow(app) {
             const item = document.createElement('li');
@@ -238,7 +167,6 @@
             const actions = document.createElement('div');
             const favoriteButton = document.createElement('button');
             const openButton = document.createElement('a');
-
             row.className = `app-row${selectedFilename === app.filename ? ' selected' : ''}`;
             row.tabIndex = 0;
             row.dataset.filename = app.filename;
@@ -292,44 +220,17 @@
             elements.count.textContent = query || favoritesOnly ? `${visibleApps.length} / ${apps.length}` : `${apps.length} apps`;
         }
 
-        function scheduleRenderForSearch() {
-            if (!elements.search.value.trim()) return;
-            clearTimeout(filterTimer);
-            filterTimer = setTimeout(render, 80);
-        }
-
-        function metadataCacheKey(app) {
-            return `waste-app-meta:${META_CACHE_VERSION}:${app.sha}`;
-        }
-
-        function readCachedMetadata(app) {
-            const raw = localStorage.getItem(metadataCacheKey(app));
-            return raw ? JSON.parse(raw) : null;
-        }
-
-        function writeCachedMetadata(app, metadata) {
-            localStorage.setItem(metadataCacheKey(app), JSON.stringify(metadata));
-        }
+        function scheduleRenderForSearch() { if (!elements.search.value.trim()) return; clearTimeout(filterTimer); filterTimer = setTimeout(render, 80); }
+        function metadataCacheKey(app) { return `waste-app-meta:${META_CACHE_VERSION}:${app.sha}`; }
+        function readCachedMetadata(app) { const raw = localStorage.getItem(metadataCacheKey(app)); return raw ? JSON.parse(raw) : null; }
+        function writeCachedMetadata(app, metadata) { localStorage.setItem(metadataCacheKey(app), JSON.stringify(metadata)); }
 
         function parseMetadata(html, app) {
             const doc = new DOMParser().parseFromString(html, 'text/html');
-            return {
-                title: doc.querySelector('title')?.textContent?.trim() || titleFromFilename(app.filename),
-                description: doc.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() || 'No description provided.',
-                icon: doc.querySelector('meta[name="page:icon"]')?.getAttribute('content')?.trim() || 'fas fa-file-code',
-                color: doc.querySelector('meta[name="page:color"]')?.getAttribute('content')?.trim() || '#8b8b8b'
-            };
+            return { title: doc.querySelector('title')?.textContent?.trim() || titleFromFilename(app.filename), description: doc.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() || 'No description provided.', icon: doc.querySelector('meta[name="page:icon"]')?.getAttribute('content')?.trim() || 'fas fa-file-code', color: doc.querySelector('meta[name="page:color"]')?.getAttribute('content')?.trim() || '#8b8b8b' };
         }
 
-        function applyMetadata(app, metadata) {
-            app.title = metadata.title;
-            app.description = metadata.description;
-            app.icon = metadata.icon;
-            app.color = metadata.color;
-            app.searchText = buildSearchText(app);
-            if (selectedFilename === app.filename) updatePreview(app);
-            scheduleRenderForSearch();
-        }
+        function applyMetadata(app, metadata) { app.title = metadata.title; app.description = metadata.description; app.icon = metadata.icon; app.color = metadata.color; app.searchText = buildSearchText(app); if (selectedFilename === app.filename) updatePreview(app); scheduleRenderForSearch(); }
 
         async function hydrateMetadata(app) {
             const cached = readCachedMetadata(app);
@@ -346,14 +247,7 @@
             async function worker() {
                 while (cursor < apps.length) {
                     const app = apps[cursor++];
-                    try {
-                        await hydrateMetadata(app);
-                    } catch (error) {
-                        console.error(`Metadata load failed for ${app.filename}`, error);
-                        app.description = `Metadata load failed: ${error.message}`;
-                        app.searchText = buildSearchText(app);
-                        if (selectedFilename === app.filename) updatePreview(app);
-                    }
+                    try { await hydrateMetadata(app); } catch (error) { console.error(`Metadata load failed for ${app.filename}`, error); app.description = `Metadata load failed: ${error.message}`; app.searchText = buildSearchText(app); if (selectedFilename === app.filename) updatePreview(app); }
                 }
             }
             await Promise.all(Array.from({ length: Math.min(CONCURRENCY, apps.length) }, worker));
@@ -361,15 +255,32 @@
             render();
         }
 
+        function isTailwindScript(script) { const src = script.getAttribute('src')?.trim() || ''; return /^https:\/\/cdn\.tailwindcss\.com(?:\/|$)/i.test(src); }
+        function isTailwindConfig(script) { const text = script.textContent?.trim() || ''; return /^tailwind\.config\s*=/.test(text) && !/(?:fetch\s*\(|XMLHttpRequest|WebSocket|Worker\s*\(|EventSource|sendBeacon|import\s*\()/i.test(text); }
+        function isHeavyResourceUrl(value) {
+            if (!value) return false;
+            if (HEAVY_RESOURCE_RE.test(value)) return true;
+            try { const url = new URL(value, location.href); return HEAVY_HOST_RE.test(url.hostname); } catch (error) { console.error('Preview URL parse failed', value, error); return true; }
+        }
+
         function sanitizePreviewHtml(html) {
             const doc = new DOMParser().parseFromString(html, 'text/html');
-            doc.querySelectorAll('script, iframe, object, embed, link[rel="preload"], link[rel="modulepreload"], link[rel="stylesheet"], video, audio, source, track').forEach(element => element.remove());
+            doc.querySelectorAll('script').forEach(script => {
+                if (isTailwindScript(script)) return;
+                if (isTailwindConfig(script)) { script.setAttribute('nonce', PREVIEW_NONCE); return; }
+                script.remove();
+            });
+            doc.querySelectorAll('iframe, object, embed, link[rel="preload"], link[rel="modulepreload"], video, audio, source, track').forEach(element => element.remove());
             doc.querySelectorAll('meta[http-equiv]').forEach(element => { if (element.getAttribute('http-equiv')?.toLocaleLowerCase() === 'refresh') element.remove(); });
             doc.querySelectorAll('*').forEach(element => {
                 [...element.attributes].forEach(attribute => { if (attribute.name.toLocaleLowerCase().startsWith('on')) element.removeAttribute(attribute.name); });
-                if (element.hasAttribute('href') && /^\s*javascript:/i.test(element.getAttribute('href'))) element.removeAttribute('href');
-                if (element.hasAttribute('src') && !/^\s*(data:|blob:)/i.test(element.getAttribute('src'))) element.removeAttribute('src');
+                const href = element.getAttribute('href');
+                const src = element.getAttribute('src');
+                if (href && /^\s*javascript:/i.test(href)) element.removeAttribute('href');
+                if (href && isHeavyResourceUrl(href)) element.removeAttribute('href');
+                if (src && isHeavyResourceUrl(src)) element.removeAttribute('src');
                 if (element.hasAttribute('srcset')) element.removeAttribute('srcset');
+                if (element.tagName === 'IMG') { element.setAttribute('loading', 'lazy'); element.setAttribute('decoding', 'async'); }
             });
             const csp = doc.createElement('meta');
             csp.httpEquiv = 'Content-Security-Policy';
@@ -399,12 +310,7 @@
             previewLoadedFilename = '';
         }
 
-        function selectPreview(app) {
-            selectedFilename = app.filename;
-            updatePreview(app, true);
-            render();
-            if (window.innerWidth <= 980) document.getElementById('preview-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        function selectPreview(app) { selectedFilename = app.filename; updatePreview(app, true); render(); if (window.innerWidth <= 980) document.getElementById('preview-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
         function updatePreview(app, loadFrame = false) {
             if (!app || selectedFilename !== app.filename) return;
@@ -426,26 +332,15 @@
             if (!response.ok) throw new Error(`GitHub API ${response.status}: ${response.statusText}`);
             const contents = await response.json();
             if (!Array.isArray(contents)) throw new Error(`Unexpected GitHub API response for /${PAGES_DIR}.`);
-            apps = contents.filter(file => file.type === 'file' && /\.html$/i.test(file.name)).map(file => {
-                const title = titleFromFilename(file.name);
-                const app = { filename: file.name, sha: file.sha, title, description: 'Loading metadata…', icon: 'fas fa-file-code', color: '#777777', searchText: '' };
-                app.searchText = buildSearchText(app);
-                return app;
-            }).sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
+            apps = contents.filter(file => file.type === 'file' && /\.html$/i.test(file.name)).map(file => { const title = titleFromFilename(file.name); const app = { filename: file.name, sha: file.sha, title, description: 'Loading metadata…', icon: 'fas fa-file-code', color: '#777777', searchText: '' }; app.searchText = buildSearchText(app); return app; }).sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
             render();
             hydrateAllMetadata();
         }
 
         elements.search.addEventListener('input', render);
         elements.favoriteFilter.addEventListener('click', () => { favoritesOnly = !favoritesOnly; render(); });
-        elements.previewFavorite.addEventListener('click', () => {
-            const app = apps.find(candidate => candidate.filename === selectedFilename);
-            if (app) toggleFavorite(app);
-        });
-        document.addEventListener('keydown', event => {
-            if (event.key === '/' && document.activeElement !== elements.search) { event.preventDefault(); elements.search.focus(); }
-            if (event.key === 'Escape' && document.activeElement === elements.search) { elements.search.value = ''; render(); elements.search.blur(); }
-        });
+        elements.previewFavorite.addEventListener('click', () => { const app = apps.find(candidate => candidate.filename === selectedFilename); if (app) toggleFavorite(app); });
+        document.addEventListener('keydown', event => { if (event.key === '/' && document.activeElement !== elements.search) { event.preventDefault(); elements.search.focus(); } if (event.key === 'Escape' && document.activeElement === elements.search) { elements.search.value = ''; render(); elements.search.blur(); } });
         document.getElementById('year').textContent = new Date().getFullYear();
 
         loadApps().catch(error => {
