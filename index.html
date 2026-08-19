@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
-    <meta name="build:updated" content="2026-08-20T02:24:00+09:00">
+    <meta name="build:updated" content="2026-08-20T02:29:09+09:00">
     <title>WASTE APPS</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
@@ -141,7 +141,7 @@
                             <a id="preview-open" class="icon-button open-button" href="#" target="_blank" rel="noopener noreferrer" aria-label="Open app"><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
                         </div>
                     </div>
-                    <iframe id="preview-frame" title="App preview"></iframe>
+                    <iframe id="preview-frame" title="App preview" sandbox="" referrerpolicy="no-referrer"></iframe>
                 </div>
             </aside>
         </div>
@@ -157,6 +157,7 @@
         const META_RANGE = 'bytes=0-16383';
         const CONCURRENCY = 6;
         const FAVORITES_KEY = 'waste-app-favorites:v1';
+        const PREVIEW_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; script-src 'none'; connect-src 'none'; worker-src 'none'; child-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; font-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'";
         const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PAGES_DIR}?ref=${BRANCH}`;
         const elements = {
             search: document.getElementById('search-input'),
@@ -182,6 +183,8 @@
         let favorites = readFavorites();
         let favoritesOnly = false;
         let selectedFilename = '';
+        let previewLoadedFilename = '';
+        let previewRequest = 0;
 
         function titleFromFilename(filename) {
             return filename.replace(/\.html$/i, '').replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
@@ -358,6 +361,44 @@
             render();
         }
 
+        function sanitizePreviewHtml(html) {
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            doc.querySelectorAll('script, iframe, object, embed, link[rel="preload"], link[rel="modulepreload"], link[rel="stylesheet"], video, audio, source, track').forEach(element => element.remove());
+            doc.querySelectorAll('meta[http-equiv]').forEach(element => { if (element.getAttribute('http-equiv')?.toLocaleLowerCase() === 'refresh') element.remove(); });
+            doc.querySelectorAll('*').forEach(element => {
+                [...element.attributes].forEach(attribute => { if (attribute.name.toLocaleLowerCase().startsWith('on')) element.removeAttribute(attribute.name); });
+                if (element.hasAttribute('href') && /^\s*javascript:/i.test(element.getAttribute('href'))) element.removeAttribute('href');
+                if (element.hasAttribute('src') && !/^\s*(data:|blob:)/i.test(element.getAttribute('src'))) element.removeAttribute('src');
+                if (element.hasAttribute('srcset')) element.removeAttribute('srcset');
+            });
+            const csp = doc.createElement('meta');
+            csp.httpEquiv = 'Content-Security-Policy';
+            csp.content = PREVIEW_CSP;
+            doc.head.prepend(csp);
+            return `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
+        }
+
+        async function loadSafePreview(app) {
+            if (previewLoadedFilename === app.filename) return;
+            const requestId = ++previewRequest;
+            const response = await fetch(appUrl(app), { headers: { Accept: 'text/html' } });
+            if (!response.ok) throw new Error(`Preview load failed: ${response.status} ${response.statusText}`);
+            const html = await response.text();
+            if (requestId !== previewRequest || selectedFilename !== app.filename) return;
+            elements.previewFrame.removeAttribute('src');
+            elements.previewFrame.srcdoc = sanitizePreviewHtml(html);
+            previewLoadedFilename = app.filename;
+        }
+
+        function showPreviewError(error) {
+            console.error(error);
+            const message = document.createElement('span');
+            message.textContent = error.message;
+            elements.previewFrame.removeAttribute('src');
+            elements.previewFrame.srcdoc = `<!DOCTYPE html><html><body style="margin:0;background:#111;color:#d98d8d;font:14px system-ui;padding:24px;white-space:pre-wrap">${message.innerHTML}</body></html>`;
+            previewLoadedFilename = '';
+        }
+
         function selectPreview(app) {
             selectedFilename = app.filename;
             updatePreview(app, true);
@@ -377,7 +418,7 @@
             elements.previewFavorite.classList.toggle('active', isFavorite(app));
             elements.previewFavorite.setAttribute('aria-label', isFavorite(app) ? 'Remove from favorites' : 'Add to favorites');
             elements.previewOpen.href = appUrl(app);
-            if (loadFrame && elements.previewFrame.getAttribute('src') !== appUrl(app)) elements.previewFrame.src = appUrl(app);
+            if (loadFrame) loadSafePreview(app).catch(showPreviewError);
         }
 
         async function loadApps() {
