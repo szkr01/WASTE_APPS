@@ -4,299 +4,89 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
+    <meta name="build:updated" content="2026-08-20T02:17:53+09:00">
     <title>WASTE APPS</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         :root {
             color-scheme: dark;
             font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #080808;
+            background: #070707;
             color: #f5f5f5;
         }
-
         * { box-sizing: border-box; }
-
-        html { background: #080808; }
-
-        body {
-            margin: 0;
-            min-width: 320px;
-            min-height: 100vh;
-            background:
-                radial-gradient(circle at 50% -10%, rgba(255,255,255,.065), transparent 34rem),
-                #080808;
-            color: #f5f5f5;
-        }
-
-        button,
-        input { font: inherit; }
-
+        html { background: #070707; }
+        body { margin: 0; min-width: 320px; min-height: 100vh; background: #070707; color: #f5f5f5; }
+        button, input { font: inherit; }
         a { color: inherit; }
-
-        .shell {
-            width: min(100% - 32px, 920px);
-            margin: 0 auto;
-            padding: 64px 0 40px;
-        }
-
-        .header {
-            display: flex;
-            align-items: flex-end;
-            justify-content: space-between;
-            gap: 24px;
-            margin-bottom: 30px;
-        }
-
-        .eyebrow {
-            margin: 0 0 8px;
-            color: #737373;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: .14em;
-            text-transform: uppercase;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: clamp(34px, 7vw, 58px);
-            line-height: .95;
-            letter-spacing: -.055em;
-            font-weight: 780;
-        }
-
-        .repo-link {
-            flex: none;
-            color: #8a8a8a;
-            font-size: 13px;
-            text-decoration: none;
-            transition: color 120ms ease;
-        }
-
-        .repo-link:hover { color: #fff; }
-
-        .search-wrap {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            padding: 12px 0 14px;
-            background: linear-gradient(#080808 72%, rgba(8,8,8,0));
-        }
-
-        .search {
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            align-items: center;
-            gap: 12px;
-            height: 52px;
-            padding: 0 14px;
-            border: 1px solid #272727;
-            border-radius: 14px;
-            background: rgba(18,18,18,.96);
-            box-shadow: 0 10px 30px rgba(0,0,0,.22);
-            transition: border-color 120ms ease, background 120ms ease;
-        }
-
-        .search:focus-within {
-            border-color: #505050;
-            background: #151515;
-        }
-
-        .search-icon {
-            width: 18px;
-            height: 18px;
-            color: #737373;
-        }
-
-        #search-input {
-            width: 100%;
-            min-width: 0;
-            border: 0;
-            outline: 0;
-            background: transparent;
-            color: #f5f5f5;
-            font-size: 16px;
-        }
-
-        #search-input::placeholder { color: #666; }
-
-        kbd {
-            padding: 3px 7px;
-            border: 1px solid #303030;
-            border-bottom-color: #3b3b3b;
-            border-radius: 6px;
-            background: #1b1b1b;
-            color: #777;
-            font-family: inherit;
-            font-size: 11px;
-            line-height: 1;
-        }
-
-        .meta {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-            min-height: 44px;
-            padding: 0 4px;
-            color: #666;
-            font-size: 12px;
-        }
-
-        .list {
-            overflow: hidden;
-            margin: 0;
-            padding: 0;
-            border: 1px solid #202020;
-            border-radius: 16px;
-            background: #0d0d0d;
-            list-style: none;
-        }
-
-        .app-row {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            align-items: center;
-            gap: 18px;
-            min-height: 68px;
-            padding: 12px 18px;
-            border-bottom: 1px solid #1c1c1c;
-            text-decoration: none;
-            transition: background 100ms ease;
-        }
-
-        .app-row:last-child { border-bottom: 0; }
-
-        .app-row:hover,
-        .app-row:focus-visible {
-            outline: 0;
-            background: #151515;
-        }
-
-        .app-main {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            min-width: 0;
-        }
-
-        .index {
-            width: 30px;
-            flex: none;
-            color: #4e4e4e;
-            font-size: 11px;
-            font-variant-numeric: tabular-nums;
-            text-align: right;
-        }
-
-        .app-text { min-width: 0; }
-
-        .app-title {
-            overflow: hidden;
-            margin: 0;
-            color: #eaeaea;
-            font-size: 15px;
-            font-weight: 620;
-            line-height: 1.35;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .app-file {
-            overflow: hidden;
-            margin: 4px 0 0;
-            color: #626262;
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-            font-size: 11px;
-            line-height: 1.3;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .arrow {
-            color: #454545;
-            font-size: 20px;
-            line-height: 1;
-            transition: color 100ms ease, transform 100ms ease;
-        }
-
-        .app-row:hover .arrow,
-        .app-row:focus-visible .arrow {
-            color: #bcbcbc;
-            transform: translateX(2px);
-        }
-
-        .state {
-            padding: 42px 20px;
-            border: 1px dashed #262626;
-            border-radius: 16px;
-            color: #666;
-            text-align: center;
-        }
-
-        .error {
-            border-color: #482222;
-            color: #d48a8a;
-            white-space: pre-wrap;
-        }
-
-        .footer {
-            padding-top: 28px;
-            color: #454545;
-            font-size: 11px;
-            text-align: center;
-        }
-
         [hidden] { display: none !important; }
-
+        .topbar { position: fixed; inset: 0 0 auto; z-index: 100; border-bottom: 1px solid #222; background: rgba(7,7,7,.94); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+        .topbar-inner { width: min(100% - 32px, 980px); margin: 0 auto; padding: 14px 0 12px; }
+        .topline { display: flex; align-items: center; gap: 14px; min-height: 30px; }
+        .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+        .brand h1 { margin: 0; color: #f4f4f4; font-size: 16px; font-weight: 760; letter-spacing: -.025em; }
+        .count { color: #686868; font-size: 12px; white-space: nowrap; }
+        .repo-link { margin-left: auto; color: #727272; font-size: 12px; text-decoration: none; transition: color 100ms ease; }
+        .repo-link:hover { color: #fff; }
+        .search { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 10px; height: 46px; margin-top: 10px; padding: 0 13px; border: 1px solid #2a2a2a; border-radius: 11px; background: #121212; box-shadow: 0 10px 35px rgba(0,0,0,.28); transition: border-color 100ms ease, background 100ms ease; }
+        .search:focus-within { border-color: #555; background: #151515; }
+        .search-icon { width: 17px; height: 17px; color: #707070; }
+        #search-input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #f5f5f5; font-size: 15px; }
+        #search-input::placeholder { color: #606060; }
+        kbd { padding: 3px 6px; border: 1px solid #323232; border-radius: 5px; background: #1b1b1b; color: #777; font-family: inherit; font-size: 10px; line-height: 1; }
+        .shell { width: min(100% - 32px, 980px); margin: 0 auto; padding: 124px 0 38px; }
+        .list { overflow: hidden; margin: 14px 0 0; padding: 0; border: 1px solid #202020; border-radius: 13px; background: #0c0c0c; list-style: none; }
+        .app-row { position: relative; display: grid; grid-template-columns: 44px minmax(0,1fr) 22px; align-items: center; gap: 13px; min-height: 82px; padding: 12px 15px; border-bottom: 1px solid #1e1e1e; text-decoration: none; transition: background 90ms ease; }
+        .app-row:last-child { border-bottom: 0; }
+        .app-row:hover, .app-row:focus-visible { outline: 0; background: #141414; }
+        .app-icon { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 32%, #292929); border-radius: 10px; background: color-mix(in srgb, var(--accent) 9%, #101010); color: var(--accent); font-size: 18px; box-shadow: inset 0 1px rgba(255,255,255,.025); }
+        .app-text { min-width: 0; }
+        .title-line { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+        .app-title { overflow: hidden; margin: 0; color: #ededed; font-size: 14px; font-weight: 680; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+        .app-file { overflow: hidden; flex: none; max-width: 34%; color: #4f4f4f; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 10px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+        .app-description { display: -webkit-box; overflow: hidden; margin: 5px 0 0; color: #797979; font-size: 12px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+        .app-row:hover .app-description { color: #8c8c8c; }
+        .arrow { color: #494949; font-size: 19px; line-height: 1; transition: color 90ms ease, transform 90ms ease; }
+        .app-row:hover .arrow, .app-row:focus-visible .arrow { color: #bdbdbd; transform: translateX(2px); }
+        .state { margin-top: 14px; padding: 44px 20px; border: 1px dashed #292929; border-radius: 13px; color: #696969; text-align: center; }
+        .error { border-color: #512626; color: #d98d8d; white-space: pre-wrap; }
+        .hint { margin: 12px 3px 0; color: #484848; font-size: 10px; text-align: right; }
+        .footer { padding-top: 24px; color: #3e3e3e; font-size: 10px; text-align: center; }
         @media (max-width: 620px) {
-            .shell {
-                width: min(100% - 20px, 920px);
-                padding-top: 38px;
-            }
-
-            .header {
-                align-items: flex-start;
-                flex-direction: column;
-                gap: 12px;
-                margin-bottom: 18px;
-            }
-
-            .repo-link { display: none; }
-            .app-row { min-height: 64px; padding-inline: 13px; }
-            .index { display: none; }
-            kbd { display: none; }
+            .topbar-inner, .shell { width: min(100% - 18px, 980px); }
+            .topbar-inner { padding-top: 10px; }
+            .shell { padding-top: 116px; }
+            .repo-link, kbd { display: none; }
+            .app-row { grid-template-columns: 40px minmax(0,1fr) 18px; gap: 11px; min-height: 78px; padding: 10px 11px; }
+            .app-icon { width: 40px; height: 40px; border-radius: 9px; }
+            .app-file { display: none; }
+            .app-description { -webkit-line-clamp: 1; }
         }
     </style>
 </head>
 <body>
-    <main class="shell">
-        <header class="header">
-            <div>
-                <p class="eyebrow">A Waste Collection</p>
-                <h1>WASTE APPS</h1>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <div class="topline">
+                <div class="brand">
+                    <h1>WASTE APPS</h1>
+                    <span id="result-count" class="count">Loading…</span>
+                </div>
+                <a class="repo-link" href="https://github.com/szkr01/WASTE_APPS" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
             </div>
-            <a class="repo-link" href="https://github.com/szkr01/WASTE_APPS" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-        </header>
-
-        <div class="search-wrap">
             <label class="search" for="search-input">
-                <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"></circle>
-                    <path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-                </svg>
-                <input id="search-input" type="search" placeholder="Search apps..." autocomplete="off" spellcheck="false">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"></circle><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>
+                <input id="search-input" type="search" placeholder="Search title, description, file..." autocomplete="off" spellcheck="false">
                 <kbd>/</kbd>
             </label>
         </div>
+    </header>
 
-        <div class="meta">
-            <span id="result-count">Loading…</span>
-            <span>Enter to open first result</span>
-        </div>
-
+    <main class="shell">
         <ul id="app-list" class="list" hidden></ul>
         <div id="empty-state" class="state" hidden>No matching apps.</div>
         <div id="error-state" class="state error" hidden></div>
-
+        <div class="hint">/ search · Enter open first · Esc clear</div>
         <footer class="footer">© <span id="year"></span> szkr01</footer>
     </main>
 
@@ -305,60 +95,75 @@
         const REPO = 'WASTE_APPS';
         const BRANCH = 'main';
         const PAGES_DIR = 'pages';
+        const META_CACHE_VERSION = 'v3';
+        const META_RANGE = 'bytes=0-16383';
+        const CONCURRENCY = 6;
         const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PAGES_DIR}?ref=${BRANCH}`;
-        const elements = {
-            search: document.getElementById('search-input'),
-            list: document.getElementById('app-list'),
-            count: document.getElementById('result-count'),
-            empty: document.getElementById('empty-state'),
-            error: document.getElementById('error-state')
-        };
+        const elements = { search: document.getElementById('search-input'), list: document.getElementById('app-list'), count: document.getElementById('result-count'), empty: document.getElementById('empty-state'), error: document.getElementById('error-state') };
         let apps = [];
         let visibleApps = [];
+        let filterTimer = 0;
 
         function titleFromFilename(filename) {
-            return filename
-                .replace(/\.html$/i, '')
-                .replace(/[_-]+/g, ' ')
-                .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-                .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-                .replace(/\s+/g, ' ')
-                .trim();
+            return filename.replace(/\.html$/i, '').replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
         }
 
         function normalize(text) {
             return text.toLocaleLowerCase().normalize('NFKC');
         }
 
-        function createRow(app, index) {
+        function escapeSelector(value) {
+            return CSS.escape(value);
+        }
+
+        function buildSearchText(app) {
+            return normalize(`${app.title} ${app.description} ${app.filename}`);
+        }
+
+        function createRow(app) {
             const item = document.createElement('li');
             const link = document.createElement('a');
-            const main = document.createElement('div');
-            const number = document.createElement('span');
+            const icon = document.createElement('div');
+            const iconElement = document.createElement('i');
             const text = document.createElement('div');
+            const titleLine = document.createElement('div');
             const title = document.createElement('p');
-            const file = document.createElement('p');
+            const file = document.createElement('span');
+            const description = document.createElement('p');
             const arrow = document.createElement('span');
-
             link.className = 'app-row';
             link.href = `${PAGES_DIR}/${encodeURIComponent(app.filename)}`;
-            main.className = 'app-main';
-            number.className = 'index';
+            link.dataset.filename = app.filename;
+            link.style.setProperty('--accent', app.color);
+            icon.className = 'app-icon';
+            iconElement.className = app.icon;
+            iconElement.setAttribute('aria-hidden', 'true');
             text.className = 'app-text';
+            titleLine.className = 'title-line';
             title.className = 'app-title';
             file.className = 'app-file';
+            description.className = 'app-description';
             arrow.className = 'arrow';
-            number.textContent = String(index + 1).padStart(2, '0');
             title.textContent = app.title;
             file.textContent = app.filename;
+            description.textContent = app.description;
             arrow.textContent = '›';
             arrow.setAttribute('aria-hidden', 'true');
-
-            text.append(title, file);
-            main.append(number, text);
-            link.append(main, arrow);
+            icon.append(iconElement);
+            titleLine.append(title, file);
+            text.append(titleLine, description);
+            link.append(icon, text, arrow);
             item.append(link);
             return item;
+        }
+
+        function updateVisibleRow(app) {
+            const link = elements.list.querySelector(`[data-filename="${escapeSelector(app.filename)}"]`);
+            if (!link) return;
+            link.style.setProperty('--accent', app.color);
+            link.querySelector('.app-icon i').className = app.icon;
+            link.querySelector('.app-title').textContent = app.title;
+            link.querySelector('.app-description').textContent = app.description;
         }
 
         function render() {
@@ -367,7 +172,79 @@
             elements.list.replaceChildren(...visibleApps.map(createRow));
             elements.list.hidden = visibleApps.length === 0;
             elements.empty.hidden = visibleApps.length !== 0;
-            elements.count.textContent = query ? `${visibleApps.length} / ${apps.length} apps` : `${apps.length} apps`;
+            elements.count.textContent = query ? `${visibleApps.length} / ${apps.length}` : `${apps.length} apps`;
+        }
+
+        function scheduleRenderForSearch() {
+            if (!elements.search.value.trim()) return;
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(render, 80);
+        }
+
+        function metadataCacheKey(app) {
+            return `waste-app-meta:${META_CACHE_VERSION}:${app.sha}`;
+        }
+
+        function readCachedMetadata(app) {
+            const raw = localStorage.getItem(metadataCacheKey(app));
+            return raw ? JSON.parse(raw) : null;
+        }
+
+        function writeCachedMetadata(app, metadata) {
+            localStorage.setItem(metadataCacheKey(app), JSON.stringify(metadata));
+        }
+
+        function parseMetadata(html, app) {
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            return {
+                title: doc.querySelector('title')?.textContent?.trim() || titleFromFilename(app.filename),
+                description: doc.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() || 'No description provided.',
+                icon: doc.querySelector('meta[name="page:icon"]')?.getAttribute('content')?.trim() || 'fas fa-file-code',
+                color: doc.querySelector('meta[name="page:color"]')?.getAttribute('content')?.trim() || '#8b8b8b'
+            };
+        }
+
+        function applyMetadata(app, metadata) {
+            app.title = metadata.title;
+            app.description = metadata.description;
+            app.icon = metadata.icon;
+            app.color = metadata.color;
+            app.searchText = buildSearchText(app);
+            updateVisibleRow(app);
+            scheduleRenderForSearch();
+        }
+
+        async function hydrateMetadata(app) {
+            const cached = readCachedMetadata(app);
+            if (cached) {
+                applyMetadata(app, cached);
+                return;
+            }
+            const response = await fetch(`${PAGES_DIR}/${encodeURIComponent(app.filename)}`, { headers: { Range: META_RANGE } });
+            if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+            const metadata = parseMetadata(await response.text(), app);
+            writeCachedMetadata(app, metadata);
+            applyMetadata(app, metadata);
+        }
+
+        async function hydrateAllMetadata() {
+            let cursor = 0;
+            async function worker() {
+                while (cursor < apps.length) {
+                    const app = apps[cursor++];
+                    try {
+                        await hydrateMetadata(app);
+                    } catch (error) {
+                        console.error(`Metadata load failed for ${app.filename}`, error);
+                        app.description = `Metadata load failed: ${error.message}`;
+                        app.searchText = buildSearchText(app);
+                        updateVisibleRow(app);
+                    }
+                }
+            }
+            await Promise.all(Array.from({ length: Math.min(CONCURRENCY, apps.length) }, worker));
+            apps.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
+            render();
         }
 
         async function loadApps() {
@@ -375,16 +252,14 @@
             if (!response.ok) throw new Error(`GitHub API ${response.status}: ${response.statusText}`);
             const contents = await response.json();
             if (!Array.isArray(contents)) throw new Error(`Unexpected GitHub API response for /${PAGES_DIR}.`);
-
-            apps = contents
-                .filter(file => file.type === 'file' && /\.html$/i.test(file.name))
-                .map(file => {
-                    const title = titleFromFilename(file.name);
-                    return { filename: file.name, title, searchText: normalize(`${title} ${file.name}`) };
-                })
-                .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
-
+            apps = contents.filter(file => file.type === 'file' && /\.html$/i.test(file.name)).map(file => {
+                const title = titleFromFilename(file.name);
+                const app = { filename: file.name, sha: file.sha, title, description: 'Loading metadata…', icon: 'fas fa-file-code', color: '#777777', searchText: '' };
+                app.searchText = buildSearchText(app);
+                return app;
+            }).sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
             render();
+            hydrateAllMetadata();
         }
 
         elements.search.addEventListener('input', render);
