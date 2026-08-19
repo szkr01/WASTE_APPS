@@ -4,63 +4,92 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
-    <meta name="build:updated" content="2026-08-20T02:17:53+09:00">
+    <meta name="build:updated" content="2026-08-20T02:24:00+09:00">
     <title>WASTE APPS</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
-        :root {
-            color-scheme: dark;
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #070707;
-            color: #f5f5f5;
-        }
+        :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #070707; color: #f5f5f5; }
         * { box-sizing: border-box; }
         html { background: #070707; }
         body { margin: 0; min-width: 320px; min-height: 100vh; background: #070707; color: #f5f5f5; }
         button, input { font: inherit; }
+        button { color: inherit; }
         a { color: inherit; }
         [hidden] { display: none !important; }
-        .topbar { position: fixed; inset: 0 0 auto; z-index: 100; border-bottom: 1px solid #222; background: rgba(7,7,7,.94); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-        .topbar-inner { width: min(100% - 32px, 980px); margin: 0 auto; padding: 14px 0 12px; }
-        .topline { display: flex; align-items: center; gap: 14px; min-height: 30px; }
+        .topbar { position: fixed; inset: 0 0 auto; z-index: 100; border-bottom: 1px solid #222; background: rgba(7,7,7,.95); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+        .topbar-inner { width: min(100% - 28px, 1480px); margin: 0 auto; padding: 12px 0; }
+        .topline { display: flex; align-items: center; gap: 14px; min-height: 28px; }
         .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
         .brand h1 { margin: 0; color: #f4f4f4; font-size: 16px; font-weight: 760; letter-spacing: -.025em; }
         .count { color: #686868; font-size: 12px; white-space: nowrap; }
         .repo-link { margin-left: auto; color: #727272; font-size: 12px; text-decoration: none; transition: color 100ms ease; }
         .repo-link:hover { color: #fff; }
-        .search { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 10px; height: 46px; margin-top: 10px; padding: 0 13px; border: 1px solid #2a2a2a; border-radius: 11px; background: #121212; box-shadow: 0 10px 35px rgba(0,0,0,.28); transition: border-color 100ms ease, background 100ms ease; }
+        .controls { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; margin-top: 10px; }
+        .search { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 10px; height: 46px; padding: 0 13px; border: 1px solid #2a2a2a; border-radius: 11px; background: #121212; transition: border-color 100ms ease, background 100ms ease; }
         .search:focus-within { border-color: #555; background: #151515; }
         .search-icon { width: 17px; height: 17px; color: #707070; }
         #search-input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #f5f5f5; font-size: 15px; }
         #search-input::placeholder { color: #606060; }
         kbd { padding: 3px 6px; border: 1px solid #323232; border-radius: 5px; background: #1b1b1b; color: #777; font-family: inherit; font-size: 10px; line-height: 1; }
-        .shell { width: min(100% - 32px, 980px); margin: 0 auto; padding: 124px 0 38px; }
-        .list { overflow: hidden; margin: 14px 0 0; padding: 0; border: 1px solid #202020; border-radius: 13px; background: #0c0c0c; list-style: none; }
-        .app-row { position: relative; display: grid; grid-template-columns: 44px minmax(0,1fr) 22px; align-items: center; gap: 13px; min-height: 82px; padding: 12px 15px; border-bottom: 1px solid #1e1e1e; text-decoration: none; transition: background 90ms ease; }
+        .favorite-filter { display: flex; align-items: center; gap: 8px; min-width: 122px; height: 46px; padding: 0 14px; border: 1px solid #2a2a2a; border-radius: 11px; background: #111; color: #888; cursor: pointer; transition: border-color 100ms ease, background 100ms ease, color 100ms ease; }
+        .favorite-filter:hover { border-color: #404040; color: #d0d0d0; }
+        .favorite-filter.active { border-color: #66551f; background: #18150c; color: #f0c84a; }
+        .favorite-filter .fa-star { font-size: 12px; }
+        .favorite-count { color: #666; font-size: 11px; }
+        .favorite-filter.active .favorite-count { color: #b89c45; }
+        .shell { width: min(100% - 28px, 1480px); margin: 0 auto; padding: 118px 0 32px; }
+        .workspace { display: grid; grid-template-columns: minmax(360px, 560px) minmax(0,1fr); gap: 14px; align-items: start; }
+        .list-pane { min-width: 0; }
+        .list { overflow: hidden; margin: 0; padding: 0; border: 1px solid #202020; border-radius: 13px; background: #0c0c0c; list-style: none; }
+        .app-row { position: relative; display: grid; grid-template-columns: 44px minmax(0,1fr) auto; align-items: center; gap: 13px; min-height: 82px; padding: 11px 10px 11px 13px; border-bottom: 1px solid #1e1e1e; cursor: pointer; transition: background 90ms ease, box-shadow 90ms ease; }
         .app-row:last-child { border-bottom: 0; }
-        .app-row:hover, .app-row:focus-visible { outline: 0; background: #141414; }
+        .app-row:hover { background: #141414; }
+        .app-row:focus-visible { outline: 1px solid #555; outline-offset: -1px; background: #141414; }
+        .app-row.selected { background: #171717; box-shadow: inset 2px 0 var(--accent); }
         .app-icon { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 32%, #292929); border-radius: 10px; background: color-mix(in srgb, var(--accent) 9%, #101010); color: var(--accent); font-size: 18px; box-shadow: inset 0 1px rgba(255,255,255,.025); }
         .app-text { min-width: 0; }
         .title-line { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
         .app-title { overflow: hidden; margin: 0; color: #ededed; font-size: 14px; font-weight: 680; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-        .app-file { overflow: hidden; flex: none; max-width: 34%; color: #4f4f4f; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 10px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+        .app-file { overflow: hidden; flex: none; max-width: 36%; color: #4f4f4f; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 10px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
         .app-description { display: -webkit-box; overflow: hidden; margin: 5px 0 0; color: #797979; font-size: 12px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-        .app-row:hover .app-description { color: #8c8c8c; }
-        .arrow { color: #494949; font-size: 19px; line-height: 1; transition: color 90ms ease, transform 90ms ease; }
-        .app-row:hover .arrow, .app-row:focus-visible .arrow { color: #bdbdbd; transform: translateX(2px); }
-        .state { margin-top: 14px; padding: 44px 20px; border: 1px dashed #292929; border-radius: 13px; color: #696969; text-align: center; }
+        .app-actions { display: flex; align-items: center; gap: 4px; }
+        .icon-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: #515151; cursor: pointer; text-decoration: none; transition: background 90ms ease, color 90ms ease; }
+        .icon-button:hover { background: #202020; color: #d0d0d0; }
+        .favorite-button.active { color: #f0c84a; }
+        .open-button { font-size: 12px; }
+        .preview-panel { position: sticky; top: 118px; height: calc(100vh - 132px); min-height: 420px; overflow: hidden; border: 1px solid #202020; border-radius: 13px; background: #0b0b0b; }
+        .preview-empty { display: grid; height: 100%; place-items: center; padding: 30px; color: #565656; text-align: center; }
+        .preview-shell { display: grid; grid-template-rows: auto minmax(0,1fr); height: 100%; }
+        .preview-header { display: grid; grid-template-columns: 40px minmax(0,1fr) auto; align-items: center; gap: 11px; min-height: 64px; padding: 10px 11px; border-bottom: 1px solid #202020; background: #0f0f0f; }
+        .preview-icon { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 32%, #292929); border-radius: 9px; background: color-mix(in srgb, var(--accent) 9%, #101010); color: var(--accent); font-size: 17px; }
+        .preview-meta { min-width: 0; }
+        .preview-title { overflow: hidden; margin: 0; color: #ededed; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+        .preview-description { overflow: hidden; margin: 3px 0 0; color: #707070; font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+        .preview-actions { display: flex; gap: 4px; }
+        #preview-frame { width: 100%; height: 100%; border: 0; background: #fff; }
+        .state { padding: 44px 20px; border: 1px dashed #292929; border-radius: 13px; color: #696969; text-align: center; }
         .error { border-color: #512626; color: #d98d8d; white-space: pre-wrap; }
-        .hint { margin: 12px 3px 0; color: #484848; font-size: 10px; text-align: right; }
-        .footer { padding-top: 24px; color: #3e3e3e; font-size: 10px; text-align: center; }
+        .hint { margin: 10px 3px 0; color: #484848; font-size: 10px; }
+        .footer { padding-top: 20px; color: #3e3e3e; font-size: 10px; text-align: center; }
+        @media (max-width: 980px) {
+            .workspace { grid-template-columns: 1fr; }
+            .preview-panel { position: relative; top: 0; height: min(72vh, 720px); min-height: 420px; }
+        }
         @media (max-width: 620px) {
-            .topbar-inner, .shell { width: min(100% - 18px, 980px); }
-            .topbar-inner { padding-top: 10px; }
-            .shell { padding-top: 116px; }
+            .topbar-inner, .shell { width: min(100% - 18px, 1480px); }
+            .topbar-inner { padding-top: 9px; }
+            .shell { padding-top: 112px; }
             .repo-link, kbd { display: none; }
-            .app-row { grid-template-columns: 40px minmax(0,1fr) 18px; gap: 11px; min-height: 78px; padding: 10px 11px; }
+            .controls { grid-template-columns: minmax(0,1fr) 46px; gap: 7px; }
+            .favorite-filter { min-width: 0; width: 46px; padding: 0; justify-content: center; }
+            .favorite-filter span:not(.favorite-count) { display: none; }
+            .favorite-count { display: none; }
+            .app-row { grid-template-columns: 40px minmax(0,1fr) auto; gap: 10px; min-height: 76px; padding: 9px 7px 9px 10px; }
             .app-icon { width: 40px; height: 40px; border-radius: 9px; }
             .app-file { display: none; }
             .app-description { -webkit-line-clamp: 1; }
+            .icon-button { width: 29px; height: 29px; }
+            .preview-panel { height: 70vh; }
         }
     </style>
 </head>
@@ -74,19 +103,48 @@
                 </div>
                 <a class="repo-link" href="https://github.com/szkr01/WASTE_APPS" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
             </div>
-            <label class="search" for="search-input">
-                <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"></circle><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>
-                <input id="search-input" type="search" placeholder="Search title, description, file..." autocomplete="off" spellcheck="false">
-                <kbd>/</kbd>
-            </label>
+            <div class="controls">
+                <label class="search" for="search-input">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"></circle><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>
+                    <input id="search-input" type="search" placeholder="Search title, description, file..." autocomplete="off" spellcheck="false">
+                    <kbd>/</kbd>
+                </label>
+                <button id="favorite-filter" class="favorite-filter" type="button" aria-pressed="false">
+                    <i class="fas fa-star" aria-hidden="true"></i>
+                    <span>Favorites</span>
+                    <span id="favorite-count" class="favorite-count">0</span>
+                </button>
+            </div>
         </div>
     </header>
 
     <main class="shell">
-        <ul id="app-list" class="list" hidden></ul>
-        <div id="empty-state" class="state" hidden>No matching apps.</div>
-        <div id="error-state" class="state error" hidden></div>
-        <div class="hint">/ search · Enter open first · Esc clear</div>
+        <div class="workspace">
+            <section class="list-pane" aria-label="Apps">
+                <ul id="app-list" class="list" hidden></ul>
+                <div id="empty-state" class="state" hidden>No matching apps.</div>
+                <div id="error-state" class="state error" hidden></div>
+                <div class="hint">Click preview · ★ favorite · ↗ open · / search · Esc clear</div>
+            </section>
+
+            <aside id="preview-panel" class="preview-panel" aria-label="Preview">
+                <div id="preview-empty" class="preview-empty">Select an app to preview.</div>
+                <div id="preview-shell" class="preview-shell" hidden>
+                    <div class="preview-header" id="preview-header">
+                        <div class="preview-icon" id="preview-icon"><i class="fas fa-file-code" aria-hidden="true"></i></div>
+                        <div class="preview-meta">
+                            <p id="preview-title" class="preview-title"></p>
+                            <p id="preview-description" class="preview-description"></p>
+                        </div>
+                        <div class="preview-actions">
+                            <button id="preview-favorite" class="icon-button favorite-button" type="button" aria-label="Toggle favorite"><i class="fas fa-star" aria-hidden="true"></i></button>
+                            <a id="preview-open" class="icon-button open-button" href="#" target="_blank" rel="noopener noreferrer" aria-label="Open app"><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+                        </div>
+                    </div>
+                    <iframe id="preview-frame" title="App preview"></iframe>
+                </div>
+            </aside>
+        </div>
         <footer class="footer">© <span id="year"></span> szkr01</footer>
     </main>
 
@@ -98,11 +156,32 @@
         const META_CACHE_VERSION = 'v3';
         const META_RANGE = 'bytes=0-16383';
         const CONCURRENCY = 6;
+        const FAVORITES_KEY = 'waste-app-favorites:v1';
         const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PAGES_DIR}?ref=${BRANCH}`;
-        const elements = { search: document.getElementById('search-input'), list: document.getElementById('app-list'), count: document.getElementById('result-count'), empty: document.getElementById('empty-state'), error: document.getElementById('error-state') };
+        const elements = {
+            search: document.getElementById('search-input'),
+            list: document.getElementById('app-list'),
+            count: document.getElementById('result-count'),
+            empty: document.getElementById('empty-state'),
+            error: document.getElementById('error-state'),
+            favoriteFilter: document.getElementById('favorite-filter'),
+            favoriteCount: document.getElementById('favorite-count'),
+            previewEmpty: document.getElementById('preview-empty'),
+            previewShell: document.getElementById('preview-shell'),
+            previewHeader: document.getElementById('preview-header'),
+            previewIcon: document.getElementById('preview-icon'),
+            previewTitle: document.getElementById('preview-title'),
+            previewDescription: document.getElementById('preview-description'),
+            previewFavorite: document.getElementById('preview-favorite'),
+            previewOpen: document.getElementById('preview-open'),
+            previewFrame: document.getElementById('preview-frame')
+        };
         let apps = [];
         let visibleApps = [];
         let filterTimer = 0;
+        let favorites = readFavorites();
+        let favoritesOnly = false;
+        let selectedFilename = '';
 
         function titleFromFilename(filename) {
             return filename.replace(/\.html$/i, '').replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
@@ -112,17 +191,40 @@
             return text.toLocaleLowerCase().normalize('NFKC');
         }
 
-        function escapeSelector(value) {
-            return CSS.escape(value);
-        }
-
         function buildSearchText(app) {
             return normalize(`${app.title} ${app.description} ${app.filename}`);
         }
 
+        function appUrl(app) {
+            return `${PAGES_DIR}/${encodeURIComponent(app.filename)}`;
+        }
+
+        function readFavorites() {
+            const raw = localStorage.getItem(FAVORITES_KEY);
+            if (!raw) return new Set();
+            const values = JSON.parse(raw);
+            if (!Array.isArray(values)) return new Set();
+            return new Set(values);
+        }
+
+        function writeFavorites() {
+            localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]));
+        }
+
+        function isFavorite(app) {
+            return favorites.has(app.filename);
+        }
+
+        function toggleFavorite(app) {
+            if (isFavorite(app)) favorites.delete(app.filename); else favorites.add(app.filename);
+            writeFavorites();
+            render();
+            updatePreview(app);
+        }
+
         function createRow(app) {
             const item = document.createElement('li');
-            const link = document.createElement('a');
+            const row = document.createElement('div');
             const icon = document.createElement('div');
             const iconElement = document.createElement('i');
             const text = document.createElement('div');
@@ -130,11 +232,16 @@
             const title = document.createElement('p');
             const file = document.createElement('span');
             const description = document.createElement('p');
-            const arrow = document.createElement('span');
-            link.className = 'app-row';
-            link.href = `${PAGES_DIR}/${encodeURIComponent(app.filename)}`;
-            link.dataset.filename = app.filename;
-            link.style.setProperty('--accent', app.color);
+            const actions = document.createElement('div');
+            const favoriteButton = document.createElement('button');
+            const openButton = document.createElement('a');
+
+            row.className = `app-row${selectedFilename === app.filename ? ' selected' : ''}`;
+            row.tabIndex = 0;
+            row.dataset.filename = app.filename;
+            row.style.setProperty('--accent', app.color);
+            row.setAttribute('role', 'button');
+            row.setAttribute('aria-label', `Preview ${app.title}`);
             icon.className = 'app-icon';
             iconElement.className = app.icon;
             iconElement.setAttribute('aria-hidden', 'true');
@@ -143,36 +250,43 @@
             title.className = 'app-title';
             file.className = 'app-file';
             description.className = 'app-description';
-            arrow.className = 'arrow';
+            actions.className = 'app-actions';
+            favoriteButton.className = `icon-button favorite-button${isFavorite(app) ? ' active' : ''}`;
+            favoriteButton.type = 'button';
+            favoriteButton.setAttribute('aria-label', isFavorite(app) ? 'Remove from favorites' : 'Add to favorites');
+            favoriteButton.innerHTML = '<i class="fas fa-star" aria-hidden="true"></i>';
+            openButton.className = 'icon-button open-button';
+            openButton.href = appUrl(app);
+            openButton.target = '_blank';
+            openButton.rel = 'noopener noreferrer';
+            openButton.setAttribute('aria-label', `Open ${app.title}`);
+            openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i>';
             title.textContent = app.title;
             file.textContent = app.filename;
             description.textContent = app.description;
-            arrow.textContent = '›';
-            arrow.setAttribute('aria-hidden', 'true');
+            favoriteButton.addEventListener('click', event => { event.stopPropagation(); toggleFavorite(app); });
+            openButton.addEventListener('click', event => event.stopPropagation());
+            row.addEventListener('click', () => selectPreview(app));
+            row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectPreview(app); } });
             icon.append(iconElement);
             titleLine.append(title, file);
             text.append(titleLine, description);
-            link.append(icon, text, arrow);
-            item.append(link);
+            actions.append(favoriteButton, openButton);
+            row.append(icon, text, actions);
+            item.append(row);
             return item;
-        }
-
-        function updateVisibleRow(app) {
-            const link = elements.list.querySelector(`[data-filename="${escapeSelector(app.filename)}"]`);
-            if (!link) return;
-            link.style.setProperty('--accent', app.color);
-            link.querySelector('.app-icon i').className = app.icon;
-            link.querySelector('.app-title').textContent = app.title;
-            link.querySelector('.app-description').textContent = app.description;
         }
 
         function render() {
             const query = normalize(elements.search.value.trim());
-            visibleApps = query ? apps.filter(app => app.searchText.includes(query)) : apps;
+            visibleApps = apps.filter(app => (!query || app.searchText.includes(query)) && (!favoritesOnly || isFavorite(app)));
             elements.list.replaceChildren(...visibleApps.map(createRow));
             elements.list.hidden = visibleApps.length === 0;
             elements.empty.hidden = visibleApps.length !== 0;
-            elements.count.textContent = query ? `${visibleApps.length} / ${apps.length}` : `${apps.length} apps`;
+            elements.favoriteCount.textContent = String(favorites.size);
+            elements.favoriteFilter.classList.toggle('active', favoritesOnly);
+            elements.favoriteFilter.setAttribute('aria-pressed', String(favoritesOnly));
+            elements.count.textContent = query || favoritesOnly ? `${visibleApps.length} / ${apps.length}` : `${apps.length} apps`;
         }
 
         function scheduleRenderForSearch() {
@@ -210,17 +324,14 @@
             app.icon = metadata.icon;
             app.color = metadata.color;
             app.searchText = buildSearchText(app);
-            updateVisibleRow(app);
+            if (selectedFilename === app.filename) updatePreview(app);
             scheduleRenderForSearch();
         }
 
         async function hydrateMetadata(app) {
             const cached = readCachedMetadata(app);
-            if (cached) {
-                applyMetadata(app, cached);
-                return;
-            }
-            const response = await fetch(`${PAGES_DIR}/${encodeURIComponent(app.filename)}`, { headers: { Range: META_RANGE } });
+            if (cached) { applyMetadata(app, cached); return; }
+            const response = await fetch(appUrl(app), { headers: { Range: META_RANGE } });
             if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
             const metadata = parseMetadata(await response.text(), app);
             writeCachedMetadata(app, metadata);
@@ -238,13 +349,35 @@
                         console.error(`Metadata load failed for ${app.filename}`, error);
                         app.description = `Metadata load failed: ${error.message}`;
                         app.searchText = buildSearchText(app);
-                        updateVisibleRow(app);
+                        if (selectedFilename === app.filename) updatePreview(app);
                     }
                 }
             }
             await Promise.all(Array.from({ length: Math.min(CONCURRENCY, apps.length) }, worker));
             apps.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
             render();
+        }
+
+        function selectPreview(app) {
+            selectedFilename = app.filename;
+            updatePreview(app, true);
+            render();
+            if (window.innerWidth <= 980) document.getElementById('preview-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function updatePreview(app, loadFrame = false) {
+            if (!app || selectedFilename !== app.filename) return;
+            elements.previewEmpty.hidden = true;
+            elements.previewShell.hidden = false;
+            elements.previewHeader.style.setProperty('--accent', app.color);
+            elements.previewIcon.style.setProperty('--accent', app.color);
+            elements.previewIcon.querySelector('i').className = app.icon;
+            elements.previewTitle.textContent = app.title;
+            elements.previewDescription.textContent = app.description;
+            elements.previewFavorite.classList.toggle('active', isFavorite(app));
+            elements.previewFavorite.setAttribute('aria-label', isFavorite(app) ? 'Remove from favorites' : 'Add to favorites');
+            elements.previewOpen.href = appUrl(app);
+            if (loadFrame && elements.previewFrame.getAttribute('src') !== appUrl(app)) elements.previewFrame.src = appUrl(app);
         }
 
         async function loadApps() {
@@ -263,8 +396,15 @@
         }
 
         elements.search.addEventListener('input', render);
-        elements.search.addEventListener('keydown', event => { if (event.key === 'Enter' && visibleApps.length > 0) window.location.href = `${PAGES_DIR}/${encodeURIComponent(visibleApps[0].filename)}`; });
-        document.addEventListener('keydown', event => { if (event.key === '/' && document.activeElement !== elements.search) { event.preventDefault(); elements.search.focus(); } if (event.key === 'Escape' && document.activeElement === elements.search) { elements.search.value = ''; render(); elements.search.blur(); } });
+        elements.favoriteFilter.addEventListener('click', () => { favoritesOnly = !favoritesOnly; render(); });
+        elements.previewFavorite.addEventListener('click', () => {
+            const app = apps.find(candidate => candidate.filename === selectedFilename);
+            if (app) toggleFavorite(app);
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === '/' && document.activeElement !== elements.search) { event.preventDefault(); elements.search.focus(); }
+            if (event.key === 'Escape' && document.activeElement === elements.search) { elements.search.value = ''; render(); elements.search.blur(); }
+        });
         document.getElementById('year').textContent = new Date().getFullYear();
 
         loadApps().catch(error => {
