@@ -83,7 +83,7 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
         </button>
         <div>
             <h1 class="text-lg font-bold text-slate-900 leading-tight">クソコラジャケット メーカー</h1>
-            <p class="text-[11px] text-slate-500 font-medium">1024x1024 Canvas</p>
+            <p id="resolutionLabel" class="text-[11px] text-slate-500 font-medium">1024x1024 JPEG</p>
         </div>
     </div>
 
@@ -113,6 +113,14 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
                     <i class="fas fa-magic text-blue-500"></i> Degrade Settings
                 </h2>
                 <div class="space-y-4">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-600 font-medium">Resolution Scale</span>
+                            <span id="scaleVal" class="font-mono text-blue-600 font-bold">40%</span>
+                        </div>
+                        <input type="range" id="scaleSlider" min="0.01" max="1.0" step="0.01" value="0.4" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
                     <div>
                         <div class="flex justify-between text-xs mb-1">
                             <span class="text-slate-600 font-medium">JPEG Quality</span>
@@ -556,9 +564,18 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
             </h3>
             <button id="resolutionBtnClose" class="text-slate-400 hover:text-slate-600 transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200"><i class="fas fa-times text-lg"></i></button>
         </div>
-        <div class="p-5 space-y-2">
-            <label for="resolutionInput" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Square Resolution</label>
-            <input type="number" id="resolutionInput" min="1" max="4096" step="1" value="1024" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400">
+        <div class="p-5 space-y-4">
+            <div class="space-y-2">
+                <label for="resolutionInput" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Output Resolution</label>
+                <input type="number" id="resolutionInput" min="1" max="4096" step="1" value="1024" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400">
+            </div>
+            <div class="space-y-2">
+                <label for="outputFormatInput" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Save Format</label>
+                <select id="outputFormatInput" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400">
+                    <option value="png">PNG</option>
+                    <option value="jpeg" selected>JPEG</option>
+                </select>
+            </div>
         </div>
         <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
             <button id="resolutionBtnCancel" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
@@ -578,6 +595,8 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     const gpuCanvas = document.getElementById('gpuCanvas');
     const container = document.getElementById('canvasContainer');
 
+    const scaleSlider = document.getElementById('scaleSlider');
+    const scaleVal = document.getElementById('scaleVal');
     const qualitySlider = document.getElementById('qualitySlider');
     const qualityVal = document.getElementById('qualityVal');
     
@@ -600,6 +619,8 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     const resolutionModal = document.getElementById('resolutionModal');
     const resolutionModalContent = document.getElementById('resolutionModalContent');
     const resolutionInput = document.getElementById('resolutionInput');
+    const outputFormatInput = document.getElementById('outputFormatInput');
+    const resolutionLabel = document.getElementById('resolutionLabel');
     const resolutionBtnClose = document.getElementById('resolutionBtnClose');
     const resolutionBtnCancel = document.getElementById('resolutionBtnCancel');
     const resolutionBtnApply = document.getElementById('resolutionBtnApply');
@@ -628,6 +649,8 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
 
     const BOARD_W = 1024;
     const BOARD_H = 1024;
+    let outputResolution = BOARD_W;
+    let outputFormat = 'jpeg';
     const HANDLE_SIZE = 10;
     const CHOYEN_TOP_FONT_VALUE = '__5000CHOYEN_TOP__';
     const CHOYEN_BOTTOM_FONT_VALUE = '__5000CHOYEN_BOTTOM__';
@@ -2423,17 +2446,22 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
         }
     }
 
-    function renderBoardToCanvas() {
-        exportGpuRenderer.resize(BOARD_W, BOARD_H);
-        exportGpuRenderer.render(objects, { x: 0, y: 0, zoom: 1 }, BOARD_W, BOARD_H);
+    function normalizeOutputResolution(value) {
+        return Math.max(1, Math.min(4096, Math.floor(Number(value) || BOARD_W)));
+    }
+
+    function renderBoardToCanvas(resolution = outputResolution) {
+        const exportScale = resolution / BOARD_W;
+        exportGpuRenderer.resize(resolution, resolution);
+        exportGpuRenderer.render(objects, { x: 0, y: 0, zoom: exportScale }, BOARD_W, BOARD_H);
 
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = BOARD_W;
-        tempCanvas.height = BOARD_H;
+        tempCanvas.width = resolution;
+        tempCanvas.height = resolution;
         const tCtx = tempCanvas.getContext('2d', { alpha: false });
         tCtx.fillStyle = '#ffffff';
-        tCtx.fillRect(0, 0, BOARD_W, BOARD_H);
-        tCtx.drawImage(exportGpuCanvas, 0, 0, BOARD_W, BOARD_H);
+        tCtx.fillRect(0, 0, resolution, resolution);
+        tCtx.drawImage(exportGpuCanvas, 0, 0, resolution, resolution);
         return tempCanvas;
     }
 
@@ -2599,6 +2627,8 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     }
 
     function openResolutionModal() {
+        resolutionInput.value = String(outputResolution);
+        outputFormatInput.value = outputFormat;
         resolutionModal.classList.remove('opacity-0', 'pointer-events-none', 'hidden');
         resolutionModal.classList.add('flex');
         setTimeout(() => {
@@ -2621,7 +2651,11 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     }
 
     function applyResolution() {
-        resolutionInput.value = String(Math.max(1, Math.min(4096, Math.floor(Number(resolutionInput.value) || 1024))));
+        outputResolution = normalizeOutputResolution(resolutionInput.value);
+        outputFormat = outputFormatInput.value === 'jpeg' ? 'jpeg' : 'png';
+        resolutionInput.value = String(outputResolution);
+        outputFormatInput.value = outputFormat;
+        resolutionLabel.innerText = `${outputResolution}x${outputResolution} ${outputFormat.toUpperCase()}`;
         closeResolutionModal();
     }
 
@@ -2675,6 +2709,7 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     initView();
     render();
 
+    scaleSlider.addEventListener('input', (e) => { scaleVal.innerText = Math.round(e.target.value * 100) + '%'; });
     qualitySlider.addEventListener('input', (e) => { qualityVal.innerText = Math.round(e.target.value * 100) + '%'; });
 
     function getSelected() {
@@ -3604,11 +3639,11 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
 
         setTimeout(() => {
             const q = parseFloat(qualitySlider.value);
-            const resolution = Math.max(1, Math.min(4096, Math.floor(Number(resolutionInput.value) || 1024)));
-            const w = resolution;
-            const h = resolution;
+            const scale = parseFloat(scaleSlider.value);
+            const w = Math.max(1, Math.floor(BOARD_W * scale));
+            const h = Math.max(1, Math.floor(BOARD_H * scale));
             
-            const tempCanvas = renderBoardToCanvas();
+            const tempCanvas = renderBoardToCanvas(BOARD_W);
             
             const smallCanvas = document.createElement('canvas');
             smallCanvas.width = w;
@@ -3670,8 +3705,9 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     btnExport.addEventListener('click', () => {
         const tempCanvas = renderBoardToCanvas();
         const link = document.createElement('a');
-        link.download = `kuso-kora-${Date.now()}.jpg`;
-        link.href = tempCanvas.toDataURL('image/jpeg', 0.95);
+        const isJpeg = outputFormat === 'jpeg';
+        link.download = `kuso-kora-${Date.now()}.${isJpeg ? 'jpg' : 'png'}`;
+        link.href = tempCanvas.toDataURL(isJpeg ? 'image/jpeg' : 'image/png', isJpeg ? 0.95 : undefined);
         link.click();
     });
 
