@@ -78,9 +78,9 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
 <!-- Sidebar -->
 <aside class="w-80 bg-white border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex flex-col z-10 shrink-0 h-full">
     <div class="p-5 border-b border-slate-100 flex items-center gap-3 shrink-0">
-        <div class="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+        <button id="btnResolution" type="button" title="Resolution" class="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
             <i class="fas fa-images text-xl"></i>
-        </div>
+        </button>
         <div>
             <h1 class="text-lg font-bold text-slate-900 leading-tight">クソコラジャケット メーカー</h1>
             <p class="text-[11px] text-slate-500 font-medium">1024x1024 Canvas</p>
@@ -113,14 +113,6 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
                     <i class="fas fa-magic text-blue-500"></i> Degrade Settings
                 </h2>
                 <div class="space-y-4">
-                    <div>
-                        <div class="flex justify-between text-xs mb-1">
-                            <span class="text-slate-600 font-medium">Resolution Scale</span>
-                            <span id="scaleVal" class="font-mono text-blue-600 font-bold">10%</span>
-                        </div>
-                        <input type="range" id="scaleSlider" min="0.01" max="1.0" step="0.01" value="0.4" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer">
-                    </div>
-                    
                     <div>
                         <div class="flex justify-between text-xs mb-1">
                             <span class="text-slate-600 font-medium">JPEG Quality</span>
@@ -552,6 +544,31 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     </div>
 </div>
 
+<!-- Resolution Modal -->
+<div id="resolutionModal" class="fixed inset-0 bg-slate-900/60 hidden z-50 items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200 pointer-events-none">
+    <div class="bg-white rounded-2xl shadow-2xl w-80 max-w-[96vw] flex flex-col overflow-hidden transform scale-95 transition-transform duration-200" id="resolutionModalContent">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center">
+                    <i class="fas fa-expand text-sm"></i>
+                </div>
+                Resolution
+            </h3>
+            <button id="resolutionBtnClose" class="text-slate-400 hover:text-slate-600 transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200"><i class="fas fa-times text-lg"></i></button>
+        </div>
+        <div class="p-5 space-y-2">
+            <label for="resolutionInput" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Square Resolution</label>
+            <input type="number" id="resolutionInput" min="1" max="4096" step="1" value="1024" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400">
+        </div>
+        <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+            <button id="resolutionBtnCancel" class="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
+            <button id="resolutionBtnApply" class="px-6 py-2 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white shadow-md shadow-violet-600/20 transition-colors flex items-center gap-2">
+                <i class="fas fa-check"></i> Apply
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
     // --- Core Application Logic ---
     const canvas = document.getElementById('appCanvas');
@@ -561,8 +578,6 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     const gpuCanvas = document.getElementById('gpuCanvas');
     const container = document.getElementById('canvasContainer');
 
-    const scaleSlider = document.getElementById('scaleSlider');
-    const scaleVal = document.getElementById('scaleVal');
     const qualitySlider = document.getElementById('qualitySlider');
     const qualityVal = document.getElementById('qualityVal');
     
@@ -575,12 +590,19 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     const btnRedo = document.getElementById('btnRedo');
     const btnAddText = document.getElementById('btnAddText');
     const btnAddFragment = document.getElementById('btnAddFragment');
+    const btnResolution = document.getElementById('btnResolution');
     const canvasContextMenu = document.getElementById('canvasContextMenu');
     const ctxCopyImage = document.getElementById('ctxCopyImage');
     const ctxCopyStatus = document.getElementById('ctxCopyStatus');
 
     const textEditorModal = document.getElementById('textEditorModal');
     const textEditorModalContent = document.getElementById('textEditorModalContent');
+    const resolutionModal = document.getElementById('resolutionModal');
+    const resolutionModalContent = document.getElementById('resolutionModalContent');
+    const resolutionInput = document.getElementById('resolutionInput');
+    const resolutionBtnClose = document.getElementById('resolutionBtnClose');
+    const resolutionBtnCancel = document.getElementById('resolutionBtnCancel');
+    const resolutionBtnApply = document.getElementById('resolutionBtnApply');
     const teBtnClose = document.getElementById('teBtnClose');
     const teBtnCancel = document.getElementById('teBtnCancel');
     const teBtnApply = document.getElementById('teBtnApply');
@@ -2576,6 +2598,33 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
         }, 200);
     }
 
+    function openResolutionModal() {
+        resolutionModal.classList.remove('opacity-0', 'pointer-events-none', 'hidden');
+        resolutionModal.classList.add('flex');
+        setTimeout(() => {
+            resolutionModal.classList.remove('opacity-0');
+            resolutionModalContent.classList.remove('scale-95');
+            resolutionModalContent.classList.add('scale-100');
+            resolutionInput.focus();
+            resolutionInput.select();
+        }, 10);
+    }
+
+    function closeResolutionModal() {
+        resolutionModal.classList.add('opacity-0');
+        resolutionModalContent.classList.remove('scale-100');
+        resolutionModalContent.classList.add('scale-95');
+        setTimeout(() => {
+            resolutionModal.classList.add('hidden', 'pointer-events-none');
+            resolutionModal.classList.remove('flex');
+        }, 200);
+    }
+
+    function applyResolution() {
+        resolutionInput.value = String(Math.max(1, Math.min(4096, Math.floor(Number(resolutionInput.value) || 1024))));
+        closeResolutionModal();
+    }
+
     function applyTextEditorChanges() {
         if (!textEditorState?.draft) return;
         const draft = cloneTextObject(textEditorState.draft);
@@ -2626,7 +2675,6 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
     initView();
     render();
 
-    scaleSlider.addEventListener('input', (e) => { scaleVal.innerText = Math.round(e.target.value * 100) + '%'; });
     qualitySlider.addEventListener('input', (e) => { qualityVal.innerText = Math.round(e.target.value * 100) + '%'; });
 
     function getSelected() {
@@ -3523,6 +3571,17 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
         if (e.target === textEditorModal) closeTextEditorModal();
     });
 
+    btnResolution.addEventListener('click', openResolutionModal);
+    resolutionBtnClose.addEventListener('click', closeResolutionModal);
+    resolutionBtnCancel.addEventListener('click', closeResolutionModal);
+    resolutionBtnApply.addEventListener('click', applyResolution);
+    resolutionInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') applyResolution();
+    });
+    resolutionModal.addEventListener('mousedown', (e) => {
+        if (e.target === resolutionModal) closeResolutionModal();
+    });
+
     btnClear.addEventListener('click', () => {
         if(confirm('Are you sure you want to clear all layers?')) {
             const before = captureState();
@@ -3545,10 +3604,9 @@ Each FX layer affects only the composited layers below it and exposes effect-spe
 
         setTimeout(() => {
             const q = parseFloat(qualitySlider.value);
-            const s = parseFloat(scaleSlider.value);
-            
-            const w = Math.max(1, Math.floor(BOARD_W * s));
-            const h = Math.max(1, Math.floor(BOARD_H * s));
+            const resolution = Math.max(1, Math.min(4096, Math.floor(Number(resolutionInput.value) || 1024)));
+            const w = resolution;
+            const h = resolution;
             
             const tempCanvas = renderBoardToCanvas();
             
