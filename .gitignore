@@ -11,7 +11,6 @@ Assets/_glo_diffusion_model.onnx
 Assets/glo_diffusion_model*.onnx
 Assets/srdit_model.onnx
 Assets/ink.js
-Assets/anima_vae_encoder/
 
 # Pages
 pages/EP.html
