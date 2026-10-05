@@ -1,0 +1,984 @@
+<!--
+Context: Browser-only ONNX inference UI for PixAI Tagger v1.0. Model-related assets are fetched fresh from Hugging Face on every page load.
+Implementation: Single-file HTML/CSS/JS app, ONNX Runtime Web WebGPU backend, 1008x1008 letterbox preprocessing, category-aware thresholds and tag filtering.
+-->
+<!doctype html>
+<html lang="ja" class="h-full bg-[#0b0d10]">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>PixAI Tagger Web</title>
+  <meta name="description" content="PixAI Tagger v1.0をONNX Runtime WebとWebGPUでブラウザ推論するローカルWebアプリ。モデルとタグ定義は毎回Hugging Faceから取得します。">
+  <meta name="page:icon" content="fas fa-tags">
+  <meta name="page:color" content="#8b5cf6">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.webgpu.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
+            mono: ['"SFMono-Regular"', 'Consolas', '"Liberation Mono"', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+      --surface-0: #0b0d10;
+      --surface-1: #111419;
+      --surface-2: #171b22;
+      --line: rgba(255,255,255,.09);
+      --muted: #8d96a5;
+      --accent: #8b5cf6;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--surface-0); }
+    body { overflow: hidden; }
+    button, input { font: inherit; }
+    button:focus-visible, input:focus-visible { outline: 2px solid rgba(139,92,246,.85); outline-offset: 2px; }
+    .pressable { transition: transform 140ms var(--ease-out), background-color 160ms ease, border-color 160ms ease, color 160ms ease; }
+    .pressable:active:not(:disabled) { transform: scale(.97); }
+    .pressable:disabled { cursor: not-allowed; opacity: .45; }
+    .drop-active { border-color: rgba(139,92,246,.9) !important; background: rgba(139,92,246,.08) !important; }
+    .status-dot { box-shadow: 0 0 0 3px rgba(255,255,255,.035); }
+    .loading-line { position: relative; overflow: hidden; }
+    .loading-line::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(139,92,246,.7), transparent);
+      animation: loading-sweep 1.1s linear infinite;
+    }
+    @keyframes loading-sweep { to { transform: translateX(100%); } }
+    .thin-scroll { scrollbar-width: thin; scrollbar-color: #343b47 transparent; }
+    .thin-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #343b47; border: 2px solid transparent; background-clip: padding-box; border-radius: 999px; }
+    .thin-scroll::-webkit-scrollbar-track { background: transparent; }
+    .score-bar { transform-origin: left center; }
+    .threshold-grid { grid-template-columns: repeat(6, minmax(138px, 1fr)); }
+    .result-row { content-visibility: auto; contain-intrinsic-size: 46px; }
+    @media (max-width: 1100px) {
+      body { overflow: auto; }
+      .app-main { grid-template-columns: 1fr !important; overflow: visible !important; }
+      .preview-pane { min-height: 46vh; }
+      .results-pane { min-height: 54vh; }
+      .threshold-grid { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      .threshold-grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pressable { transition: none !important; }
+      .pressable:active:not(:disabled) { transform: none; }
+      .loading-line::after { animation: none !important; display: none; }
+    }
+  </style>
+</head>
+<body class="h-full text-zinc-100 antialiased">
+  <div id="appRoot" class="h-screen min-h-[560px] flex flex-col bg-[#0b0d10]">
+    <header class="h-12 shrink-0 border-b border-white/[.08] bg-[#0e1115] px-3 flex items-center gap-3">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-7 h-7 rounded-lg bg-violet-500/15 border border-violet-400/20 grid place-items-center text-violet-300 shrink-0">
+          <i class="fa-solid fa-tags text-[12px]" aria-hidden="true"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="text-[13px] font-semibold tracking-tight leading-4 truncate">PixAI Tagger Web</div>
+          <div class="text-[10px] text-zinc-500 leading-3 truncate">v1.0 · ONNX FP16 · 30,877 tags</div>
+        </div>
+      </div>
+
+      <div class="ml-auto flex items-center gap-2 min-w-0">
+        <div class="hidden md:flex items-center gap-1.5 text-[11px] text-zinc-400 px-2 py-1 rounded-md border border-white/[.07] bg-white/[.025]" title="推論バックエンド">
+          <span id="gpuDot" class="status-dot w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
+          <span id="gpuStatus">WebGPU確認中</span>
+        </div>
+        <div class="flex items-center gap-1.5 text-[11px] text-zinc-400 px-2 py-1 rounded-md border border-white/[.07] bg-white/[.025] min-w-0 max-w-[300px]" title="モデル状態">
+          <span id="modelDot" class="status-dot w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+          <span id="modelStatus" class="truncate">初期化中</span>
+        </div>
+        <button id="thresholdToggle" type="button" class="pressable h-7 px-2.5 rounded-md border border-white/[.08] bg-white/[.035] hover:bg-white/[.07] text-[11px] text-zinc-300" aria-expanded="false" aria-controls="thresholdPanel">
+          <i class="fa-solid fa-sliders mr-1.5 text-[10px]" aria-hidden="true"></i>閾値
+        </button>
+        <button id="reloadModelButton" type="button" class="pressable h-7 w-8 rounded-md border border-white/[.08] bg-white/[.035] hover:bg-white/[.07] text-zinc-400 hover:text-zinc-100" title="Hugging Faceからモデルを再取得" aria-label="モデルを再取得">
+          <i class="fa-solid fa-rotate-right text-[11px]" aria-hidden="true"></i>
+        </button>
+      </div>
+    </header>
+
+    <div id="modelLoadBar" class="loading-line h-[2px] shrink-0 bg-white/[.035]"></div>
+
+    <section id="thresholdPanel" class="hidden shrink-0 border-b border-white/[.08] bg-[#101319] px-3 py-2" aria-label="カテゴリ別閾値">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="text-[11px] font-medium text-zinc-300">カテゴリ別閾値</div>
+        <div class="text-[10px] text-zinc-500">変更は再推論なしで即時反映</div>
+        <button id="resetThresholdsButton" type="button" class="pressable ml-auto h-6 px-2 rounded border border-white/[.07] bg-white/[.025] hover:bg-white/[.06] text-[10px] text-zinc-400">公式推奨値に戻す</button>
+      </div>
+      <div id="thresholdControls" class="threshold-grid grid gap-2"></div>
+    </section>
+
+    <main class="app-main min-h-0 flex-1 grid grid-cols-[minmax(360px,44%)_minmax(0,56%)] overflow-hidden">
+      <section class="preview-pane min-w-0 min-h-0 border-r border-white/[.08] bg-[#0d1014] flex flex-col" aria-label="画像入力">
+        <div id="dropZone" class="relative min-h-0 flex-1 m-3 mb-2 rounded-xl border border-dashed border-white/[.13] bg-[#0b0e12] overflow-hidden transition-[border-color,background-color] duration-150">
+          <input id="fileInput" type="file" accept="image/*" class="sr-only">
+
+          <div id="emptyState" class="absolute inset-0 grid place-items-center p-6 text-center">
+            <div class="max-w-sm">
+              <div class="mx-auto mb-3 w-11 h-11 rounded-xl border border-white/[.08] bg-white/[.035] grid place-items-center text-zinc-400">
+                <i class="fa-regular fa-image text-lg" aria-hidden="true"></i>
+              </div>
+              <div class="text-[14px] font-medium text-zinc-200">画像をドロップ</div>
+              <div class="mt-1 text-[11px] leading-5 text-zinc-500">クリックして選択 · Ctrl+Vで貼り付け</div>
+              <div class="mt-4 inline-flex items-center gap-1.5 text-[10px] text-zinc-600">
+                <span>入力</span><span class="text-zinc-700">/</span><span>1008×1008 letterbox</span><span class="text-zinc-700">/</span><span>RGB [-1, 1]</span>
+              </div>
+            </div>
+          </div>
+
+          <img id="imagePreview" class="hidden absolute inset-0 w-full h-full object-contain select-none" alt="推論対象画像" draggable="false">
+
+          <div id="imageOverlay" class="hidden absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 via-black/35 to-transparent pointer-events-none">
+            <div class="flex items-end justify-between gap-2">
+              <div class="min-w-0">
+                <div id="imageName" class="text-[11px] text-zinc-200 font-medium truncate"></div>
+                <div id="imageMeta" class="text-[10px] text-zinc-500 mt-0.5"></div>
+              </div>
+              <div id="inferenceBadge" class="hidden shrink-0 px-2 py-1 rounded-md border border-white/[.08] bg-black/40 text-[10px] text-zinc-300"></div>
+            </div>
+          </div>
+
+          <button id="chooseImageButton" type="button" class="absolute inset-0 w-full h-full appearance-none border-0 bg-transparent p-0 cursor-pointer" aria-label="画像を選択"></button>
+        </div>
+
+        <div class="shrink-0 px-3 pb-3 flex items-center gap-2">
+          <button id="replaceImageButton" type="button" class="pressable h-9 px-3 rounded-lg border border-white/[.08] bg-white/[.035] hover:bg-white/[.07] text-[11px] text-zinc-300">
+            <i class="fa-regular fa-folder-open mr-1.5" aria-hidden="true"></i>画像を選択
+          </button>
+          <button id="runButton" type="button" disabled class="pressable h-9 px-4 rounded-lg border border-violet-400/25 bg-violet-500/15 hover:bg-violet-500/25 text-[11px] font-medium text-violet-200">
+            <i class="fa-solid fa-bolt mr-1.5" aria-hidden="true"></i><span id="runButtonLabel">推論</span>
+          </button>
+          <div class="ml-auto min-w-0 text-right">
+            <div id="runtimeMessage" class="text-[10px] text-zinc-500 truncate max-w-[250px]">モデル準備中</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="results-pane min-w-0 min-h-0 bg-[#0b0d10] flex flex-col" aria-label="タグ結果">
+        <div class="shrink-0 border-b border-white/[.08] bg-[#0e1115]">
+          <div class="h-11 px-3 flex items-center gap-2">
+            <div class="relative min-w-0 flex-1 max-w-[420px]">
+              <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600 pointer-events-none" aria-hidden="true"></i>
+              <input id="searchInput" type="search" autocomplete="off" placeholder="タグを絞り込み" class="w-full h-7 pl-7 pr-2 rounded-md border border-white/[.08] bg-white/[.025] text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-violet-400/40 focus:bg-white/[.04] outline-none transition-[border-color,background-color] duration-150">
+            </div>
+
+            <label class="hidden lg:flex items-center gap-1.5 text-[10px] text-zinc-500 ml-auto">
+              表示上限
+              <select id="resultLimitSelect" class="h-7 rounded-md border border-white/[.08] bg-[#151920] px-1.5 text-[10px] text-zinc-300 outline-none">
+                <option value="100">100</option>
+                <option value="300" selected>300</option>
+                <option value="1000">1000</option>
+                <option value="2000">2000</option>
+              </select>
+            </label>
+
+            <button id="copyAllButton" type="button" disabled class="pressable h-7 px-2.5 rounded-md border border-white/[.08] bg-white/[.035] hover:bg-white/[.07] text-[10px] text-zinc-300">
+              <i class="fa-regular fa-copy mr-1.5" aria-hidden="true"></i><span id="copyAllLabel">コピー</span>
+            </button>
+          </div>
+
+          <div id="categoryTabs" class="h-9 px-3 flex items-end gap-0.5 overflow-x-auto thin-scroll" role="tablist" aria-label="タグカテゴリ"></div>
+        </div>
+
+        <div class="shrink-0 h-7 px-3 border-b border-white/[.06] bg-[#0c0f13] grid grid-cols-[minmax(0,1fr)_100px_64px] items-center gap-3 text-[9px] uppercase tracking-[.08em] text-zinc-600 select-none">
+          <div>Tag</div><div>Category</div><div class="text-right">Score</div>
+        </div>
+
+        <div id="resultsScroll" class="thin-scroll min-h-0 flex-1 overflow-auto">
+          <div id="resultsEmpty" class="h-full min-h-[220px] grid place-items-center p-6 text-center">
+            <div>
+              <div class="text-[12px] text-zinc-400">画像を入力すると結果がここに表示されます</div>
+              <div class="mt-1 text-[10px] text-zinc-600">画像選択後はモデル準備完了時に自動推論</div>
+            </div>
+          </div>
+          <div id="resultsList" class="hidden divide-y divide-white/[.055]"></div>
+        </div>
+
+        <footer class="h-8 shrink-0 border-t border-white/[.07] bg-[#0d1014] px-3 flex items-center gap-3 text-[10px] text-zinc-600">
+          <span id="resultCount">0 tags</span>
+          <span class="text-zinc-800">·</span>
+          <span id="inferenceTime">未推論</span>
+          <span class="ml-auto hidden sm:inline">行クリックで単一タグをコピー</span>
+        </footer>
+      </section>
+    </main>
+
+    <div id="toast" class="pointer-events-none fixed left-1/2 bottom-5 -translate-x-1/2 translate-y-3 opacity-0 z-50 px-3 py-2 rounded-lg border border-white/[.1] bg-[#1a1f27]/95 shadow-2xl text-[11px] text-zinc-200 transition-[opacity,transform] duration-150" role="status" aria-live="polite"></div>
+  </div>
+  <script>
+    (() => {
+      'use strict';
+
+      const MODEL_REPO = 'A1yCE/pixai-tagger-v1.0-onnx-fp16';
+      const HF_BASE = `https://huggingface.co/${MODEL_REPO}/resolve/main`;
+      const MODEL_BYTES = 980020396;
+      const INPUT_SIZE = 1008;
+      const DEFAULT_THRESHOLDS = Object.freeze({
+        general: 0.17,
+        character: 0.27,
+        copyright: 0.24,
+        style: 0.15,
+        meta: 0.17,
+        rating: 0.41
+      });
+      const CATEGORY_LABELS = Object.freeze({
+        all: 'すべて',
+        general: 'General',
+        character: 'Character',
+        copyright: 'Copyright',
+        style: 'Style',
+        meta: 'Meta',
+        rating: 'Rating'
+      });
+      const CATEGORY_COLORS = Object.freeze({
+        general: '#a1a1aa',
+        character: '#c4b5fd',
+        copyright: '#93c5fd',
+        style: '#f0abfc',
+        meta: '#86efac',
+        rating: '#fca5a5'
+      });
+
+      const state = {
+        session: null,
+        manifest: null,
+        bitmap: null,
+        previewUrl: null,
+        probabilities: null,
+        modelLoading: false,
+        inferencing: false,
+        selectedCategory: 'all',
+        thresholds: { ...DEFAULT_THRESHOLDS },
+        search: '',
+        resultLimit: 300,
+        imageFile: null,
+        lastInferenceMs: null,
+        loadSequence: 0
+      };
+
+      const el = {
+        gpuDot: document.getElementById('gpuDot'),
+        gpuStatus: document.getElementById('gpuStatus'),
+        modelDot: document.getElementById('modelDot'),
+        modelStatus: document.getElementById('modelStatus'),
+        modelLoadBar: document.getElementById('modelLoadBar'),
+        thresholdToggle: document.getElementById('thresholdToggle'),
+        thresholdPanel: document.getElementById('thresholdPanel'),
+        thresholdControls: document.getElementById('thresholdControls'),
+        resetThresholdsButton: document.getElementById('resetThresholdsButton'),
+        reloadModelButton: document.getElementById('reloadModelButton'),
+        dropZone: document.getElementById('dropZone'),
+        fileInput: document.getElementById('fileInput'),
+        emptyState: document.getElementById('emptyState'),
+        imagePreview: document.getElementById('imagePreview'),
+        imageOverlay: document.getElementById('imageOverlay'),
+        imageName: document.getElementById('imageName'),
+        imageMeta: document.getElementById('imageMeta'),
+        inferenceBadge: document.getElementById('inferenceBadge'),
+        chooseImageButton: document.getElementById('chooseImageButton'),
+        replaceImageButton: document.getElementById('replaceImageButton'),
+        runButton: document.getElementById('runButton'),
+        runButtonLabel: document.getElementById('runButtonLabel'),
+        runtimeMessage: document.getElementById('runtimeMessage'),
+        searchInput: document.getElementById('searchInput'),
+        resultLimitSelect: document.getElementById('resultLimitSelect'),
+        copyAllButton: document.getElementById('copyAllButton'),
+        copyAllLabel: document.getElementById('copyAllLabel'),
+        categoryTabs: document.getElementById('categoryTabs'),
+        resultsEmpty: document.getElementById('resultsEmpty'),
+        resultsList: document.getElementById('resultsList'),
+        resultsScroll: document.getElementById('resultsScroll'),
+        resultCount: document.getElementById('resultCount'),
+        inferenceTime: document.getElementById('inferenceTime'),
+        toast: document.getElementById('toast')
+      };
+
+      let toastTimer = 0;
+      let copyLabelTimer = 0;
+
+      function freshAssetUrl(filename) {
+        const nonce = `${Date.now()}-${state.loadSequence}-${Math.random().toString(36).slice(2)}`;
+        return `${HF_BASE}/${filename}?download=true&fresh=${encodeURIComponent(nonce)}`;
+      }
+
+      function formatBytes(bytes) {
+        const units = ['B', 'KiB', 'MiB', 'GiB'];
+        let value = bytes;
+        let unit = 0;
+        while (value >= 1024 && unit < units.length - 1) {
+          value /= 1024;
+          unit += 1;
+        }
+        return `${value.toFixed(unit >= 2 ? 1 : 0)} ${units[unit]}`;
+      }
+
+      function setDot(dot, color) {
+        dot.style.backgroundColor = color;
+      }
+
+      function setModelStatus(text, kind = 'loading') {
+        el.modelStatus.textContent = text;
+        const colors = {
+          loading: '#fbbf24',
+          ready: '#4ade80',
+          error: '#fb7185',
+          idle: '#71717a'
+        };
+        setDot(el.modelDot, colors[kind] || colors.idle);
+        el.modelLoadBar.style.opacity = kind === 'loading' ? '1' : '0';
+      }
+
+      function setRuntimeMessage(text, kind = 'muted') {
+        el.runtimeMessage.textContent = text;
+        el.runtimeMessage.style.color = kind === 'error' ? '#fb7185' : kind === 'ok' ? '#86efac' : '#71717a';
+      }
+
+      function showToast(message, kind = 'default') {
+        window.clearTimeout(toastTimer);
+        el.toast.textContent = message;
+        el.toast.style.borderColor = kind === 'error' ? 'rgba(251,113,133,.3)' : 'rgba(255,255,255,.1)';
+        el.toast.style.color = kind === 'error' ? '#fecdd3' : '#e4e4e7';
+        el.toast.style.opacity = '1';
+        el.toast.style.transform = 'translate(-50%, 0)';
+        toastTimer = window.setTimeout(() => {
+          el.toast.style.opacity = '0';
+          el.toast.style.transform = 'translate(-50%, 12px)';
+        }, 1800);
+      }
+
+      function sigmoid(value) {
+        if (value >= 0) return 1 / (1 + Math.exp(-value));
+        const e = Math.exp(value);
+        return e / (1 + e);
+      }
+
+      function validateManifest(manifest) {
+        if (!manifest || manifest.num_classes !== 30877 || !Array.isArray(manifest.categories)) {
+          throw new Error('tags.json の形式が想定と異なります');
+        }
+        const total = manifest.categories.reduce((sum, category) => sum + Number(category.count || 0), 0);
+        if (total !== manifest.num_classes) {
+          throw new Error(`tags.json のクラス数が不一致です (${total}/${manifest.num_classes})`);
+        }
+      }
+
+      async function inspectWebGPU() {
+        if (!window.isSecureContext && location.protocol !== 'file:') {
+          throw new Error('WebGPUにはSecure Contextが必要です');
+        }
+        if (!navigator.gpu) {
+          throw new Error('このブラウザではWebGPUが利用できません');
+        }
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        if (!adapter) {
+          throw new Error('WebGPUアダプタを取得できません');
+        }
+        let label = 'WebGPU ready';
+        const info = adapter.info;
+        if (info) {
+          const candidate = info.description || info.device || info.vendor;
+          if (candidate) label = String(candidate).slice(0, 42);
+        }
+        el.gpuStatus.textContent = label;
+        setDot(el.gpuDot, '#4ade80');
+      }
+
+      function configureOrt() {
+        if (!window.ort) throw new Error('ONNX Runtime Webの読み込みに失敗しました');
+        ort.env.logLevel = 'warning';
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
+      }
+
+      async function releaseSession() {
+        const previous = state.session;
+        state.session = null;
+        if (previous && typeof previous.release === 'function') {
+          try {
+            await previous.release();
+          } catch (error) {
+            console.warn('Session release failed:', error);
+          }
+        }
+      }
+
+      async function loadAssetsFresh() {
+        if (state.modelLoading) return;
+        state.modelLoading = true;
+        state.loadSequence += 1;
+        const sequence = state.loadSequence;
+        state.probabilities = null;
+        state.lastInferenceMs = null;
+        updateRunState();
+        renderResults();
+        el.reloadModelButton.disabled = true;
+        setModelStatus('WebGPU確認中', 'loading');
+        setRuntimeMessage('モデル準備中');
+
+        try {
+          configureOrt();
+          await inspectWebGPU();
+          if (sequence !== state.loadSequence) return;
+
+          await releaseSession();
+          setModelStatus('HFから tags.json / model.onnx を取得中', 'loading');
+          setRuntimeMessage(`モデルを毎回再取得 · ${formatBytes(MODEL_BYTES)}`);
+
+          const tagsPromise = fetch(freshAssetUrl('tags.json'), {
+            cache: 'no-store',
+            mode: 'cors',
+            credentials: 'omit'
+          }).then(async response => {
+            if (!response.ok) throw new Error(`tags.json: HTTP ${response.status}`);
+            return response.json();
+          });
+
+          const sessionPromise = ort.InferenceSession.create(freshAssetUrl('model.onnx'), {
+            executionProviders: ['webgpu'],
+            graphOptimizationLevel: 'all'
+          });
+
+          const [manifest, session] = await Promise.all([tagsPromise, sessionPromise]);
+          if (sequence !== state.loadSequence) {
+            if (typeof session.release === 'function') await session.release();
+            return;
+          }
+
+          validateManifest(manifest);
+          state.manifest = manifest;
+          state.session = session;
+          renderThresholdControls();
+          renderCategoryTabs();
+          setModelStatus(`ready · ${manifest.num_classes.toLocaleString()} tags`, 'ready');
+          setRuntimeMessage('準備完了', 'ok');
+          updateRunState();
+
+          if (state.bitmap) await runInference();
+        } catch (error) {
+          console.error(error);
+          state.session = null;
+          setModelStatus('モデル初期化失敗', 'error');
+          setRuntimeMessage(error instanceof Error ? error.message : String(error), 'error');
+          el.gpuStatus.textContent = navigator.gpu ? 'WebGPU error' : 'WebGPU unavailable';
+          setDot(el.gpuDot, '#fb7185');
+          showToast(error instanceof Error ? error.message : String(error), 'error');
+          updateRunState();
+        } finally {
+          if (sequence === state.loadSequence) {
+            state.modelLoading = false;
+            el.reloadModelButton.disabled = false;
+            updateRunState();
+          }
+        }
+      }
+
+      function renderThresholdControls() {
+        if (!state.manifest) return;
+        el.thresholdControls.replaceChildren();
+        const fragment = document.createDocumentFragment();
+
+        for (const category of state.manifest.categories) {
+          const name = category.name;
+          const value = state.thresholds[name] ?? 0.2;
+          const wrapper = document.createElement('label');
+          wrapper.className = 'min-w-0 rounded-md border border-white/[.07] bg-white/[.025] px-2 py-1.5';
+
+          const top = document.createElement('div');
+          top.className = 'flex items-center justify-between gap-2 mb-1';
+          const title = document.createElement('span');
+          title.className = 'text-[10px] text-zinc-400 truncate';
+          title.textContent = CATEGORY_LABELS[name] || name;
+          const output = document.createElement('span');
+          output.className = 'font-mono text-[10px] text-zinc-200';
+          output.dataset.thresholdValue = name;
+          output.textContent = value.toFixed(2);
+          top.append(title, output);
+
+          const range = document.createElement('input');
+          range.type = 'range';
+          range.min = '0.01';
+          range.max = '0.99';
+          range.step = '0.01';
+          range.value = String(value);
+          range.dataset.thresholdRange = name;
+          range.className = 'block w-full h-1 accent-violet-500 cursor-pointer';
+          wrapper.append(top, range);
+          fragment.append(wrapper);
+        }
+        el.thresholdControls.append(fragment);
+      }
+
+      function renderCategoryTabs() {
+        const names = ['all', ...(state.manifest ? state.manifest.categories.map(item => item.name) : Object.keys(DEFAULT_THRESHOLDS))];
+        el.categoryTabs.replaceChildren();
+        const fragment = document.createDocumentFragment();
+        for (const name of names) {
+          const button = document.createElement('button');
+          const selected = state.selectedCategory === name;
+          button.type = 'button';
+          button.role = 'tab';
+          button.dataset.category = name;
+          button.setAttribute('aria-selected', String(selected));
+          button.className = `pressable shrink-0 h-8 px-2.5 border-b-2 text-[10px] ${selected ? 'border-violet-400 text-zinc-100 bg-violet-500/[.06]' : 'border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/[.025]'}`;
+          button.textContent = CATEGORY_LABELS[name] || name;
+          fragment.append(button);
+        }
+        el.categoryTabs.append(fragment);
+      }
+
+      function updateRunState() {
+        const ready = Boolean(state.session && state.bitmap && !state.inferencing && !state.modelLoading);
+        el.runButton.disabled = !ready;
+        el.runButtonLabel.textContent = state.inferencing ? '推論中…' : '推論';
+      }
+
+      async function decodeImage(file) {
+        if ('createImageBitmap' in window) {
+          return createImageBitmap(file);
+        }
+        const url = URL.createObjectURL(file);
+        try {
+          const image = new Image();
+          image.decoding = 'async';
+          image.src = url;
+          await image.decode();
+          return image;
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+
+      async function setImageFile(file) {
+        if (!file || !file.type.startsWith('image/')) {
+          showToast('画像ファイルを選択してください', 'error');
+          return;
+        }
+
+        try {
+          const bitmap = await decodeImage(file);
+          if (state.bitmap && typeof state.bitmap.close === 'function') state.bitmap.close();
+          if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+          state.bitmap = bitmap;
+          state.imageFile = file;
+          state.previewUrl = URL.createObjectURL(file);
+          state.probabilities = null;
+          state.lastInferenceMs = null;
+
+          el.imagePreview.src = state.previewUrl;
+          el.imagePreview.classList.remove('hidden');
+          el.emptyState.classList.add('hidden');
+          el.imageOverlay.classList.remove('hidden');
+          el.imageName.textContent = file.name || 'pasted-image';
+          el.imageMeta.textContent = `${bitmap.width} × ${bitmap.height} · ${formatBytes(file.size)}`;
+          el.inferenceBadge.classList.add('hidden');
+          setRuntimeMessage(state.session ? '画像を読み込みました' : 'モデル準備後に自動推論');
+          renderResults();
+          updateRunState();
+
+          if (state.session && !state.modelLoading) await runInference();
+        } catch (error) {
+          console.error(error);
+          showToast('画像のデコードに失敗しました', 'error');
+        }
+      }
+
+      function preprocessImage(bitmap) {
+        const canvas = document.createElement('canvas');
+        canvas.width = INPUT_SIZE;
+        canvas.height = INPUT_SIZE;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) throw new Error('Canvas 2D contextを作成できません');
+
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
+        context.fillStyle = '#000';
+        context.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
+
+        const scale = Math.min(INPUT_SIZE / bitmap.width, INPUT_SIZE / bitmap.height);
+        const drawWidth = Math.max(1, Math.round(bitmap.width * scale));
+        const drawHeight = Math.max(1, Math.round(bitmap.height * scale));
+        const offsetX = Math.floor((INPUT_SIZE - drawWidth) / 2);
+        const offsetY = Math.floor((INPUT_SIZE - drawHeight) / 2);
+
+        // Transparent pixels are composited over white inside the image bounds.
+        context.fillStyle = '#fff';
+        context.fillRect(offsetX, offsetY, drawWidth, drawHeight);
+        context.drawImage(bitmap, offsetX, offsetY, drawWidth, drawHeight);
+
+        const rgba = context.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE).data;
+        const plane = INPUT_SIZE * INPUT_SIZE;
+        const tensorData = new Float32Array(plane * 3);
+        for (let i = 0; i < plane; i += 1) {
+          const pixel = i * 4;
+          tensorData[i] = rgba[pixel] / 127.5 - 1;
+          tensorData[plane + i] = rgba[pixel + 1] / 127.5 - 1;
+          tensorData[plane * 2 + i] = rgba[pixel + 2] / 127.5 - 1;
+        }
+        return new ort.Tensor('float32', tensorData, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+      }
+
+      async function runInference() {
+        if (!state.session || !state.bitmap || state.modelLoading) return;
+        if (state.inferencing) {
+          state.rerunRequested = true;
+          return;
+        }
+
+        state.inferencing = true;
+        state.rerunRequested = false;
+        const imageSequence = state.imageSequence || 0;
+        const bitmap = state.bitmap;
+        const session = state.session;
+        updateRunState();
+        setRuntimeMessage('前処理中…');
+        el.inferenceBadge.classList.remove('hidden');
+        el.inferenceBadge.textContent = '推論中…';
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        let inputTensor = null;
+        let outputTensor = null;
+        try {
+          const startedAt = performance.now();
+          inputTensor = preprocessImage(bitmap);
+          setRuntimeMessage('WebGPU推論中…');
+          const inputName = session.inputNames[0];
+          const outputName = session.outputNames[0];
+          if (!inputName || !outputName) throw new Error('ONNXの入出力名を取得できません');
+
+          const outputs = await session.run({ [inputName]: inputTensor });
+          outputTensor = outputs[outputName];
+          if (!outputTensor || outputTensor.data.length !== 30877) {
+            throw new Error(`ONNX出力サイズが不正です (${outputTensor?.data?.length ?? 'unknown'})`);
+          }
+
+          if (imageSequence !== (state.imageSequence || 0)) {
+            state.rerunRequested = true;
+            return;
+          }
+
+          const probabilities = new Float32Array(outputTensor.data.length);
+          for (let i = 0; i < outputTensor.data.length; i += 1) {
+            probabilities[i] = sigmoid(Number(outputTensor.data[i]));
+          }
+          state.probabilities = probabilities;
+          state.lastInferenceMs = performance.now() - startedAt;
+          el.inferenceBadge.textContent = `${state.lastInferenceMs.toFixed(0)} ms · WebGPU`;
+          el.inferenceTime.textContent = `${state.lastInferenceMs.toFixed(0)} ms`;
+          setRuntimeMessage('推論完了', 'ok');
+          renderResults();
+        } catch (error) {
+          console.error(error);
+          setRuntimeMessage(error instanceof Error ? error.message : String(error), 'error');
+          el.inferenceBadge.textContent = '推論失敗';
+          showToast(error instanceof Error ? error.message : String(error), 'error');
+        } finally {
+          if (inputTensor && typeof inputTensor.dispose === 'function') inputTensor.dispose();
+          if (outputTensor && typeof outputTensor.dispose === 'function') outputTensor.dispose();
+          state.inferencing = false;
+          updateRunState();
+          if (state.rerunRequested && state.session && state.bitmap && !state.modelLoading) {
+            state.rerunRequested = false;
+            queueMicrotask(() => runInference());
+          }
+        }
+      }
+
+      function collectVisibleResults() {
+        if (!state.manifest || !state.probabilities) return [];
+        const query = state.search.trim().toLowerCase();
+        const results = [];
+
+        for (const category of state.manifest.categories) {
+          if (state.selectedCategory !== 'all' && state.selectedCategory !== category.name) continue;
+          const threshold = state.thresholds[category.name] ?? 0.2;
+          const offset = Number(category.offset);
+          const count = Number(category.count);
+          for (let localIndex = 0; localIndex < count; localIndex += 1) {
+            const globalIndex = offset + localIndex;
+            const probability = state.probabilities[globalIndex];
+            if (probability < threshold) continue;
+            const tag = String(category.tags[localIndex]);
+            if (query) {
+              const normalized = tag.toLowerCase();
+              if (!normalized.includes(query) && !normalized.replaceAll('_', ' ').includes(query)) continue;
+            }
+            results.push({
+              tag,
+              category: category.name,
+              probability,
+              globalIndex
+            });
+          }
+        }
+
+        results.sort((a, b) => b.probability - a.probability || a.globalIndex - b.globalIndex);
+        return results;
+      }
+
+      function showEmptyResult(title, detail) {
+        el.resultsList.classList.add('hidden');
+        el.resultsEmpty.classList.remove('hidden');
+        el.resultsEmpty.replaceChildren();
+        const wrap = document.createElement('div');
+        const heading = document.createElement('div');
+        heading.className = 'text-[12px] text-zinc-400';
+        heading.textContent = title;
+        const sub = document.createElement('div');
+        sub.className = 'mt-1 text-[10px] text-zinc-600';
+        sub.textContent = detail;
+        wrap.append(heading, sub);
+        el.resultsEmpty.append(wrap);
+      }
+
+      function renderResults() {
+        if (!state.bitmap) {
+          showEmptyResult('画像を入力すると結果がここに表示されます', '画像選択後はモデル準備完了時に自動推論');
+          el.resultCount.textContent = '0 tags';
+          el.inferenceTime.textContent = '未推論';
+          el.copyAllButton.disabled = true;
+          return;
+        }
+
+        if (!state.probabilities) {
+          showEmptyResult(state.inferencing ? '推論中…' : '推論結果待ち', state.session ? 'WebGPUで処理しています' : 'モデルの準備完了後に自動実行します');
+          el.resultCount.textContent = '0 tags';
+          el.inferenceTime.textContent = state.lastInferenceMs == null ? '未推論' : `${state.lastInferenceMs.toFixed(0)} ms`;
+          el.copyAllButton.disabled = true;
+          return;
+        }
+
+        const results = collectVisibleResults();
+        const visible = results.slice(0, state.resultLimit);
+        el.resultCount.textContent = results.length > visible.length
+          ? `${results.length.toLocaleString()} tags · ${visible.length.toLocaleString()}表示`
+          : `${results.length.toLocaleString()} tags`;
+        el.copyAllButton.disabled = results.length === 0;
+
+        if (results.length === 0) {
+          showEmptyResult('条件に一致するタグがありません', '検索語かカテゴリ別閾値を調整してください');
+          return;
+        }
+
+        el.resultsEmpty.classList.add('hidden');
+        el.resultsList.classList.remove('hidden');
+        el.resultsList.replaceChildren();
+        const fragment = document.createDocumentFragment();
+
+        for (const item of visible) {
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.dataset.copyTag = item.tag;
+          row.className = 'result-row pressable relative w-full h-[45px] px-3 grid grid-cols-[minmax(0,1fr)_100px_64px] items-center gap-3 text-left hover:bg-white/[.035] focus-visible:z-10 overflow-hidden';
+          row.title = `${item.tag} をコピー`;
+
+          const tag = document.createElement('div');
+          tag.className = 'min-w-0 font-mono text-[11px] text-zinc-200 truncate';
+          tag.textContent = item.tag;
+
+          const category = document.createElement('div');
+          category.className = 'text-[9px] uppercase tracking-[.06em] truncate';
+          category.style.color = CATEGORY_COLORS[item.category] || '#a1a1aa';
+          category.textContent = item.category;
+
+          const score = document.createElement('div');
+          score.className = 'font-mono text-[10px] text-zinc-400 tabular-nums text-right';
+          score.textContent = `${(item.probability * 100).toFixed(1)}%`;
+
+          const bar = document.createElement('span');
+          bar.className = 'score-bar absolute bottom-0 left-0 h-px w-full pointer-events-none opacity-25';
+          bar.style.backgroundColor = CATEGORY_COLORS[item.category] || '#8b5cf6';
+          bar.style.transform = `scaleX(${Math.max(0, Math.min(1, item.probability))})`;
+
+          row.append(tag, category, score, bar);
+          fragment.append(row);
+        }
+        el.resultsList.append(fragment);
+      }
+
+      async function writeClipboard(text) {
+        if (!text) return false;
+        if (navigator.clipboard && window.isSecureContext) {
+          try {
+            await navigator.clipboard.writeText(text);
+            return true;
+          } catch (error) {
+            console.warn('Clipboard API failed, falling back:', error);
+          }
+        }
+
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.append(textarea);
+        textarea.select();
+        const ok = document.execCommand('copy');
+        textarea.remove();
+        return ok;
+      }
+
+      async function copyAllResults() {
+        const results = collectVisibleResults();
+        if (!results.length) return;
+        const text = results.map(item => item.tag).join(', ');
+        const ok = await writeClipboard(text);
+        if (!ok) {
+          showToast('クリップボードへのコピーに失敗しました', 'error');
+          return;
+        }
+        window.clearTimeout(copyLabelTimer);
+        el.copyAllLabel.textContent = `${results.length}件コピー済み`;
+        showToast(`${results.length.toLocaleString()} tags copied`);
+        copyLabelTimer = window.setTimeout(() => {
+          el.copyAllLabel.textContent = 'コピー';
+        }, 1300);
+      }
+
+      function bindEvents() {
+        const openFilePicker = () => el.fileInput.click();
+        el.chooseImageButton.addEventListener('click', openFilePicker);
+        el.replaceImageButton.addEventListener('click', openFilePicker);
+        el.fileInput.addEventListener('change', async event => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) {
+            state.imageSequence = (state.imageSequence || 0) + 1;
+            await setImageFile(file);
+          }
+        });
+
+        let dragDepth = 0;
+        el.dropZone.addEventListener('dragenter', event => {
+          event.preventDefault();
+          dragDepth += 1;
+          el.dropZone.classList.add('drop-active');
+        });
+        el.dropZone.addEventListener('dragover', event => {
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        });
+        el.dropZone.addEventListener('dragleave', event => {
+          event.preventDefault();
+          dragDepth = Math.max(0, dragDepth - 1);
+          if (dragDepth === 0) el.dropZone.classList.remove('drop-active');
+        });
+        el.dropZone.addEventListener('drop', async event => {
+          event.preventDefault();
+          dragDepth = 0;
+          el.dropZone.classList.remove('drop-active');
+          const file = [...(event.dataTransfer?.files || [])].find(item => item.type.startsWith('image/'));
+          if (file) {
+            state.imageSequence = (state.imageSequence || 0) + 1;
+            await setImageFile(file);
+          } else {
+            showToast('ドロップされたデータに画像がありません', 'error');
+          }
+        });
+        window.addEventListener('dragover', event => event.preventDefault());
+        window.addEventListener('drop', event => event.preventDefault());
+
+        window.addEventListener('paste', async event => {
+          const item = [...(event.clipboardData?.items || [])].find(candidate => candidate.type.startsWith('image/'));
+          if (!item) return;
+          const file = item.getAsFile();
+          if (!file) return;
+          event.preventDefault();
+          state.imageSequence = (state.imageSequence || 0) + 1;
+          await setImageFile(file);
+        });
+
+        el.runButton.addEventListener('click', () => runInference());
+        el.reloadModelButton.addEventListener('click', () => loadAssetsFresh());
+        el.copyAllButton.addEventListener('click', () => copyAllResults());
+
+        el.resultsList.addEventListener('click', async event => {
+          const row = event.target.closest('[data-copy-tag]');
+          if (!row) return;
+          const tag = row.dataset.copyTag || '';
+          if (await writeClipboard(tag)) showToast(`${tag} copied`);
+          else showToast('コピーに失敗しました', 'error');
+        });
+
+        el.searchInput.addEventListener('input', event => {
+          state.search = event.target.value;
+          renderResults();
+          el.resultsScroll.scrollTop = 0;
+        });
+        el.resultLimitSelect.addEventListener('change', event => {
+          state.resultLimit = Number(event.target.value) || 300;
+          renderResults();
+        });
+
+        el.categoryTabs.addEventListener('click', event => {
+          const tab = event.target.closest('[data-category]');
+          if (!tab) return;
+          state.selectedCategory = tab.dataset.category || 'all';
+          renderCategoryTabs();
+          renderResults();
+          el.resultsScroll.scrollTop = 0;
+        });
+
+        el.thresholdControls.addEventListener('input', event => {
+          const input = event.target.closest('[data-threshold-range]');
+          if (!input) return;
+          const category = input.dataset.thresholdRange;
+          const value = Number(input.value);
+          if (!category || !Number.isFinite(value)) return;
+          state.thresholds[category] = value;
+          const output = el.thresholdControls.querySelector(`[data-threshold-value="${CSS.escape(category)}"]`);
+          if (output) output.textContent = value.toFixed(2);
+          renderResults();
+        });
+
+        el.resetThresholdsButton.addEventListener('click', () => {
+          state.thresholds = { ...DEFAULT_THRESHOLDS };
+          renderThresholdControls();
+          renderResults();
+          showToast('公式推奨閾値に戻しました');
+        });
+
+        el.thresholdToggle.addEventListener('click', () => {
+          const willOpen = el.thresholdPanel.classList.contains('hidden');
+          el.thresholdPanel.classList.toggle('hidden', !willOpen);
+          el.thresholdToggle.setAttribute('aria-expanded', String(willOpen));
+        });
+
+        window.addEventListener('beforeunload', () => {
+          if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+          if (state.bitmap && typeof state.bitmap.close === 'function') state.bitmap.close();
+          if (state.session && typeof state.session.release === 'function') state.session.release();
+        });
+      }
+
+      async function init() {
+        renderCategoryTabs();
+        bindEvents();
+        updateRunState();
+        await loadAssetsFresh();
+      }
+
+      init().catch(error => {
+        console.error(error);
+        setModelStatus('起動失敗', 'error');
+        setRuntimeMessage(error instanceof Error ? error.message : String(error), 'error');
+      });
+    })();
+  </script>
+</body>
+</html>
