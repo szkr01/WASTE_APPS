@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <!--
+    Context: GIF / MP4 の任意区間を指定拍数・BPMの周期へ合わせてループ表示するスマホ向けローカルアプリ。通常画面はキャンバスのみで、1本指タップはTap Tempo、2本指タップは設定モーダルを開く。
+    Implementation: MP4は非表示videoをCanvasへ描画し、選択区間の長さとBPMからplaybackRateを算出する。GIFはImageDecoderでフレームを必要時だけデコードし、同じ位相計算でCanvasへ描画する。DOM操作は専用IDだけを使用する。
+  -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#050505">
+  <title>BPM Loop Canvas</title>
+  <meta name="description" content="Loop a selected GIF or MP4 segment in sync with BPM. Tap the canvas to set tempo; tap with two fingers to open settings.">
+  <meta name="page:icon" content="fas fa-repeat">
+  <meta name="page:color" content="#a3ff12">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <style>
+    :root {
+      color-scheme: dark;
+      --ease-out: cubic-bezier(.23,1,.32,1);
+      --ease-modal: cubic-bezier(.22,1,.36,1);
+      --surface: #111;
+      --line: #2a2a2a;
+      --muted: #8b8b8b;
+      --accent: #a3ff12;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: #000;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    body { touch-action: none; }
+    button, input { font: inherit; -webkit-tap-highlight-color: transparent; }
+    #displayCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000;
+      touch-action: none;
+    }
+    #videoSource {
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      width: 2px;
+      height: 2px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #modalLayer {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+      background: rgba(0,0,0,.64);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 180ms ease-out, visibility 0s linear 180ms;
+    }
+    #modalLayer[data-open="true"] {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transition: opacity 220ms ease-out, visibility 0s linear 0s;
+    }
+    #settingsModal {
+      width: min(100%, 430px);
+      max-height: min(92dvh, 760px);
+      overflow: auto;
+      border: 1px solid rgba(255,255,255,.11);
+      border-radius: 24px;
+      background: rgba(17,17,17,.96);
+      box-shadow: 0 24px 70px rgba(0,0,0,.52), inset 0 1px rgba(255,255,255,.05);
+      transform: scale(.96);
+      opacity: 0;
+      transition: transform 150ms var(--ease-modal), opacity 150ms var(--ease-modal);
+      scrollbar-width: none;
+    }
+    #settingsModal::-webkit-scrollbar { display: none; }
+    #modalLayer[data-open="true"] #settingsModal {
+      transform: scale(1);
+      opacity: 1;
+      transition: transform 250ms var(--ease-modal), opacity 250ms var(--ease-modal);
+    }
+    .pressable {
+      transition: transform 140ms var(--ease-out), background-color 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease;
+    }
+    .pressable:active { transform: scale(.97); }
+    .field {
+      border: 1px solid var(--line);
+      background: #0b0b0b;
+      color: #f5f5f5;
+      outline: none;
+      transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+    }
+    .field:focus {
+      border-color: #5d5d5d;
+      background: #0e0e0e;
+      box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+    }
+    .range {
+      width: 100%;
+      height: 24px;
+      margin: 0;
+      background: transparent;
+      accent-color: var(--accent);
+    }
+    .range::-webkit-slider-runnable-track { height: 3px; border-radius: 999px; background: #333; }
+    .range::-webkit-slider-thumb {
+      width: 20px;
+      height: 20px;
+      margin-top: -8.5px;
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      border-radius: 999px;
+      background: #f5f5f5;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.35);
+    }
+    .range::-moz-range-track { height: 3px; border: 0; border-radius: 999px; background: #333; }
+    .range::-moz-range-thumb { width: 20px; height: 20px; border: 0; border-radius: 999px; background: #f5f5f5; }
+    .segmented button[aria-pressed="true"] {
+      background: #f1f1f1;
+      color: #0a0a0a;
+      border-color: #f1f1f1;
+    }
+    #errorBox { white-space: pre-wrap; overflow-wrap: anywhere; }
+    @media (prefers-reduced-motion: reduce) {
+      #modalLayer, #settingsModal, .pressable, .field { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="displayCanvas" aria-label="BPM synchronized media loop"></canvas>
+  <video id="videoSource" playsinline muted preload="auto"></video>
+  <input id="fileInput" type="file" accept=".gif,.mp4,image/gif,video/mp4" hidden>
+
+  <div id="modalLayer" data-open="true" role="presentation">
+    <section id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="px-4 pb-5 pt-4 sm:px-5 sm:pb-6 sm:pt-5">
+        <header class="mb-4 flex items-center gap-3">
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[.04] text-[13px] text-[#a3ff12]">
+            <i class="fa-solid fa-repeat" aria-hidden="true"></i>
+          </div>
+          <div class="min-w-0">
+            <h1 id="modalTitle" class="truncate text-[15px] font-semibold tracking-[-.02em] text-white">BPM Loop Canvas</h1>
+            <p class="mt-0.5 text-[10px] tracking-[.08em] text-neutral-500">GIF / MP4 · TAP TEMPO</p>
+          </div>
+          <button id="closeButton" type="button" class="pressable ml-auto hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[.03] text-neutral-400" aria-label="設定を閉じる">
+            <i class="fa-solid fa-xmark text-[12px]" aria-hidden="true"></i>
+          </button>
+        </header>
+
+        <button id="fileButton" type="button" class="pressable mb-4 flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[.035] px-3.5 py-3 text-left">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[.055] text-[12px] text-neutral-300">
+            <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p id="fileName" class="truncate text-[12px] font-medium text-neutral-100">GIF / MP4 を選択</p>
+            <p id="fileMeta" class="mt-0.5 truncate text-[10px] text-neutral-500">端末内で処理します</p>
+          </div>
+          <i class="fa-solid fa-chevron-right text-[9px] text-neutral-600" aria-hidden="true"></i>
+        </button>
+
+        <div class="grid grid-cols-[1fr_112px] gap-3">
+          <label class="block min-w-0">
+            <span class="mb-1.5 block text-[10px] font-medium tracking-[.04em] text-neutral-500">BPM</span>
+            <div class="relative">
+              <input id="bpmInput" class="field h-11 w-full rounded-xl px-3 pr-12 text-[14px] font-semibold tabular-nums" type="number" inputmode="decimal" min="20" max="400" step="0.1" value="120">
+              <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[9px] text-neutral-600">BPM</span>
+            </div>
+          </label>
+          <label class="block">
+            <span class="mb-1.5 block text-[10px] font-medium tracking-[.04em] text-neutral-500">拍数 / LOOP</span>
+            <input id="beatsInput" class="field h-11 w-full rounded-xl px-3 text-center text-[14px] font-semibold tabular-nums" type="number" inputmode="numeric" min="1" max="64" step="1" value="4">
+          </label>
+        </div>
+
+        <div id="rangeBlock" class="mt-4 opacity-40">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-[10px] font-medium tracking-[.04em] text-neutral-500">SOURCE RANGE</span>
+            <span id="segmentValue" class="text-[10px] tabular-nums text-neutral-400">0.000 — 0.000 s</span>
+          </div>
+
+          <label class="block">
+            <div class="mb-0.5 flex items-center justify-between text-[10px]">
+              <span class="text-neutral-500">開始</span>
+              <span id="startValue" class="tabular-nums text-neutral-400">0.000 s</span>
+            </div>
+            <input id="startRange" class="range" type="range" min="0" max="1" step="0.001" value="0" disabled>
+          </label>
+
+          <label class="mt-2 block">
+            <div class="mb-0.5 flex items-center justify-between text-[10px]">
+              <span class="text-neutral-500">終了</span>
+              <span id="endValue" class="tabular-nums text-neutral-400">0.000 s</span>
+            </div>
+            <input id="endRange" class="range" type="range" min="0" max="1" step="0.001" value="1" disabled>
+          </label>
+        </div>
+
+        <div class="mt-4">
+          <div class="mb-2 text-[10px] font-medium tracking-[.04em] text-neutral-500">CANVAS FIT</div>
+          <div class="segmented grid grid-cols-2 gap-2">
+            <button id="containButton" type="button" aria-pressed="true" class="pressable h-9 rounded-xl border border-white/10 bg-white/[.03] text-[10px] font-medium text-neutral-400">CONTAIN</button>
+            <button id="coverButton" type="button" aria-pressed="false" class="pressable h-9 rounded-xl border border-white/10 bg-white/[.03] text-[10px] font-medium text-neutral-400">COVER</button>
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-3 divide-x divide-white/[.07] rounded-2xl border border-white/[.08] bg-black/20 py-3">
+          <div class="px-3">
+            <p class="text-[9px] text-neutral-600">SOURCE</p>
+            <p id="sourceSpanValue" class="mt-1 text-[11px] font-medium tabular-nums text-neutral-300">—</p>
+          </div>
+          <div class="px-3">
+            <p class="text-[9px] text-neutral-600">CYCLE</p>
+            <p id="cycleValue" class="mt-1 text-[11px] font-medium tabular-nums text-neutral-300">2.000 s</p>
+          </div>
+          <div class="px-3">
+            <p class="text-[9px] text-neutral-600">SPEED</p>
+            <p id="speedValue" class="mt-1 text-[11px] font-medium tabular-nums text-neutral-300">—</p>
+          </div>
+        </div>
+
+        <div id="errorBox" class="mt-4 hidden rounded-xl border border-red-400/20 bg-red-500/[.07] px-3 py-2.5 text-[10px] leading-4 text-red-300"></div>
+
+        <button id="playButton" type="button" disabled class="pressable mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#a3ff12] px-4 text-[12px] font-semibold text-black disabled:cursor-not-allowed disabled:opacity-25">
+          <i class="fa-solid fa-play text-[9px]" aria-hidden="true"></i>
+          <span id="playButtonLabel">ファイルを選択</span>
+        </button>
+
+        <p class="mt-3 text-center text-[9px] leading-4 text-neutral-600">再生中: 1本指タップでBPM / 2本指タップで設定</p>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("displayCanvas");
+      const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+      const video = document.getElementById("videoSource");
+      const fileInput = document.getElementById("fileInput");
+      const modalLayer = document.getElementById("modalLayer");
+      const settingsModal = document.getElementById("settingsModal");
+      const closeButton = document.getElementById("closeButton");
+      const fileButton = document.getElementById("fileButton");
+      const fileName = document.getElementById("fileName");
+      const fileMeta = document.getElementById("fileMeta");
+      const bpmInput = document.getElementById("bpmInput");
+      const beatsInput = document.getElementById("beatsInput");
+      const rangeBlock = document.getElementById("rangeBlock");
+      const startRange = document.getElementById("startRange");
+      const endRange = document.getElementById("endRange");
+      const startValue = document.getElementById("startValue");
+      const endValue = document.getElementById("endValue");
+      const segmentValue = document.getElementById("segmentValue");
+      const containButton = document.getElementById("containButton");
+      const coverButton = document.getElementById("coverButton");
+      const sourceSpanValue = document.getElementById("sourceSpanValue");
+      const cycleValue = document.getElementById("cycleValue");
+      const speedValue = document.getElementById("speedValue");
+      const errorBox = document.getElementById("errorBox");
+      const playButton = document.getElementById("playButton");
+      const playButtonLabel = document.getElementById("playButtonLabel");
+
+      const state = {
+        kind: null,
+        file: null,
+        objectUrl: null,
+        duration: 0,
+        width: 0,
+        height: 0,
+        start: 0,
+        end: 0,
+        bpm: 120,
+        beats: 4,
+        fit: "contain",
+        started: false,
+        tapTimes: [],
+        tapFeedbackUntil: 0,
+        tapFeedbackText: "",
+        tapPulseUntil: 0,
+        gif: null
+      };
+
+      const activePointers = new Set();
+      let multiTouchGesture = false;
+      let rafId = 0;
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function formatTime(seconds) {
+        return `${Number(seconds || 0).toFixed(3)} s`;
+      }
+
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes)) return "—";
+        if (bytes < 1000) return `${bytes} B`;
+        if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)} KB`;
+        return `${(bytes / 1_000_000).toFixed(bytes >= 10_000_000 ? 1 : 2)} MB`;
+      }
+
+      function targetLoopSeconds() {
+        return state.beats * 60 / state.bpm;
+      }
+
+      function sourceSpan() {
+        return Math.max(0.001, state.end - state.start);
+      }
+
+      function sourcePlaybackRate() {
+        return sourceSpan() / targetLoopSeconds();
+      }
+
+      function setError(message) {
+        const text = String(message || "");
+        errorBox.textContent = text;
+        errorBox.classList.toggle("hidden", !text);
+        if (text) console.error(text);
+      }
+
+      function clearError() {
+        errorBox.textContent = "";
+        errorBox.classList.add("hidden");
+      }
+
+      function resizeCanvas() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        const width = Math.max(1, Math.round(window.innerWidth * dpr));
+        const height = Math.max(1, Math.round(window.innerHeight * dpr));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+      }
+
+      function drawSource(source, sourceWidth, sourceHeight) {
+        if (!source || !sourceWidth || !sourceHeight) return;
+        const cw = canvas.width;
+        const ch = canvas.height;
+        const sx = cw / sourceWidth;
+        const sy = ch / sourceHeight;
+        const scale = state.fit === "cover" ? Math.max(sx, sy) : Math.min(sx, sy);
+        const dw = sourceWidth * scale;
+        const dh = sourceHeight * scale;
+        const dx = (cw - dw) * 0.5;
+        const dy = (ch - dh) * 0.5;
+        ctx.drawImage(source, dx, dy, dw, dh);
+      }
+
+      function drawTapFeedback(now) {
+        if (now > state.tapPulseUntil && now > state.tapFeedbackUntil) return;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        if (now <= state.tapPulseUntil) {
+          const alpha = clamp((state.tapPulseUntil - now) / 120, 0, 1) * 0.12;
+          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        if (now <= state.tapFeedbackUntil && state.tapFeedbackText) {
+          const remain = clamp((state.tapFeedbackUntil - now) / 520, 0, 1);
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, remain * 1.8);
+          ctx.font = `${Math.round(13 * dpr)}px ui-sans-serif, system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "rgba(255,255,255,.92)";
+          ctx.shadowColor = "rgba(0,0,0,.75)";
+          ctx.shadowBlur = 10 * dpr;
+          ctx.fillText(state.tapFeedbackText, canvas.width / 2, canvas.height - (38 * dpr));
+          ctx.restore();
+        }
+      }
+
+      function openModal() {
+        modalLayer.dataset.open = "true";
+      }
+
+      function closeModal() {
+        if (!state.kind) return;
+        modalLayer.dataset.open = "false";
+      }
+
+      function updateFitButtons() {
+        containButton.setAttribute("aria-pressed", String(state.fit === "contain"));
+        coverButton.setAttribute("aria-pressed", String(state.fit === "cover"));
+      }
+
+      function updateDerivedUi() {
+        bpmInput.value = String(Number(state.bpm.toFixed(1)));
+        beatsInput.value = String(state.beats);
+        startValue.textContent = formatTime(state.start);
+        endValue.textContent = formatTime(state.end);
+        segmentValue.textContent = `${state.start.toFixed(3)} — ${state.end.toFixed(3)} s`;
+        sourceSpanValue.textContent = state.kind ? formatTime(sourceSpan()) : "—";
+        cycleValue.textContent = formatTime(targetLoopSeconds());
+        speedValue.textContent = state.kind ? `×${sourcePlaybackRate().toFixed(3)}` : "—";
+        updateFitButtons();
+      }
+
+      function configureRanges() {
+        const enabled = Boolean(state.kind && state.duration > 0);
+        rangeBlock.classList.toggle("opacity-40", !enabled);
+        startRange.disabled = !enabled;
+        endRange.disabled = !enabled;
+        startRange.max = String(state.duration);
+        endRange.max = String(state.duration);
+        startRange.value = String(state.start);
+        endRange.value = String(state.end);
+        updateDerivedUi();
+      }
+
+      function clampSegment(changed) {
+        if (!state.duration) return;
+        const minSpan = Math.min(0.04, state.duration);
+        state.start = clamp(state.start, 0, Math.max(0, state.duration - minSpan));
+        state.end = clamp(state.end, minSpan, state.duration);
+        if (state.end - state.start < minSpan) {
+          if (changed === "start") state.start = Math.max(0, state.end - minSpan);
+          else state.end = Math.min(state.duration, state.start + minSpan);
+        }
+        startRange.value = String(state.start);
+        endRange.value = String(state.end);
+        updateDerivedUi();
+        applyPlaybackRate(false);
+      }
+
+      function syncTempoFromInputs() {
+        const bpm = Number(bpmInput.value);
+        const beats = Number(beatsInput.value);
+        if (!Number.isFinite(bpm) || bpm < 20 || bpm > 400) {
+          setError("BPM は 20〜400 の範囲で指定してください。");
+          return false;
+        }
+        if (!Number.isInteger(beats) || beats < 1 || beats > 64) {
+          setError("拍数は 1〜64 の整数で指定してください。");
+          return false;
+        }
+        clearError();
+        const oldTarget = targetLoopSeconds();
+        const oldBpm = state.bpm;
+        const oldBeats = state.beats;
+        state.bpm = bpm;
+        state.beats = beats;
+        preserveGifPhaseAcrossTempoChange(oldTarget, oldBpm, oldBeats);
+        const rateValid = applyPlaybackRate(false);
+        updateDerivedUi();
+        return rateValid;
+      }
+
+      function preserveGifPhaseAcrossTempoChange(oldTargetSeconds) {
+        if (state.kind !== "gif" || !state.gif || !state.started) return;
+        const now = performance.now();
+        const oldMs = Math.max(1, oldTargetSeconds * 1000);
+        const normalized = ((now - state.gif.phaseOriginMs) % oldMs + oldMs) % oldMs / oldMs;
+        state.gif.phaseOriginMs = now - normalized * targetLoopSeconds() * 1000;
+      }
+
+      function applyPlaybackRate(alignToStart) {
+        if (!state.kind) return true;
+        if (state.kind === "video") {
+          const rate = sourcePlaybackRate();
+          if (!Number.isFinite(rate) || rate <= 0) {
+            setError("選択区間とBPMから有効な再生速度を計算できません。");
+            return false;
+          }
+          if (rate < 0.0625 || rate > 16) {
+            setError("MP4 playback speed x" + rate.toFixed(3) + " is outside the supported range x0.0625-x16. Adjust the segment, BPM, or beat count.");
+            if (state.started) video.pause();
+            return false;
+          }
+          try {
+            video.playbackRate = rate;
+          } catch (error) {
+            setError(error instanceof Error ? error.message : String(error));
+            return false;
+          }
+          if (alignToStart || video.currentTime < state.start || video.currentTime >= state.end) {
+            try { video.currentTime = state.start; } catch (error) { console.error(error); }
+          }
+        } else if (state.kind === "gif" && alignToStart && state.gif) {
+          state.gif.phaseOriginMs = performance.now();
+        }
+        return true;
+      }
+
+      async function ensureVideoPlaying() {
+        if (state.kind !== "video") return;
+        applyPlaybackRate(false);
+        try {
+          await video.play();
+        } catch (error) {
+          setError(error instanceof Error ? (error.stack || error.message) : String(error));
+          openModal();
+          throw error;
+        }
+      }
+
+      function enforceVideoLoop() {
+        if (state.kind !== "video" || !state.started || !Number.isFinite(video.currentTime)) return;
+        const span = sourceSpan();
+        if (video.currentTime >= state.end || video.currentTime < state.start - 0.05 || video.ended) {
+          const over = Math.max(0, video.currentTime - state.end);
+          try {
+            video.currentTime = state.start + (over % span);
+            if (video.paused) video.play().catch(error => console.error(error));
+          } catch (error) {
+            console.error(error);
+          }
+        }
+      }
+
+      function parseGifDurations(bytes, frameCount) {
+        const durations = [];
+        for (let i = 0; i <= bytes.length - 8; i++) {
+          if (bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04) {
+            const delayCs = bytes[i + 4] | (bytes[i + 5] << 8);
+            durations.push(delayCs > 0 ? Math.max(20, delayCs * 10) : 100);
+            i += 7;
+          }
+        }
+        if (!durations.length) durations.push(100);
+        while (durations.length < frameCount) durations.push(durations[durations.length - 1] || 100);
+        if (durations.length > frameCount) durations.length = frameCount;
+        return durations;
+      }
+
+      function buildFrameStarts(durations) {
+        const starts = new Array(durations.length + 1);
+        starts[0] = 0;
+        for (let i = 0; i < durations.length; i++) starts[i + 1] = starts[i] + durations[i];
+        return starts;
+      }
+
+      function gifFrameIndexAt(ms) {
+        const gif = state.gif;
+        if (!gif) return 0;
+        const t = clamp(ms, 0, Math.max(0, gif.totalMs - 0.001));
+        let lo = 0;
+        let hi = gif.frameStarts.length - 2;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (gif.frameStarts[mid + 1] <= t) lo = mid + 1;
+          else if (gif.frameStarts[mid] > t) hi = mid - 1;
+          else return mid;
+        }
+        return clamp(lo, 0, gif.frameCount - 1);
+      }
+
+      function requestGifFrame(index) {
+        const gif = state.gif;
+        if (!gif || gif.currentIndex === index || gif.requestedIndex === index) return;
+        if (gif.decoding) {
+          gif.pendingIndex = index;
+          return;
+        }
+        gif.decoding = true;
+        gif.requestedIndex = index;
+        gif.decoder.decode({ frameIndex: index }).then(result => {
+          const image = result.image;
+          if (!state.gif || state.gif !== gif) {
+            image.close();
+            return;
+          }
+          if (gif.currentFrame) gif.currentFrame.close();
+          gif.currentFrame = image;
+          gif.currentIndex = index;
+          gif.requestedIndex = -1;
+        }).catch(error => {
+          if (state.gif !== gif) return;
+          setError(error instanceof Error ? (error.stack || error.message) : String(error));
+          openModal();
+        }).finally(() => {
+          gif.decoding = false;
+          const pending = gif.pendingIndex;
+          gif.pendingIndex = -1;
+          if (pending >= 0 && pending !== gif.currentIndex) requestGifFrame(pending);
+        });
+      }
+
+      function gifSourceTimeMs(now) {
+        const gif = state.gif;
+        if (!gif) return 0;
+        const targetMs = targetLoopSeconds() * 1000;
+        const phaseMs = ((now - gif.phaseOriginMs) % targetMs + targetMs) % targetMs;
+        const normalized = phaseMs / targetMs;
+        return (state.start + normalized * sourceSpan()) * 1000;
+      }
+
+      async function disposeCurrentMedia() {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        if (state.objectUrl) {
+          URL.revokeObjectURL(state.objectUrl);
+          state.objectUrl = null;
+        }
+        if (state.gif) {
+          if (state.gif.currentFrame) state.gif.currentFrame.close();
+          try { state.gif.decoder.close(); } catch (error) { console.error(error); }
+          state.gif = null;
+        }
+        state.kind = null;
+        state.file = null;
+        state.duration = 0;
+        state.width = 0;
+        state.height = 0;
+        state.start = 0;
+        state.end = 0;
+        state.started = false;
+      }
+
+      async function loadVideo(file) {
+        const objectUrl = URL.createObjectURL(file);
+        state.objectUrl = objectUrl;
+        await new Promise((resolve, reject) => {
+          const cleanup = () => {
+            video.removeEventListener("loadedmetadata", onLoaded);
+            video.removeEventListener("error", onError);
+          };
+          const onLoaded = () => {
+            cleanup();
+            if (!Number.isFinite(video.duration) || video.duration <= 0) {
+              reject(new Error("MP4 の再生時間を取得できませんでした。"));
+              return;
+            }
+            resolve();
+          };
+          const onError = () => {
+            cleanup();
+            reject(new Error(video.error ? `MP4 decode error: ${video.error.message || video.error.code}` : "MP4 を読み込めませんでした。"));
+          };
+          video.addEventListener("loadedmetadata", onLoaded);
+          video.addEventListener("error", onError);
+          video.src = objectUrl;
+          video.load();
+        });
+        state.kind = "video";
+        state.duration = video.duration;
+        state.width = video.videoWidth;
+        state.height = video.videoHeight;
+      }
+
+      async function loadGif(file) {
+        if (typeof ImageDecoder === "undefined") {
+          throw new Error("このブラウザは GIF の区間デコードに必要な ImageDecoder API に対応していません。Chrome系ブラウザの最新版を使用してください。");
+        }
+        const buffer = await file.arrayBuffer();
+        const decoder = new ImageDecoder({ data: buffer, type: "image/gif", preferAnimation: true });
+        await decoder.tracks.ready;
+        const track = decoder.tracks.selectedTrack;
+        if (!track || !track.frameCount) {
+          decoder.close();
+          throw new Error("GIF のフレームを取得できませんでした。");
+        }
+        const bytes = new Uint8Array(buffer);
+        const durations = parseGifDurations(bytes, track.frameCount);
+        const frameStarts = buildFrameStarts(durations);
+        const first = await decoder.decode({ frameIndex: 0 });
+        const image = first.image;
+        state.kind = "gif";
+        state.duration = frameStarts[frameStarts.length - 1] / 1000;
+        state.width = image.displayWidth || image.codedWidth;
+        state.height = image.displayHeight || image.codedHeight;
+        state.gif = {
+          decoder,
+          frameCount: track.frameCount,
+          durations,
+          frameStarts,
+          totalMs: frameStarts[frameStarts.length - 1],
+          currentFrame: image,
+          currentIndex: 0,
+          requestedIndex: -1,
+          pendingIndex: -1,
+          decoding: false,
+          phaseOriginMs: performance.now()
+        };
+      }
+
+      async function loadFile(file) {
+        if (!file) return;
+        clearError();
+        const name = file.name.toLowerCase();
+        const isGif = file.type === "image/gif" || name.endsWith(".gif");
+        const isMp4 = file.type === "video/mp4" || name.endsWith(".mp4");
+        if (!isGif && !isMp4) {
+          setError("GIF または MP4 を選択してください。");
+          return;
+        }
+
+        playButton.disabled = true;
+        playButtonLabel.textContent = "読み込み中…";
+        fileButton.disabled = true;
+
+        try {
+          await disposeCurrentMedia();
+          state.file = file;
+          if (isGif) await loadGif(file);
+          else await loadVideo(file);
+
+          const defaultSpan = Math.min(state.duration, targetLoopSeconds());
+          state.start = 0;
+          state.end = Math.max(Math.min(state.duration, defaultSpan), Math.min(state.duration, 0.04));
+          if (state.end <= state.start) state.end = state.duration;
+          state.tapTimes = [];
+
+          fileName.textContent = file.name;
+          fileMeta.textContent = `${formatBytes(file.size)} · ${state.kind.toUpperCase()} · ${state.width}×${state.height} · ${formatTime(state.duration)}`;
+          closeButton.classList.remove("hidden");
+          closeButton.classList.add("flex");
+          playButton.disabled = false;
+          playButtonLabel.textContent = "再生";
+          configureRanges();
+          applyPlaybackRate(true);
+        } catch (error) {
+          console.error(error);
+          setError(error instanceof Error ? (error.stack || error.message) : String(error));
+          playButton.disabled = true;
+          playButtonLabel.textContent = "読み込み失敗";
+        } finally {
+          fileButton.disabled = false;
+        }
+      }
+
+      async function startPlayback() {
+        if (!state.kind || !syncTempoFromInputs()) return;
+        clearError();
+        if (state.kind === "video") {
+          if (!applyPlaybackRate(true)) return;
+          try {
+            await ensureVideoPlaying();
+          } catch (error) {
+            state.started = false;
+            return;
+          }
+          state.started = true;
+        } else if (state.gif) {
+          state.started = true;
+          state.gif.phaseOriginMs = performance.now();
+        }
+        closeModal();
+      }
+
+      function restartLoopAtDownbeat(now) {
+        if (!state.kind || !state.started) return;
+        if (state.kind === "video") {
+          if (!applyPlaybackRate(true)) {
+            openModal();
+            return;
+          }
+          if (video.paused) video.play().catch(error => console.error(error));
+        } else if (state.gif) {
+          state.gif.phaseOriginMs = now;
+        }
+      }
+
+      function setTempoFromTap(bpm, now) {
+        const oldTarget = targetLoopSeconds();
+        const oldBpm = state.bpm;
+        const oldBeats = state.beats;
+        state.bpm = clamp(bpm, 20, 400);
+        preserveGifPhaseAcrossTempoChange(oldTarget, oldBpm, oldBeats);
+        bpmInput.value = String(Number(state.bpm.toFixed(1)));
+        const rateValid = applyPlaybackRate(false);
+        updateDerivedUi();
+        if (!rateValid) {
+          openModal();
+          return;
+        }
+        state.tapFeedbackText = `${state.bpm.toFixed(1)} BPM`;
+        state.tapFeedbackUntil = now + 520;
+      }
+
+      function handleTapTempo(now) {
+        if (!state.kind || !state.started) return;
+        state.tapPulseUntil = now + 120;
+        const taps = state.tapTimes;
+        const last = taps[taps.length - 1];
+
+        if (!last || now - last > 1800 || now - last < 140) {
+          state.tapTimes = [now];
+          restartLoopAtDownbeat(now);
+          state.tapFeedbackText = "TAP";
+          state.tapFeedbackUntil = now + 320;
+          return;
+        }
+
+        taps.push(now);
+        if (taps.length > 9) taps.shift();
+        const intervals = [];
+        for (let i = 1; i < taps.length; i++) intervals.push(taps[i] - taps[i - 1]);
+        const sorted = [...intervals].sort((a, b) => a - b);
+        const usable = sorted.length >= 5 ? sorted.slice(1, -1) : sorted;
+        const average = usable.reduce((sum, value) => sum + value, 0) / usable.length;
+        const bpm = 60000 / average;
+        if (Number.isFinite(bpm)) setTempoFromTap(bpm, now);
+      }
+
+      function render(now) {
+        resizeCanvas();
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (state.kind === "video" && state.started && video.readyState >= 2) {
+          enforceVideoLoop();
+          drawSource(video, state.width, state.height);
+        } else if (state.kind === "gif" && state.started && state.gif) {
+          const sourceMs = gifSourceTimeMs(now);
+          const index = gifFrameIndexAt(sourceMs);
+          requestGifFrame(index);
+          if (state.gif.currentFrame) drawSource(state.gif.currentFrame, state.width, state.height);
+        } else if (state.kind === "gif" && state.gif && state.gif.currentFrame) {
+          drawSource(state.gif.currentFrame, state.width, state.height);
+        } else if (state.kind === "video" && video.readyState >= 2) {
+          drawSource(video, state.width, state.height);
+        }
+
+        drawTapFeedback(now);
+        rafId = requestAnimationFrame(render);
+      }
+
+      fileButton.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files && fileInput.files[0];
+        fileInput.value = "";
+        loadFile(file);
+      });
+
+      startRange.addEventListener("input", () => {
+        state.start = Number(startRange.value);
+        clampSegment("start");
+      });
+      endRange.addEventListener("input", () => {
+        state.end = Number(endRange.value);
+        clampSegment("end");
+      });
+
+      bpmInput.addEventListener("change", syncTempoFromInputs);
+      beatsInput.addEventListener("change", syncTempoFromInputs);
+
+      containButton.addEventListener("click", () => {
+        state.fit = "contain";
+        updateFitButtons();
+      });
+      coverButton.addEventListener("click", () => {
+        state.fit = "cover";
+        updateFitButtons();
+      });
+
+      playButton.addEventListener("click", () => {
+        startPlayback().catch(error => {
+          console.error(error);
+          setError(error instanceof Error ? (error.stack || error.message) : String(error));
+          openModal();
+        });
+      });
+      closeButton.addEventListener("click", closeModal);
+
+      modalLayer.addEventListener("pointerdown", event => {
+        if (event.target === modalLayer && state.kind) closeModal();
+      });
+      settingsModal.addEventListener("pointerdown", event => event.stopPropagation());
+
+      canvas.addEventListener("pointerdown", event => {
+        event.preventDefault();
+        try { canvas.setPointerCapture(event.pointerId); } catch (error) { console.error(error); }
+        activePointers.add(event.pointerId);
+        if (activePointers.size >= 2) {
+          multiTouchGesture = true;
+          state.tapTimes = [];
+          openModal();
+        }
+      });
+
+      canvas.addEventListener("pointerup", event => {
+        event.preventDefault();
+        activePointers.delete(event.pointerId);
+        if (!multiTouchGesture) handleTapTempo(performance.now());
+        if (activePointers.size === 0) multiTouchGesture = false;
+      });
+
+      canvas.addEventListener("pointercancel", event => {
+        activePointers.delete(event.pointerId);
+        if (activePointers.size === 0) multiTouchGesture = false;
+      });
+
+      canvas.addEventListener("contextmenu", event => event.preventDefault());
+
+      video.addEventListener("timeupdate", enforceVideoLoop);
+      video.addEventListener("ended", enforceVideoLoop);
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && state.kind === "video" && state.started) {
+          enforceVideoLoop();
+          if (video.paused) video.play().catch(error => console.error(error));
+        }
+      });
+
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && modalLayer.dataset.open === "true" && state.kind) closeModal();
+        if (event.key === " " && modalLayer.dataset.open !== "true") {
+          event.preventDefault();
+          handleTapTempo(performance.now());
+        }
+      });
+
+      window.addEventListener("resize", resizeCanvas);
+      window.addEventListener("orientationchange", resizeCanvas);
+
+      updateDerivedUi();
+      resizeCanvas();
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(render);
+    })();
+  </script>
+</body>
+</html>
