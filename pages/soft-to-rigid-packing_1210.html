@@ -1,0 +1,1379 @@
+<!--
+Context: Interactive WASTE APPS demo for packing n congruent unit squares into the smallest possible square.
+Implementation: Browser-only soft-to-rigid homotopy inspired by Yohei Nakajima (2026): disks are compressed under inward pressure, hardened through rounded squares, then settled as rigid squares. Multiple seeded searches run in a Web Worker; final candidates are legalized by uniformly scaling centres until pairwise overlap disappears. UI motion is limited to direct feedback and the simulation itself.
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Soft-to-Rigid Square Packing Lab</title>
+  <meta name="description" content="円から角丸正方形、剛体正方形へと硬化させながら、n個の単位正方形をできるだけ小さい正方形へ詰め込む探索デモ。">
+  <meta name="page:icon" content="fas fa-border-all">
+  <meta name="page:color" content="#7dd3fc">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #08090a;
+      --panel: #0d0f11;
+      --panel-2: #111417;
+      --line: #24282d;
+      --line-strong: #343b43;
+      --text: #f4f7f9;
+      --muted: #89929c;
+      --dim: #59616a;
+      --accent: #7dd3fc;
+      --accent-2: #c4b5fd;
+      --good: #86efac;
+      --warn: #fde68a;
+      --bad: #fca5a5;
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; background: var(--bg); color: var(--text); }
+    body { min-height: 100dvh; overflow: hidden; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input, select { font: inherit; }
+    button, select, input { outline: none; }
+    button { -webkit-tap-highlight-color: transparent; }
+    a { color: inherit; }
+    .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+    .app-shell {
+      display: grid;
+      grid-template-rows: 52px minmax(0, 1fr);
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 9, 10, 0.96);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .brand-mark { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid #31536a; border-radius: 7px; background: #0c1b23; color: var(--accent); font-size: 12px; }
+    .brand-copy { min-width: 0; }
+    .brand-title { overflow: hidden; margin: 0; font-size: 13px; font-weight: 760; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
+    .brand-subtitle { overflow: hidden; margin: 1px 0 0; color: var(--dim); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .topbar-spacer { flex: 1; }
+    .status-cluster { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .status-pill { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: #0c0e10; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #5b636c; }
+    .status-pill[data-state="running"] .status-dot { background: var(--good); box-shadow: 0 0 0 3px rgba(134, 239, 172, 0.08); }
+    .status-pill[data-state="paused"] .status-dot { background: var(--warn); }
+    .status-pill[data-state="done"] .status-dot { background: var(--accent); }
+    .header-button { display: inline-flex; height: 30px; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: #101214; color: #b7bec6; cursor: pointer; font-size: 11px; text-decoration: none; transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out); }
+    .header-button:hover { border-color: var(--line-strong); background: #15181b; color: #fff; }
+    .header-button:active { transform: scale(0.97); }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 272px minmax(360px, 1fr) 288px;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .side-panel { min-width: 0; min-height: 0; overflow-y: auto; background: var(--panel); scrollbar-width: thin; scrollbar-color: #30353a transparent; }
+    .left-panel { border-right: 1px solid var(--line); }
+    .right-panel { border-left: 1px solid var(--line); }
+    .panel-section { padding: 14px; border-bottom: 1px solid var(--line); }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+    .section-title { margin: 0; color: #d7dde2; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+    .section-note { color: var(--dim); font-size: 9px; }
+
+    .field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 34px; }
+    .field + .field { margin-top: 7px; }
+    .field-label { min-width: 0; color: #a7b0b9; font-size: 11px; }
+    .field-help { display: block; margin-top: 2px; color: #555d66; font-size: 9px; line-height: 1.35; }
+    .compact-input, .compact-select {
+      width: 86px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #0a0c0e;
+      color: #e6ebee;
+      font-size: 11px;
+    }
+    .compact-input { padding: 0 8px; text-align: right; }
+    .compact-select { padding: 0 8px; }
+    .compact-input:focus, .compact-select:focus { border-color: #53606b; box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.06); }
+
+    .range-wrap { margin-top: 9px; }
+    .range-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #858e98; font-size: 10px; }
+    input[type="range"] { width: 100%; height: 18px; margin: 2px 0 0; appearance: none; background: transparent; cursor: pointer; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 999px; background: #2b3035; }
+    input[type="range"]::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -4.5px; appearance: none; border: 2px solid #0b0d0f; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px #45687c; }
+
+    .segmented { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #090b0d; }
+    .segmented button { min-width: 0; height: 29px; border: 0; border-radius: 6px; background: transparent; color: #6e7780; cursor: pointer; font-size: 10px; transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out); }
+    .segmented button[aria-pressed="true"] { background: #181c20; color: #ecf1f4; box-shadow: inset 0 0 0 1px #272d33; }
+    .segmented button:active { transform: scale(0.97); }
+
+    .check-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
+    .check-copy { color: #a7b0b9; font-size: 11px; }
+    .switch { position: relative; width: 34px; height: 19px; flex: 0 0 auto; border: 1px solid #343a40; border-radius: 999px; background: #191d20; cursor: pointer; }
+    .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 11px; height: 11px; border-radius: 50%; background: #737c84; transition: transform 180ms var(--ease-out), background-color 180ms ease; }
+    .switch[data-on="true"] { border-color: #315d72; background: #0e2732; }
+    .switch[data-on="true"]::after { transform: translateX(15px); background: var(--accent); }
+
+    .primary-actions { display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 7px; }
+    .run-button, .icon-button { height: 38px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease, transform 120ms var(--ease-out); }
+    .run-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #e6f6fd; border-color: #d8f2fd; color: #071116; font-size: 11px; font-weight: 800; }
+    .run-button:hover { background: #fff; }
+    .run-button:active, .icon-button:active { transform: scale(0.97); }
+    .icon-button { display: grid; place-items: center; background: #111417; color: #929ba4; }
+    .icon-button:hover { border-color: var(--line-strong); background: #161a1e; color: #fff; }
+
+    .stage {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 38%, rgba(125, 211, 252, 0.045), transparent 35%),
+        #08090a;
+    }
+    #packingCanvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    .stage-overlay { position: absolute; inset: 0; pointer-events: none; }
+    .stage-topline { position: absolute; inset: 12px 12px auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .stage-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 9px; border: 1px solid rgba(72, 80, 88, 0.72); border-radius: 7px; background: rgba(9, 11, 13, 0.76); color: #a2abb3; font-size: 10px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    .stage-chip strong { color: #eff6f9; font-weight: 700; }
+    .stage-bottom { position: absolute; inset: auto 12px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+    .phase-track { overflow: hidden; height: 5px; border: 1px solid rgba(65, 72, 79, 0.85); border-radius: 999px; background: rgba(14, 16, 18, 0.86); }
+    .phase-fill { width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7dd3fc, #c4b5fd); transition: width 120ms linear; }
+    .phase-labels { display: flex; justify-content: space-between; margin-top: 5px; color: #59616a; font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; }
+    .hint-chip { color: #626a72; font-size: 9px; }
+
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+    .metric { min-width: 0; padding: 10px; background: #0a0c0e; }
+    .metric:nth-child(odd) { border-right: 1px solid var(--line); }
+    .metric:nth-child(n+3) { border-top: 1px solid var(--line); }
+    .metric-label { color: #59616a; font-size: 8px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .metric-value { overflow: hidden; margin-top: 3px; color: #eaf0f3; font-size: 15px; font-weight: 700; letter-spacing: -0.025em; text-overflow: ellipsis; white-space: nowrap; }
+    .metric-value.accent { color: var(--accent); }
+    .metric-value.good { color: var(--good); }
+
+    .history-wrap { height: 92px; border: 1px solid var(--line); border-radius: 9px; background: #090b0d; overflow: hidden; }
+    #historyCanvas { display: block; width: 100%; height: 100%; }
+
+    .seed-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+    .seed-table th { padding: 0 5px 6px; color: #515a63; font-weight: 700; text-align: right; }
+    .seed-table th:first-child, .seed-table td:first-child { text-align: left; }
+    .seed-table td { padding: 6px 5px; border-top: 1px solid #1d2125; color: #89929b; text-align: right; }
+    .seed-table tr[data-leader="true"] td { color: #e7edf0; background: #10171b; }
+    .seed-table .seed-id { color: #69727b; }
+    .seed-table .final { color: var(--good); }
+
+    .about-copy { margin: 0; color: #6f7881; font-size: 10px; line-height: 1.55; }
+    .about-copy + .about-copy { margin-top: 8px; }
+    .source-link { color: #9fdcf6; text-decoration: none; }
+    .source-link:hover { text-decoration: underline; }
+    .warning-line { display: flex; gap: 8px; align-items: flex-start; margin-top: 9px; padding-top: 9px; border-top: 1px solid #1f2327; color: #6e767e; font-size: 9px; line-height: 1.45; }
+
+    .toast { position: fixed; z-index: 50; right: 14px; bottom: 14px; max-width: min(420px, calc(100vw - 28px)); padding: 9px 11px; border: 1px solid #3b434b; border-radius: 8px; background: #111519; color: #d9e0e5; box-shadow: 0 10px 40px rgba(0,0,0,.32); font-size: 10px; opacity: 0; transform: translateY(8px) scale(.98); pointer-events: none; transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+    .toast[data-open="true"] { opacity: 1; transform: translateY(0) scale(1); }
+
+    @media (max-width: 1080px) {
+      .workspace { grid-template-columns: 236px minmax(320px, 1fr) 250px; }
+      .brand-subtitle, .status-pill .status-copy { display: none; }
+    }
+    @media (max-width: 820px) {
+      body { overflow: auto; }
+      .app-shell { height: auto; min-height: 100dvh; overflow: visible; }
+      .workspace { grid-template-columns: 1fr; overflow: visible; }
+      .left-panel, .right-panel { border: 0; }
+      .left-panel { border-bottom: 1px solid var(--line); }
+      .right-panel { border-top: 1px solid var(--line); }
+      .side-panel { overflow: visible; }
+      .stage { min-height: 68dvh; }
+      .topbar { position: sticky; top: 0; z-index: 20; }
+      .header-button .button-copy { display: none; }
+    }
+    @media (max-width: 520px) {
+      .topbar { gap: 8px; padding-inline: 9px; }
+      .status-pill { display: none; }
+      .panel-section { padding: 12px; }
+      .stage { min-height: 62dvh; }
+      .stage-bottom { grid-template-columns: 1fr; }
+      .hint-chip { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+      .header-button, .segmented button, .run-button, .icon-button, .switch::after, .toast { transition-duration: 0.01ms !important; }
+      .phase-fill { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><i class="fas fa-border-all"></i></div>
+        <div class="brand-copy">
+          <h1 class="brand-title">Soft-to-Rigid Packing Lab</h1>
+          <p class="brand-subtitle">unit squares in the smallest square · homotopy search</p>
+        </div>
+      </div>
+      <div class="topbar-spacer"></div>
+      <div class="status-cluster">
+        <div id="runStatus" class="status-pill" data-state="idle"><span class="status-dot"></span><span id="runStatusText" class="status-copy">Ready</span></div>
+        <button id="pauseButton" class="header-button" type="button" disabled><i id="pauseIcon" class="fas fa-pause" aria-hidden="true"></i><span id="pauseLabel" class="button-copy">Pause</span></button>
+        <a class="header-button" href="https://github.com/yoheinakajima/soft-to-rigid-packing" target="_blank" rel="noopener noreferrer"><i class="fab fa-github" aria-hidden="true"></i><span class="button-copy">Method</span></a>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="side-panel left-panel" aria-label="Search controls">
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Problem</h2><span class="section-note mono">2D</span></div>
+          <div class="field">
+            <div><label class="field-label" for="squareCount">正方形の数 n</label><span class="field-help">2〜36。単位正方形、自由回転。</span></div>
+            <input id="squareCount" class="compact-input mono" type="number" min="2" max="36" step="1" value="11">
+          </div>
+          <div class="field">
+            <div><label class="field-label" for="startCount">並列 start</label><span class="field-help">異なる seed を同時探索。</span></div>
+            <input id="startCount" class="compact-input mono" type="number" min="1" max="12" step="1" value="6">
+          </div>
+          <div class="field">
+            <div><label class="field-label" for="baseSeed">base seed</label><span class="field-help">再現可能な乱数初期値。</span></div>
+            <input id="baseSeed" class="compact-input mono" type="number" min="1" max="999999" step="1" value="52">
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Method</h2><span id="methodBadge" class="section-note">soft → rigid</span></div>
+          <div id="methodSegment" class="segmented" role="group" aria-label="Search method">
+            <button id="softMethodButton" type="button" aria-pressed="true">Soft → Rigid</button>
+            <button id="rigidMethodButton" type="button" aria-pressed="false">Rigid control</button>
+          </div>
+          <div class="check-line mt-2">
+            <span class="check-copy">Annealing noise</span>
+            <button id="annealSwitch" class="switch" type="button" role="switch" aria-checked="true" data-on="true" aria-label="Toggle annealing noise"></button>
+          </div>
+          <div class="field">
+            <div><label class="field-label" for="profileSelect">探索 budget</label><span class="field-help">長いほど hardening を丁寧にする。</span></div>
+            <select id="profileSelect" class="compact-select">
+              <option value="fast">Fast</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="deep">Deep</option>
+              <option value="paper">Paper-like</option>
+            </select>
+          </div>
+          <div class="range-wrap">
+            <div class="range-line"><label for="speedRange">worker throughput</label><span id="speedValue" class="mono">4×</span></div>
+            <input id="speedRange" type="range" min="1" max="8" value="4" step="1">
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Run</h2><span id="budgetText" class="section-note mono">11,000 steps</span></div>
+          <div class="primary-actions">
+            <button id="runButton" class="run-button" type="button"><i class="fas fa-play" aria-hidden="true"></i><span>探索を開始</span></button>
+            <button id="randomSeedButton" class="icon-button" type="button" aria-label="Randomize base seed" title="Randomize base seed"><i class="fas fa-dice" aria-hidden="true"></i></button>
+          </div>
+          <p class="about-copy mt-3">各 start は独立に走るのだ。表示は現在もっとも良い run を自動追従する。</p>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">What happens</h2></div>
+          <p class="about-copy"><strong class="text-slate-300">1. Compress</strong> — 円のまま箱へ内向き圧力を掛ける。</p>
+          <p class="about-copy"><strong class="text-slate-300">2. Harden</strong> — 角丸半径 r を 0.5 → 0 へ連続的に下げる。</p>
+          <p class="about-copy"><strong class="text-slate-300">3. Settle</strong> — 剛体正方形として圧力を弱め、最後に overlap を除去して測定する。</p>
+        </section>
+      </aside>
+
+      <section class="stage" aria-label="Packing visualization">
+        <canvas id="packingCanvas"></canvas>
+        <div class="stage-overlay" aria-hidden="true">
+          <div class="stage-topline">
+            <div class="stage-chip"><span>phase</span><strong id="phaseChip">idle</strong></div>
+            <div class="stage-chip"><span>seed</span><strong id="seedChip" class="mono">—</strong></div>
+          </div>
+          <div class="stage-bottom">
+            <div>
+              <div class="phase-track"><div id="phaseFill" class="phase-fill"></div></div>
+              <div class="phase-labels"><span>compress</span><span>harden</span><span>settle</span></div>
+            </div>
+            <div class="hint-chip">rounded square = core square ⊕ radius-r disk</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side-panel right-panel" aria-label="Search metrics">
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Best</h2><span id="validityLabel" class="section-note">heuristic search</span></div>
+          <div class="metric-grid">
+            <div class="metric"><div class="metric-label">Best legal side</div><div id="bestSide" class="metric-value accent mono">—</div></div>
+            <div class="metric"><div class="metric-label">Current L</div><div id="currentSide" class="metric-value mono">—</div></div>
+            <div class="metric"><div class="metric-label">Area lower bound</div><div id="lowerBound" class="metric-value mono">3.316625</div></div>
+            <div class="metric"><div class="metric-label">Packing density</div><div id="densityValue" class="metric-value mono">—</div></div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Live state</h2><span id="stepText" class="section-note mono">0</span></div>
+          <div class="metric-grid">
+            <div class="metric"><div class="metric-label">Softness r</div><div id="softnessValue" class="metric-value mono">0.5000</div></div>
+            <div class="metric"><div class="metric-label">Max violation</div><div id="overlapValue" class="metric-value mono">—</div></div>
+            <div class="metric"><div class="metric-label">Pressure μ</div><div id="pressureValue" class="metric-value mono">—</div></div>
+            <div class="metric"><div class="metric-label">Progress</div><div id="progressValue" class="metric-value mono">0.0%</div></div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Side history</h2><span class="section-note">leader</span></div>
+          <div class="history-wrap"><canvas id="historyCanvas"></canvas></div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Starts</h2><span id="seedCountLabel" class="section-note mono">0 / 0</span></div>
+          <table class="seed-table mono">
+            <thead><tr><th>seed</th><th>L</th><th>viol.</th><th>legal</th></tr></thead>
+            <tbody id="seedTableBody"></tbody>
+          </table>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head"><h2 class="section-title">Method note</h2></div>
+          <p class="about-copy">探索本体は Nakajima (2026) の公開 2D simulator の考え方をブラウザ用 Web Worker に組み直したもの。energy は pair overlap² + wall violation² + μL、momentum gradient で更新する。</p>
+          <p class="about-copy">最終値は rigid square の中心を一様に外へ拡大し、SAT で pair overlap が消える最小倍率を二分探索してから tight bounding square を測る。</p>
+          <div class="warning-line"><i class="fas fa-triangle-exclamation mt-[1px]" aria-hidden="true"></i><span>これは最適性証明ではない。ブラウザ探索の結果であり、既知最良値を保証しない。</span></div>
+          <p class="about-copy mt-3"><a class="source-link" href="https://doi.org/10.5281/zenodo.23248095" target="_blank" rel="noopener noreferrer">Nakajima, Y. (2026) · Zenodo ↗</a></p>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script id="workerSource" type="text/plain">
+"use strict";
+
+let running = false;
+let paused = false;
+let sims = [];
+let config = null;
+let bestGlobal = null;
+let lastPost = 0;
+let loopToken = 0;
+
+function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function gauss(rng) {
+  let u = 0;
+  while (u === 0) u = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng());
+}
+
+const VA = new Float64Array(8);
+const VB = new Float64Array(8);
+const AX = new Float64Array(8);
+const G = new Float64Array(6);
+
+function verts(x, y, t, s, out) {
+  const c = Math.cos(t) * s;
+  const d = Math.sin(t) * s;
+  out[0] = x + c - d; out[1] = y + d + c;
+  out[2] = x - c - d; out[3] = y - d + c;
+  out[4] = x - c + d; out[5] = y - d - c;
+  out[6] = x + c + d; out[7] = y + d - c;
+}
+
+function segDist2(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  let u = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  u = u < 0 ? 0 : u > 1 ? 1 : u;
+  const qx = ax + u * dx - px;
+  const qy = ay + u * dy - py;
+  return qx * qx + qy * qy;
+}
+
+function sdSquares(x1, y1, t1, x2, y2, t2, s) {
+  if (s <= 0) return Math.hypot(x2 - x1, y2 - y1);
+  verts(x1, y1, t1, s, VA);
+  verts(x2, y2, t2, s, VB);
+  AX[0] = Math.cos(t1); AX[1] = Math.sin(t1); AX[2] = -AX[1]; AX[3] = AX[0];
+  AX[4] = Math.cos(t2); AX[5] = Math.sin(t2); AX[6] = -AX[5]; AX[7] = AX[4];
+  let minO = Infinity;
+  let separated = false;
+  for (let k = 0; k < 8; k += 2) {
+    const ux = AX[k];
+    const uy = AX[k + 1];
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (let m = 0; m < 8; m += 2) {
+      const pa = VA[m] * ux + VA[m + 1] * uy;
+      const pb = VB[m] * ux + VB[m + 1] * uy;
+      if (pa < a0) a0 = pa;
+      if (pa > a1) a1 = pa;
+      if (pb < b0) b0 = pb;
+      if (pb > b1) b1 = pb;
+    }
+    const o = Math.min(a1 - b0, b1 - a0);
+    if (o < 0) { separated = true; break; }
+    if (o < minO) minO = o;
+  }
+  if (!separated) return -minO;
+  let d2 = Infinity;
+  for (let m = 0; m < 8; m += 2) {
+    for (let e = 0; e < 8; e += 2) {
+      const f = (e + 2) & 7;
+      let q = segDist2(VA[m], VA[m + 1], VB[e], VB[e + 1], VB[f], VB[f + 1]);
+      if (q < d2) d2 = q;
+      q = segDist2(VB[m], VB[m + 1], VA[e], VA[e + 1], VA[f], VA[f + 1]);
+      if (q < d2) d2 = q;
+    }
+  }
+  return Math.sqrt(d2);
+}
+
+function sdSquaresG(x1, y1, t1, x2, y2, t2, s) {
+  if (s <= 0) {
+    const dx = x1 - x2;
+    const dy = y1 - y2;
+    const d = Math.hypot(dx, dy) || 1e-300;
+    G[0] = dx / d; G[1] = dy / d; G[2] = 0;
+    G[3] = -dx / d; G[4] = -dy / d; G[5] = 0;
+    return d;
+  }
+
+  verts(x1, y1, t1, s, VA);
+  verts(x2, y2, t2, s, VB);
+  AX[0] = Math.cos(t1); AX[1] = Math.sin(t1); AX[2] = -AX[1]; AX[3] = AX[0];
+  AX[4] = Math.cos(t2); AX[5] = Math.sin(t2); AX[6] = -AX[5]; AX[7] = AX[4];
+
+  let minO = Infinity;
+  let separated = false;
+  let bestAxis = -1;
+  let bestA = -1;
+  let bestB = -1;
+  let bestCase = 0;
+
+  for (let k = 0; k < 8; k += 2) {
+    const ux = AX[k];
+    const uy = AX[k + 1];
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    let ia0 = 0, ia1 = 0, ib0 = 0, ib1 = 0;
+    for (let m = 0; m < 8; m += 2) {
+      const pa = VA[m] * ux + VA[m + 1] * uy;
+      const pb = VB[m] * ux + VB[m + 1] * uy;
+      if (pa < a0) { a0 = pa; ia0 = m; }
+      if (pa > a1) { a1 = pa; ia1 = m; }
+      if (pb < b0) { b0 = pb; ib0 = m; }
+      if (pb > b1) { b1 = pb; ib1 = m; }
+    }
+    const oA = a1 - b0;
+    const oB = b1 - a0;
+    const o = Math.min(oA, oB);
+    if (o < 0) { separated = true; break; }
+    if (o < minO) {
+      minO = o;
+      bestAxis = k;
+      if (oA <= oB) { bestCase = 1; bestA = ia1; bestB = ib0; }
+      else { bestCase = -1; bestA = ia0; bestB = ib1; }
+    }
+  }
+
+  if (!separated) {
+    const ux = AX[bestAxis];
+    const uy = AX[bestAxis + 1];
+    const pax = VA[bestA], pay = VA[bestA + 1];
+    const pbx = VB[bestB], pby = VB[bestB + 1];
+    const g0 = bestCase * ux;
+    const g1 = bestCase * uy;
+    let g2 = bestCase * (ux * (-(pay - y1)) + uy * (pax - x1));
+    let g5 = -bestCase * (ux * (-(pby - y2)) + uy * (pbx - x2));
+    const duDot = bestCase * ((-uy) * (pax - pbx) + ux * (pay - pby));
+    if (bestAxis < 4) g2 += duDot;
+    else g5 += duDot;
+    G[0] = -g0; G[1] = -g1; G[2] = -g2;
+    G[3] = g0; G[4] = g1; G[5] = -g5;
+    return -minO;
+  }
+
+  let d2 = Infinity;
+  let qx = 0, qy = 0, px = 0, py = 0;
+  let onA = true;
+  for (let m = 0; m < 8; m += 2) {
+    for (let e = 0; e < 8; e += 2) {
+      const f = (e + 2) & 7;
+      let ax = VB[e], ay = VB[e + 1], bx = VB[f], by = VB[f + 1], vx = VA[m], vy = VA[m + 1];
+      let dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      let u = l2 > 0 ? ((vx - ax) * dx + (vy - ay) * dy) / l2 : 0;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      let cx = ax + u * dx, cy = ay + u * dy;
+      let q = (vx - cx) * (vx - cx) + (vy - cy) * (vy - cy);
+      if (q < d2) { d2 = q; px = vx; py = vy; qx = cx; qy = cy; onA = true; }
+
+      ax = VA[e]; ay = VA[e + 1]; bx = VA[f]; by = VA[f + 1]; vx = VB[m]; vy = VB[m + 1];
+      dx = bx - ax; dy = by - ay; l2 = dx * dx + dy * dy;
+      u = l2 > 0 ? ((vx - ax) * dx + (vy - ay) * dy) / l2 : 0;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      cx = ax + u * dx; cy = ay + u * dy;
+      q = (vx - cx) * (vx - cx) + (vy - cy) * (vy - cy);
+      if (q < d2) { d2 = q; px = cx; py = cy; qx = vx; qy = vy; onA = false; }
+    }
+  }
+
+  let pAx, pAy, pBx, pBy;
+  if (onA) { pAx = px; pAy = py; pBx = qx; pBy = qy; }
+  else { pAx = px; pAy = py; pBx = qx; pBy = qy; }
+  const d = Math.sqrt(d2) || 1e-300;
+  const nx = (pAx - pBx) / d;
+  const ny = (pAy - pBy) / d;
+  G[0] = nx; G[1] = ny; G[2] = nx * (-(pAy - y1)) + ny * (pAx - x1);
+  G[3] = -nx; G[4] = -ny; G[5] = -(nx * (-(pBy - y2)) + ny * (pBx - x2));
+  return Math.sqrt(d2);
+}
+
+function pairOverlap(st, i, j, r) {
+  const dx = st.X[j] - st.X[i];
+  const dy = st.Y[j] - st.Y[i];
+  if (dx * dx + dy * dy > 2.0001) return 0;
+  const ov = 2 * r - sdSquares(st.X[i], st.Y[i], st.T[i], st.X[j], st.Y[j], st.T[j], 0.5 - r);
+  return ov > 0 ? ov : 0;
+}
+
+function halfExtent(t, r) {
+  return (0.5 - r) * (Math.abs(Math.cos(t)) + Math.abs(Math.sin(t))) + r;
+}
+
+function makeScratch(n) {
+  return {
+    gx: new Float64Array(n),
+    gy: new Float64Array(n),
+    gt: new Float64Array(n),
+    nb: Array.from({ length: n }, () => new Int16Array(n)),
+    nbc: new Int16Array(n)
+  };
+}
+
+function makeState(seed, n, l0) {
+  const rng = mulberry32(seed * 7919 + 13);
+  const st = {
+    seed,
+    n,
+    rng,
+    L: l0,
+    vL: 0,
+    r: 0.5,
+    mu: 0,
+    phase: "init",
+    step: 0,
+    X: new Float64Array(n),
+    Y: new Float64Array(n),
+    T: new Float64Array(n),
+    VX: new Float64Array(n),
+    VY: new Float64Array(n),
+    VT: new Float64Array(n),
+    scratch: makeScratch(n),
+    maxO: 0,
+    energy: 0,
+    done: false,
+    final: null,
+    progress: 0
+  };
+  for (let i = 0; i < n; i++) {
+    st.X[i] = 0.7 + rng() * (l0 - 1.4);
+    st.Y[i] = 0.7 + rng() * (l0 - 1.4);
+    st.T[i] = rng() * Math.PI / 2;
+  }
+  return st;
+}
+
+function buildNB(st) {
+  const { nb, nbc } = st.scratch;
+  nbc.fill(0);
+  for (let i = 0; i < st.n; i++) {
+    for (let j = i + 1; j < st.n; j++) {
+      const dx = st.X[i] - st.X[j];
+      const dy = st.Y[i] - st.Y[j];
+      if (dx * dx + dy * dy < 2.01) {
+        nb[i][nbc[i]++] = j;
+        nb[j][nbc[j]++] = i;
+      }
+    }
+  }
+}
+
+function analyticGrad(st, r) {
+  const { gx, gy, gt, nb, nbc } = st.scratch;
+  gx.fill(0); gy.fill(0); gt.fill(0);
+  const s = 0.5 - r;
+
+  for (let i = 0; i < st.n; i++) {
+    const m = nbc[i];
+    for (let q = 0; q < m; q++) {
+      const j = nb[i][q];
+      if (j < i) continue;
+      const dx = st.X[j] - st.X[i];
+      const dy = st.Y[j] - st.Y[i];
+      if (dx * dx + dy * dy > 2.0001) continue;
+      const sd = sdSquaresG(st.X[i], st.Y[i], st.T[i], st.X[j], st.Y[j], st.T[j], s);
+      const o = 2 * r - sd;
+      if (o <= 0) continue;
+      const c = -2 * o;
+      gx[i] += c * G[0]; gy[i] += c * G[1]; gt[i] += c * G[2];
+      gx[j] += c * G[3]; gy[j] += c * G[4]; gt[j] += c * G[5];
+    }
+
+    const t = st.T[i];
+    const ct = Math.cos(t);
+    const sn = Math.sin(t);
+    const w = s * (Math.abs(ct) + Math.abs(sn)) + r;
+    const dw = s * (-Math.sign(ct) * sn + Math.sign(sn) * ct);
+    let v;
+    v = w - st.X[i]; if (v > 0) { gx[i] -= 2 * v; gt[i] += 2 * v * dw; }
+    v = st.X[i] + w - st.L; if (v > 0) { gx[i] += 2 * v; gt[i] += 2 * v * dw; }
+    v = w - st.Y[i]; if (v > 0) { gy[i] -= 2 * v; gt[i] += 2 * v * dw; }
+    v = st.Y[i] + w - st.L; if (v > 0) { gy[i] += 2 * v; gt[i] += 2 * v * dw; }
+  }
+  if (r >= 0.4999) gt.fill(0);
+}
+
+function overlapEnergy(st, r) {
+  let e = 0;
+  let maxO = 0;
+  for (let i = 0; i < st.n; i++) {
+    for (let j = i + 1; j < st.n; j++) {
+      const o = pairOverlap(st, i, j, r);
+      e += o * o;
+      if (o > maxO) maxO = o;
+    }
+  }
+  for (let i = 0; i < st.n; i++) {
+    const w = halfExtent(st.T[i], r);
+    const vs = [w - st.X[i], st.X[i] + w - st.L, w - st.Y[i], st.Y[i] + w - st.L];
+    for (const v of vs) {
+      if (v > 0) {
+        e += v * v;
+        if (v > maxO) maxO = v;
+      }
+    }
+  }
+  return { e, maxO };
+}
+
+function dyn(st, r, mu, noise, moveL, lr = 0.04) {
+  const beta = 0.85;
+  const cap = 0.03;
+  buildNB(st);
+  analyticGrad(st, r);
+  const { gx, gy, gt } = st.scratch;
+
+  for (let i = 0; i < st.n; i++) {
+    st.VX[i] = beta * st.VX[i] - lr * gx[i];
+    st.VY[i] = beta * st.VY[i] - lr * gy[i];
+    st.VT[i] = beta * st.VT[i] - lr * gt[i];
+    const vm = Math.hypot(st.VX[i], st.VY[i]);
+    if (vm > cap) { st.VX[i] *= cap / vm; st.VY[i] *= cap / vm; }
+    if (Math.abs(st.VT[i]) > cap) st.VT[i] = Math.sign(st.VT[i]) * cap;
+    st.X[i] += st.VX[i];
+    st.Y[i] += st.VY[i];
+    st.T[i] += st.VT[i];
+    if (noise > 0) {
+      st.X[i] += noise * gauss(st.rng);
+      st.Y[i] += noise * gauss(st.rng);
+      st.T[i] += noise * 1.5 * gauss(st.rng);
+    }
+  }
+
+  if (moveL) {
+    let gL = mu;
+    for (let i = 0; i < st.n; i++) {
+      const w = halfExtent(st.T[i], r);
+      let v = st.X[i] + w - st.L; if (v > 0) gL -= 2 * v;
+      v = st.Y[i] + w - st.L; if (v > 0) gL -= 2 * v;
+      v = w - st.X[i]; if (v > 0) gL -= 2 * v;
+      v = w - st.Y[i]; if (v > 0) gL -= 2 * v;
+    }
+    st.vL = beta * st.vL - 0.02 * gL;
+    if (Math.abs(st.vL) > cap) st.vL = Math.sign(st.vL) * cap;
+    const d = st.vL / 2;
+    for (let i = 0; i < st.n; i++) {
+      st.X[i] += d;
+      st.Y[i] += d;
+    }
+    st.L += st.vL;
+    const lower = Math.sqrt(st.n) * 0.94;
+    if (st.L < lower) st.L = lower;
+  }
+
+  st.r = r;
+  st.mu = mu;
+  st.step++;
+}
+
+function legalize(st) {
+  const n = st.n;
+  let cx = 0, cy = 0;
+  for (let i = 0; i < n; i++) { cx += st.X[i]; cy += st.Y[i]; }
+  cx /= n; cy /= n;
+
+  const ok = (k) => {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const ax = cx + k * (st.X[i] - cx);
+        const ay = cy + k * (st.Y[i] - cy);
+        const bx = cx + k * (st.X[j] - cx);
+        const by = cy + k * (st.Y[j] - cy);
+        if (sdSquares(ax, ay, st.T[i], bx, by, st.T[j], 0.5) < -1e-10) return false;
+      }
+    }
+    return true;
+  };
+
+  let lo = 1;
+  let hi = 1;
+  if (!ok(1)) {
+    hi = 1.0001;
+    let guard = 0;
+    while (!ok(hi) && guard++ < 80) hi = 1 + (hi - 1) * 2;
+    for (let it = 0; it < 60; it++) {
+      const mid = (lo + hi) / 2;
+      if (ok(mid)) hi = mid;
+      else lo = mid;
+    }
+  }
+
+  const k = hi;
+  const X = new Array(n);
+  const Y = new Array(n);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    X[i] = cx + k * (st.X[i] - cx);
+    Y[i] = cy + k * (st.Y[i] - cy);
+    const w = halfExtent(st.T[i], 0);
+    x0 = Math.min(x0, X[i] - w);
+    x1 = Math.max(x1, X[i] + w);
+    y0 = Math.min(y0, Y[i] - w);
+    y1 = Math.max(y1, Y[i] + w);
+  }
+  const side = Math.max(x1 - x0, y1 - y0);
+  const ox = x0 - (side - (x1 - x0)) / 2;
+  const oy = y0 - (side - (y1 - y0)) / 2;
+  return {
+    side,
+    scale: k,
+    X: X.map((v) => v - ox),
+    Y: Y.map((v) => v - oy),
+    T: Array.from(st.T)
+  };
+}
+
+function profileFor(name) {
+  if (name === "fast") return { compact: 1200, morph: 3200, settle: 800 };
+  if (name === "deep") return { compact: 4200, morph: 18000, settle: 2600 };
+  if (name === "paper") return { compact: 5000, morph: 45000, settle: 3000 };
+  return { compact: 2500, morph: 7000, settle: 1500 };
+}
+
+function makeGridBest(n) {
+  const side = Math.ceil(Math.sqrt(n));
+  const X = [];
+  const Y = [];
+  const T = [];
+  for (let i = 0; i < n; i++) {
+    X.push((i % side) + 0.5);
+    Y.push(Math.floor(i / side) + 0.5);
+    T.push(0);
+  }
+  return { side, seed: "grid", X, Y, T, L: side, r: 0, phase: "grid baseline", step: 0, maxO: 0, mu: 0, progress: 1 };
+}
+
+function createSim(seed) {
+  const p = profileFor(config.profile);
+  const l0 = Math.max(3, 1.8 * Math.sqrt(config.n));
+  const st = makeState(seed, config.n, l0);
+  st.profile = p;
+  st.total = p.compact + p.morph + p.settle;
+  return st;
+}
+
+function stepSim(st) {
+  if (st.done) return;
+  const p = st.profile;
+  const rigid = config.method === "rigid";
+
+  if (st.step < p.compact) {
+    const u = st.step / Math.max(1, p.compact);
+    st.phase = rigid ? "compress rigid" : "compress disks";
+    const r = rigid ? 0 : 0.5;
+    const noise = config.anneal ? (rigid ? 0.006 : 0.015) * (1 - u) : (rigid ? 0 : 0.008 * (1 - u));
+    dyn(st, r, 0.06, noise, true);
+  } else if (st.step < p.compact + p.morph) {
+    const k = st.step - p.compact;
+    const u = k / Math.max(1, p.morph);
+    st.phase = rigid ? "hold rigid" : "harden";
+    const r = rigid ? 0 : 0.5 * (1 - u);
+    const noise = config.anneal ? 0.004 * (1 - u) : 0;
+    dyn(st, r, 0.02, noise, true);
+  } else if (st.step < st.total) {
+    const k = st.step - p.compact - p.morph;
+    const u = k / Math.max(1, p.settle);
+    st.phase = "rigid settle";
+    const mu = 0.02 * Math.pow(1e-4, u);
+    dyn(st, 0, mu, 0, true);
+  } else {
+    st.phase = "legalize";
+    const m = overlapEnergy(st, 0);
+    st.energy = m.e;
+    st.maxO = m.maxO;
+    st.final = legalize(st);
+    st.done = true;
+    st.r = 0;
+    st.progress = 1;
+    if (!bestGlobal || st.final.side < bestGlobal.side) {
+      bestGlobal = {
+        side: st.final.side,
+        seed: st.seed,
+        X: st.final.X,
+        Y: st.final.Y,
+        T: st.final.T,
+        L: st.final.side,
+        r: 0,
+        phase: "legalized",
+        step: st.step,
+        maxO: 0,
+        mu: 0,
+        progress: 1
+      };
+    }
+    return;
+  }
+
+  st.progress = Math.min(1, st.step / st.total);
+  if ((st.step & 31) === 0) {
+    const m = overlapEnergy(st, st.r);
+    st.energy = m.e;
+    st.maxO = m.maxO;
+  }
+}
+
+function statePayload(st) {
+  if (st.done && st.final) {
+    const points = new Array(st.n * 3);
+    for (let i = 0; i < st.n; i++) {
+      points[i * 3] = st.final.X[i];
+      points[i * 3 + 1] = st.final.Y[i];
+      points[i * 3 + 2] = st.final.T[i];
+    }
+    return { seed: st.seed, L: st.final.side, r: 0, phase: "legalized", step: st.step, progress: 1, maxO: 0, mu: 0, done: true, legal: st.final.side, points };
+  }
+  const points = new Array(st.n * 3);
+  for (let i = 0; i < st.n; i++) {
+    points[i * 3] = st.X[i];
+    points[i * 3 + 1] = st.Y[i];
+    points[i * 3 + 2] = st.T[i];
+  }
+  return { seed: st.seed, L: st.L, r: st.r, phase: st.phase, step: st.step, progress: st.progress, maxO: st.maxO, mu: st.mu, done: false, legal: null, points };
+}
+
+function chooseLeader() {
+  let leader = null;
+  const active = sims.filter((st) => !st.done);
+  const pool = active.length ? active : sims;
+  for (const st of pool) {
+    const score = st.done && st.final ? st.final.side : st.L + Math.min(1, st.maxO) * 0.3;
+    if (!leader || score < leader.score) leader = { st, score };
+  }
+  return leader ? leader.st : null;
+}
+
+function emit(force = false) {
+  const now = performance.now();
+  if (!force && now - lastPost < 45) return;
+  lastPost = now;
+  const leader = chooseLeader();
+  const allDone = sims.length > 0 && sims.every((st) => st.done);
+  const leaderPayload = allDone && bestGlobal ? {
+    seed: bestGlobal.seed,
+    L: bestGlobal.L,
+    r: bestGlobal.r,
+    phase: bestGlobal.phase,
+    step: bestGlobal.step,
+    progress: bestGlobal.progress,
+    maxO: bestGlobal.maxO,
+    mu: bestGlobal.mu,
+    done: true,
+    legal: bestGlobal.side,
+    points: bestGlobal.X.flatMap((x, i) => [x, bestGlobal.Y[i], bestGlobal.T[i]])
+  } : leader ? statePayload(leader) : null;
+
+  const rows = sims.map((st) => ({
+    seed: st.seed,
+    L: st.L,
+    phase: st.phase,
+    maxO: st.maxO,
+    progress: st.progress,
+    done: st.done,
+    legal: st.final ? st.final.side : null
+  })).sort((a, b) => (a.legal ?? a.L) - (b.legal ?? b.L));
+
+  self.postMessage({
+    type: "snapshot",
+    leader: leaderPayload,
+    rows,
+    bestSide: bestGlobal ? bestGlobal.side : null,
+    doneCount: sims.filter((st) => st.done).length,
+    totalCount: sims.length,
+    allDone
+  });
+}
+
+function loop(token) {
+  if (token !== loopToken || !running) return;
+  if (paused) {
+    setTimeout(() => loop(token), 40);
+    return;
+  }
+  try {
+    const batch = Math.max(1, config.throughput) * 3;
+    for (let b = 0; b < batch; b++) {
+      for (const st of sims) stepSim(st);
+    }
+    emit(false);
+    if (sims.every((st) => st.done)) {
+      running = false;
+      emit(true);
+      self.postMessage({ type: "complete" });
+      return;
+    }
+    setTimeout(() => loop(token), 0);
+  } catch (error) {
+    running = false;
+    self.postMessage({ type: "error", message: error?.stack || error?.message || String(error) });
+  }
+}
+
+self.onmessage = (event) => {
+  const msg = event.data || {};
+  if (msg.type === "start") {
+    config = msg.config;
+    running = true;
+    paused = false;
+    bestGlobal = makeGridBest(config.n);
+    sims = [];
+    for (let i = 0; i < config.starts; i++) sims.push(createSim(config.baseSeed + i * 97));
+    loopToken++;
+    emit(true);
+    loop(loopToken);
+  } else if (msg.type === "pause") {
+    paused = Boolean(msg.value);
+    emit(true);
+  } else if (msg.type === "throughput" && config) {
+    config.throughput = msg.value;
+  } else if (msg.type === "stop") {
+    running = false;
+    loopToken++;
+  }
+};
+  </script>
+
+  <script>
+    const els = {
+      canvas: document.getElementById("packingCanvas"),
+      historyCanvas: document.getElementById("historyCanvas"),
+      squareCount: document.getElementById("squareCount"),
+      startCount: document.getElementById("startCount"),
+      baseSeed: document.getElementById("baseSeed"),
+      profile: document.getElementById("profileSelect"),
+      speed: document.getElementById("speedRange"),
+      speedValue: document.getElementById("speedValue"),
+      softMethod: document.getElementById("softMethodButton"),
+      rigidMethod: document.getElementById("rigidMethodButton"),
+      annealSwitch: document.getElementById("annealSwitch"),
+      run: document.getElementById("runButton"),
+      pause: document.getElementById("pauseButton"),
+      pauseIcon: document.getElementById("pauseIcon"),
+      pauseLabel: document.getElementById("pauseLabel"),
+      randomSeed: document.getElementById("randomSeedButton"),
+      runStatus: document.getElementById("runStatus"),
+      runStatusText: document.getElementById("runStatusText"),
+      methodBadge: document.getElementById("methodBadge"),
+      budgetText: document.getElementById("budgetText"),
+      phaseChip: document.getElementById("phaseChip"),
+      seedChip: document.getElementById("seedChip"),
+      phaseFill: document.getElementById("phaseFill"),
+      bestSide: document.getElementById("bestSide"),
+      currentSide: document.getElementById("currentSide"),
+      lowerBound: document.getElementById("lowerBound"),
+      density: document.getElementById("densityValue"),
+      softness: document.getElementById("softnessValue"),
+      overlap: document.getElementById("overlapValue"),
+      pressure: document.getElementById("pressureValue"),
+      progress: document.getElementById("progressValue"),
+      stepText: document.getElementById("stepText"),
+      seedTableBody: document.getElementById("seedTableBody"),
+      seedCountLabel: document.getElementById("seedCountLabel"),
+      validityLabel: document.getElementById("validityLabel"),
+      toast: document.getElementById("toast")
+    };
+
+    const PROFILE_STEPS = {
+      fast: 1200 + 3200 + 800,
+      balanced: 2500 + 7000 + 1500,
+      deep: 4200 + 18000 + 2600,
+      paper: 5000 + 45000 + 3000
+    };
+
+    const ctx = els.canvas.getContext("2d");
+    const hctx = els.historyCanvas.getContext("2d");
+    const workerBlob = new Blob([document.getElementById("workerSource").textContent], { type: "text/javascript" });
+    const worker = new Worker(URL.createObjectURL(workerBlob));
+
+    const uiState = {
+      method: "soft",
+      anneal: true,
+      running: false,
+      paused: false,
+      leader: null,
+      rows: [],
+      bestSide: null,
+      history: [],
+      n: 11,
+      toastTimer: 0
+    };
+
+    function clampInt(value, min, max, fallback) {
+      const n = Number.parseInt(value, 10);
+      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+    }
+
+    function fmt(value, digits = 6) {
+      return Number.isFinite(value) ? value.toFixed(digits) : "—";
+    }
+
+    function showToast(message) {
+      clearTimeout(uiState.toastTimer);
+      els.toast.textContent = message;
+      els.toast.dataset.open = "true";
+      uiState.toastTimer = setTimeout(() => { els.toast.dataset.open = "false"; }, 2200);
+    }
+
+    function setRunStatus(state, label) {
+      els.runStatus.dataset.state = state;
+      els.runStatusText.textContent = label;
+    }
+
+    function setMethod(method) {
+      uiState.method = method;
+      const soft = method === "soft";
+      els.softMethod.setAttribute("aria-pressed", String(soft));
+      els.rigidMethod.setAttribute("aria-pressed", String(!soft));
+      els.methodBadge.textContent = soft ? "soft → rigid" : "rigid control";
+    }
+
+    function updateBudgetText() {
+      const steps = PROFILE_STEPS[els.profile.value] || PROFILE_STEPS.balanced;
+      els.budgetText.textContent = `${steps.toLocaleString()} steps`;
+    }
+
+    function updateLowerBound() {
+      uiState.n = clampInt(els.squareCount.value, 2, 36, 11);
+      els.squareCount.value = String(uiState.n);
+      els.lowerBound.textContent = Math.sqrt(uiState.n).toFixed(6);
+      if (uiState.bestSide) els.density.textContent = `${((uiState.n / (uiState.bestSide * uiState.bestSide)) * 100).toFixed(2)}%`;
+    }
+
+    function readConfig() {
+      const n = clampInt(els.squareCount.value, 2, 36, 11);
+      const starts = clampInt(els.startCount.value, 1, 12, 6);
+      const baseSeed = clampInt(els.baseSeed.value, 1, 999999, 52);
+      els.squareCount.value = String(n);
+      els.startCount.value = String(starts);
+      els.baseSeed.value = String(baseSeed);
+      return {
+        n,
+        starts,
+        baseSeed,
+        profile: els.profile.value,
+        throughput: Number(els.speed.value),
+        method: uiState.method,
+        anneal: uiState.anneal
+      };
+    }
+
+    function startRun() {
+      const cfg = readConfig();
+      uiState.running = true;
+      uiState.paused = false;
+      uiState.leader = null;
+      uiState.rows = [];
+      uiState.bestSide = null;
+      uiState.history = [];
+      uiState.n = cfg.n;
+      els.bestSide.textContent = "—";
+      els.density.textContent = "—";
+      els.pause.disabled = false;
+      els.pauseIcon.className = "fas fa-pause";
+      els.pauseLabel.textContent = "Pause";
+      els.run.querySelector("span").textContent = "最初から再探索";
+      els.validityLabel.textContent = "searching";
+      setRunStatus("running", "Searching");
+      updateLowerBound();
+      worker.postMessage({ type: "start", config: cfg });
+    }
+
+    function togglePause() {
+      if (!uiState.running) return;
+      uiState.paused = !uiState.paused;
+      worker.postMessage({ type: "pause", value: uiState.paused });
+      els.pauseIcon.className = uiState.paused ? "fas fa-play" : "fas fa-pause";
+      els.pauseLabel.textContent = uiState.paused ? "Resume" : "Pause";
+      setRunStatus(uiState.paused ? "paused" : "running", uiState.paused ? "Paused" : "Searching");
+    }
+
+    function updateMetrics(snapshot) {
+      const leader = snapshot.leader;
+      uiState.leader = leader;
+      uiState.rows = snapshot.rows || [];
+      uiState.bestSide = snapshot.bestSide;
+      if (!leader) return;
+
+      els.phaseChip.textContent = leader.phase;
+      els.seedChip.textContent = String(leader.seed);
+      els.phaseFill.style.width = `${Math.max(0, Math.min(100, leader.progress * 100))}%`;
+      els.currentSide.textContent = fmt(leader.L, 6);
+      els.softness.textContent = fmt(leader.r, 4);
+      els.overlap.textContent = fmt(leader.maxO, 6);
+      els.pressure.textContent = Number.isFinite(leader.mu) ? leader.mu.toExponential(2) : "—";
+      els.progress.textContent = `${(leader.progress * 100).toFixed(1)}%`;
+      els.stepText.textContent = leader.step.toLocaleString();
+      els.seedCountLabel.textContent = `${snapshot.doneCount} / ${snapshot.totalCount}`;
+
+      if (snapshot.bestSide) {
+        els.bestSide.textContent = fmt(snapshot.bestSide, 9);
+        els.density.textContent = `${((uiState.n / (snapshot.bestSide * snapshot.bestSide)) * 100).toFixed(2)}%`;
+      }
+
+      if (uiState.history.length === 0 || Math.abs((uiState.history.at(-1)?.value ?? 0) - leader.L) > 1e-5 || leader.done) {
+        uiState.history.push({ value: snapshot.bestSide || leader.L, progress: leader.progress });
+        if (uiState.history.length > 500) uiState.history.shift();
+      }
+      renderSeedTable();
+      drawHistory();
+      drawPacking();
+    }
+
+    function renderSeedTable() {
+      const leaderSeed = uiState.leader?.seed;
+      const fragment = document.createDocumentFragment();
+      for (const row of uiState.rows) {
+        const tr = document.createElement("tr");
+        tr.dataset.leader = String(row.seed === leaderSeed);
+        const seed = document.createElement("td");
+        seed.className = "seed-id";
+        seed.textContent = String(row.seed);
+        const side = document.createElement("td");
+        side.textContent = fmt(row.L, 4);
+        const violation = document.createElement("td");
+        violation.textContent = Number.isFinite(row.maxO) ? row.maxO.toExponential(1) : "—";
+        const legal = document.createElement("td");
+        legal.className = row.legal ? "final" : "";
+        legal.textContent = row.legal ? fmt(row.legal, 4) : "—";
+        tr.append(seed, side, violation, legal);
+        fragment.appendChild(tr);
+      }
+      els.seedTableBody.replaceChildren(fragment);
+    }
+
+    function resizeCanvas(canvas, context) {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(rect.width * dpr));
+      const height = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { width: rect.width, height: rect.height };
+    }
+
+    function drawRoundedSquare(context, x, y, angle, unit, radius, fill, stroke, lineWidth) {
+      context.save();
+      context.translate(x, y);
+      context.rotate(angle);
+      context.beginPath();
+      if (radius > 0.001) context.roundRect(-unit / 2, -unit / 2, unit, unit, Math.min(unit / 2, radius));
+      else context.rect(-unit / 2, -unit / 2, unit, unit);
+      context.fillStyle = fill;
+      context.fill();
+      context.lineWidth = lineWidth;
+      context.strokeStyle = stroke;
+      context.stroke();
+      context.restore();
+    }
+
+    function drawPacking() {
+      const { width, height } = resizeCanvas(els.canvas, ctx);
+      ctx.clearRect(0, 0, width, height);
+      const leader = uiState.leader;
+      if (!leader || !leader.points?.length) {
+        ctx.fillStyle = "#4b535b";
+        ctx.font = "12px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("探索を開始するとここに packing が表示されます", width / 2, height / 2);
+        return;
+      }
+
+      const pad = Math.max(24, Math.min(width, height) * 0.065);
+      const usable = Math.max(40, Math.min(width - pad * 2, height - pad * 2));
+      const scale = usable / Math.max(leader.L, 1e-6);
+      const ox = (width - leader.L * scale) / 2;
+      const oy = (height - leader.L * scale) / 2;
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(125, 211, 252, 0.08)";
+      ctx.lineWidth = 1;
+      for (let g = 1; g < Math.ceil(leader.L); g++) {
+        const p = g * scale;
+        ctx.beginPath(); ctx.moveTo(ox + p, oy); ctx.lineTo(ox + p, oy + leader.L * scale); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ox, oy + p); ctx.lineTo(ox + leader.L * scale, oy + p); ctx.stroke();
+      }
+      ctx.strokeStyle = leader.done ? "#86efac" : "#4f788d";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(ox, oy, leader.L * scale, leader.L * scale);
+      ctx.restore();
+
+      const rPx = leader.r * scale;
+      const unit = scale;
+      const count = leader.points.length / 3;
+      for (let i = 0; i < count; i++) {
+        const x = ox + leader.points[i * 3] * scale;
+        const y = oy + leader.points[i * 3 + 1] * scale;
+        const t = leader.points[i * 3 + 2];
+        const mix = i / Math.max(1, count - 1);
+        const fill = `hsla(${195 + mix * 65}, 64%, ${leader.done ? 58 : 50}%, ${leader.done ? 0.28 : 0.18})`;
+        const stroke = `hsla(${195 + mix * 65}, 76%, ${leader.done ? 78 : 68}%, 0.82)`;
+        drawRoundedSquare(ctx, x, y, t, unit, rPx, fill, stroke, Math.max(1, scale * 0.012));
+        if (unit > 25) {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(t);
+          ctx.fillStyle = "rgba(230,239,244,.72)";
+          ctx.font = `${Math.max(8, Math.min(12, unit * 0.16))}px ui-monospace, monospace`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(String(i + 1), 0, 0);
+          ctx.restore();
+        }
+      }
+    }
+
+    function drawHistory() {
+      const { width, height } = resizeCanvas(els.historyCanvas, hctx);
+      hctx.clearRect(0, 0, width, height);
+      hctx.strokeStyle = "#1d2227";
+      hctx.lineWidth = 1;
+      hctx.beginPath(); hctx.moveTo(0, height - 18); hctx.lineTo(width, height - 18); hctx.stroke();
+      if (uiState.history.length < 2) return;
+
+      const values = uiState.history.map((p) => p.value).filter(Number.isFinite);
+      if (values.length < 2) return;
+      let min = Math.min(...values);
+      let max = Math.max(...values);
+      if (Math.abs(max - min) < 1e-6) { min -= 0.001; max += 0.001; }
+      const top = 9;
+      const bottom = height - 18;
+      hctx.beginPath();
+      uiState.history.forEach((point, i) => {
+        const x = (i / Math.max(1, uiState.history.length - 1)) * width;
+        const y = bottom - ((point.value - min) / (max - min)) * (bottom - top);
+        if (i === 0) hctx.moveTo(x, y);
+        else hctx.lineTo(x, y);
+      });
+      hctx.strokeStyle = "#7dd3fc";
+      hctx.lineWidth = 1.5;
+      hctx.stroke();
+      hctx.fillStyle = "#59616a";
+      hctx.font = "8px ui-monospace, monospace";
+      hctx.textAlign = "left";
+      hctx.fillText(max.toFixed(4), 5, 10);
+      hctx.textAlign = "right";
+      hctx.fillText(min.toFixed(4), width - 5, height - 5);
+    }
+
+    worker.onmessage = (event) => {
+      const msg = event.data || {};
+      if (msg.type === "snapshot") {
+        updateMetrics(msg);
+        if (msg.allDone) {
+          uiState.running = false;
+          uiState.paused = false;
+          els.pause.disabled = true;
+          els.pauseIcon.className = "fas fa-pause";
+          els.pauseLabel.textContent = "Pause";
+          els.validityLabel.textContent = "legalized candidate";
+          setRunStatus("done", "Done");
+        }
+      } else if (msg.type === "complete") {
+        showToast(uiState.bestSide ? `完了 · best legal side ${uiState.bestSide.toFixed(9)}` : "探索が完了した");
+      } else if (msg.type === "error") {
+        uiState.running = false;
+        els.pause.disabled = true;
+        setRunStatus("idle", "Error");
+        console.error(msg.message);
+        showToast(`Solver error: ${String(msg.message).split("\n")[0]}`);
+      }
+    };
+
+    worker.onerror = (error) => {
+      uiState.running = false;
+      els.pause.disabled = true;
+      setRunStatus("idle", "Worker error");
+      console.error(error);
+      showToast(`Worker error: ${error.message}`);
+    };
+
+    els.softMethod.addEventListener("click", () => setMethod("soft"));
+    els.rigidMethod.addEventListener("click", () => setMethod("rigid"));
+    els.annealSwitch.addEventListener("click", () => {
+      uiState.anneal = !uiState.anneal;
+      els.annealSwitch.dataset.on = String(uiState.anneal);
+      els.annealSwitch.setAttribute("aria-checked", String(uiState.anneal));
+    });
+    els.run.addEventListener("click", startRun);
+    els.pause.addEventListener("click", togglePause);
+    els.randomSeed.addEventListener("click", () => {
+      els.baseSeed.value = String(1 + Math.floor(Math.random() * 999998));
+      showToast(`base seed = ${els.baseSeed.value}`);
+    });
+    els.squareCount.addEventListener("change", updateLowerBound);
+    els.profile.addEventListener("change", updateBudgetText);
+    els.speed.addEventListener("input", () => {
+      els.speedValue.textContent = `${els.speed.value}×`;
+      worker.postMessage({ type: "throughput", value: Number(els.speed.value) });
+    });
+    window.addEventListener("resize", () => { drawPacking(); drawHistory(); });
+
+    setMethod("soft");
+    updateBudgetText();
+    updateLowerBound();
+    drawPacking();
+    drawHistory();
+  </script>
+</body>
+</html>
