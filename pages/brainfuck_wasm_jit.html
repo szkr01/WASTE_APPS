@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>Brainfuck WebAssembly JIT</title>
+<meta name="description" content="Brainfuckソースを最適化IRへ変換し、その場でWebAssemblyバイナリを生成してブラウザのWebAssembly JITで実行する単体HTMLの実験環境。" />
+<meta name="page:icon" content="fas fa-microchip" />
+<meta name="page:color" content="#f5f5f5" />
+<style>
+/* Hallmark · redesign: full · app screen */
+/* Critique · scale the instrument to the physical viewport instead of treating 1080p and 4K as the same canvas. */
+:root {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #121212;
+  --line: #282828;
+  --line-strong: #505050;
+  --text: #ffffff;
+  --soft: #d0d0d0;
+  --muted: #7f7f7f;
+  --danger: #ff4f47;
+  --font-ui: Arial, Helvetica, sans-serif;
+  --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  overflow-x: clip;
+  font-size: clamp(14px, calc(9px + 0.24vw), 18px);
+  background: var(--bg);
+}
+
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow-x: clip;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 1rem;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+textarea:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.app {
+  width: 100%;
+  height: 100svh;
+  display: grid;
+  grid-template-rows: 3rem minmax(0, 1fr) 2rem;
+  background: var(--bg);
+}
+
+.topbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--bg);
+}
+
+.brand {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  padding-left: 0.9rem;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.brand span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  align-self: stretch;
+  display: flex;
+}
+
+button {
+  min-width: 4.2rem;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0 0.9rem;
+  background: var(--bg);
+  color: var(--soft);
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+button:disabled {
+  color: var(--line-strong);
+  cursor: default;
+}
+
+button.primary {
+  min-width: 5rem;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--soft);
+  color: var(--bg);
+}
+
+.workspace {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(30rem, 30vw, 44rem);
+  gap: 1px;
+  background: var(--line-strong);
+}
+
+.editor,
+.right {
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.editor {
+  display: grid;
+  grid-template-rows: 2rem minmax(0, 1fr);
+}
+
+.right {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) clamp(7rem, 15vh, 10rem);
+  gap: 1px;
+  background: var(--line-strong);
+}
+
+.output-pane,
+.input-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 2rem minmax(0, 1fr);
+  background: var(--bg);
+}
+
+.pane-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.pane-head strong {
+  color: var(--soft);
+  font-weight: 600;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 0.9rem 1rem;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--text);
+  caret-color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  line-height: 1.58;
+  tab-size: 2;
+}
+
+#input {
+  padding-top: 0.75rem;
+  background: var(--surface);
+  color: var(--soft);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+#output {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0.9rem 1rem;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  line-height: 1.48;
+  white-space: pre;
+}
+
+.footer {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+
+.metric {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.65rem;
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.metric:last-child {
+  border-right: 0;
+}
+
+.metric .label {
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.metric .value {
+  color: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.runtime {
+  min-width: 10rem;
+  flex: 1 1 auto;
+}
+
+.runtime .value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+
+.runtime.error .value {
+  color: var(--danger);
+}
+
+#trace {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+noscript {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 900px) {
+  html {
+    font-size: 14px;
+  }
+
+  .app {
+    grid-template-rows: 5rem minmax(0, 1fr) auto;
+  }
+
+  .topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .brand {
+    height: 2.3rem;
+    align-items: center;
+  }
+
+  .brand span {
+    display: none;
+  }
+
+  .actions {
+    height: 2.7rem;
+  }
+
+  .actions button {
+    flex: 1 1 0;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+
+  .right {
+    grid-template-rows: minmax(0, 1fr) 6rem;
+  }
+
+  .footer {
+    flex-wrap: wrap;
+  }
+
+  .runtime {
+    flex-basis: 100%;
+    min-height: 1.9rem;
+  }
+
+  .metric {
+    flex: 1 1 16%;
+    min-height: 1.8rem;
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (min-width: 2400px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) clamp(36rem, 28vw, 48rem);
+  }
+}
+
+@media (min-width: 3200px) {
+  html {
+    font-size: 18px;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) 48rem;
+  }
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>bf.wasm</h1>
+      <span>Brainfuck → IR → WebAssembly → JIT</span>
+    </div>
+    <div class="actions">
+      <button id="example" type="button">Example</button>
+      <button id="clear" type="button">Clear</button>
+      <button id="stop" type="button" disabled>Stop</button>
+      <button id="run" class="primary" type="button">Run</button>
+    </div>
+  </header>
+
+  <noscript>JavaScript is required.</noscript>
+
+  <section class="workspace">
+    <section class="editor">
+      <div class="pane-head">
+        <strong>Source</strong>
+        <span id="sourceInfo" class="mono">0 ops</span>
+      </div>
+      <textarea id="source" spellcheck="false" aria-label="Brainfuck source">++++++++++[&gt;+++++++&gt;++++++++++&gt;+++&gt;+&lt;&lt;&lt;&lt;-]&gt;++.&gt;+.+++++++..+++.&gt;++.&lt;&lt;+++++++++++++++.&gt;.+++.------.--------.&gt;+.&gt;.</textarea>
+    </section>
+
+    <section class="right">
+      <section class="output-pane">
+        <div class="pane-head">
+          <strong>Output</strong>
+          <span id="trace" class="mono">idle</span>
+        </div>
+        <pre id="output" aria-live="polite"></pre>
+      </section>
+
+      <section class="input-pane">
+        <div class="pane-head">
+          <strong>Input</strong>
+          <span class="mono">UTF-8</span>
+        </div>
+        <textarea id="input" spellcheck="false" aria-label="Program input" placeholder=", reads from here"></textarea>
+      </section>
+    </section>
+  </section>
+
+  <footer class="footer">
+    <div id="statusCell" class="metric runtime">
+      <span class="label">Runtime</span>
+      <span id="statusText" class="value">ready</span>
+    </div>
+    <div class="metric"><span class="label">IR</span><span id="irOps" class="value">—</span></div>
+    <div class="metric"><span class="label">Wasm</span><span id="wasmSize" class="value">—</span></div>
+    <div class="metric"><span class="label">Lower</span><span id="lowerMs" class="value">—</span></div>
+    <div class="metric"><span class="label">JIT</span><span id="compileMs" class="value">—</span></div>
+    <div class="metric"><span class="label">Exec</span><span id="execMs" class="value">—</span></div>
+    <div class="metric"><span class="label">Tape</span><span class="value">1 MiB</span></div>
+  </footer>
+</main>
+
+<script>
+"use strict";
+
+const BF_CHARS = new Set(["+", "-", ">", "<", "[", "]", ".", ","]);
+const HELLO_WORLD = "++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.";
+
+function workerMain() {
+  "use strict";
+
+  const BF_CHARS = new Set(["+", "-", ">", "<", "[", "]", ".", ","]);
+  const encoder = new TextEncoder();
+  const TAPE_PAGES = 16;
+
+  function u32(value) {
+    const out = [];
+    value >>>= 0;
+    do {
+      let byte = value & 0x7f;
+      value >>>= 7;
+      if (value !== 0) byte |= 0x80;
+      out.push(byte);
+    } while (value !== 0);
+    return out;
+  }
+
+  function i32(value) {
+    const out = [];
+    value |= 0;
+    let more = true;
+
+    while (more) {
+      let byte = value & 0x7f;
+      value >>= 7;
+      const signBit = byte & 0x40;
+      more = !((value === 0 && signBit === 0) || (value === -1 && signBit !== 0));
+      if (more) byte |= 0x80;
+      out.push(byte);
+    }
+
+    return out;
+  }
+
+  function str(value) {
+    const bytes = [...encoder.encode(value)];
+    return [...u32(bytes.length), ...bytes];
+  }
+
+  function vec(items) {
+    return [...u32(items.length), ...items.flat()];
+  }
+
+  function section(id, payload) {
+    return [id, ...u32(payload.length), ...payload];
+  }
+
+  function normalizeSequence(nodes) {
+    const out = [];
+
+    for (const node of nodes) {
+      if ((node.type === "add" || node.type === "move") && node.value === 0) continue;
+
+      const previous = out[out.length - 1];
+      if (previous && previous.type === node.type && (node.type === "add" || node.type === "move")) {
+        previous.value += node.value;
+        if (previous.value === 0) out.pop();
+        continue;
+      }
+
+      out.push(node);
+    }
+
+    return out;
+  }
+
+  function optimizeLoop(body) {
+    if (body.length === 1 && body[0].type === "add" && Math.abs(body[0].value) === 1) {
+      return { type: "clear" };
+    }
+
+    let offset = 0;
+    const factors = new Map();
+
+    for (const node of body) {
+      if (node.type === "move") {
+        offset += node.value;
+        continue;
+      }
+
+      if (node.type === "add") {
+        factors.set(offset, (factors.get(offset) ?? 0) + node.value);
+        continue;
+      }
+
+      return { type: "loop", body };
+    }
+
+    if (offset !== 0 || factors.get(0) !== -1) {
+      return { type: "loop", body };
+    }
+
+    factors.delete(0);
+    const targets = [...factors]
+      .filter(([, factor]) => factor !== 0)
+      .map(([targetOffset, factor]) => ({ offset: targetOffset, factor }));
+
+    return targets.length === 0 ? { type: "clear" } : { type: "linear", targets };
+  }
+
+  function parseBrainfuck(source) {
+    const program = [];
+    const stack = [program];
+    let bfOps = 0;
+
+    for (let index = 0; index < source.length; index++) {
+      const ch = source[index];
+      if (!BF_CHARS.has(ch)) continue;
+      bfOps++;
+
+      const current = stack[stack.length - 1];
+
+      if (ch === "[") {
+        const body = [];
+        current.push({ type: "loop_raw", body });
+        stack.push(body);
+        continue;
+      }
+
+      if (ch === "]") {
+        if (stack.length === 1) throw new Error(`Unmatched ] at source index ${index}`);
+        stack.pop();
+        continue;
+      }
+
+      if (ch === "+" || ch === "-") {
+        current.push({ type: "add", value: ch === "+" ? 1 : -1 });
+      } else if (ch === ">" || ch === "<") {
+        current.push({ type: "move", value: ch === ">" ? 1 : -1 });
+      } else if (ch === ".") {
+        current.push({ type: "out" });
+      } else if (ch === ",") {
+        current.push({ type: "in" });
+      }
+    }
+
+    if (stack.length !== 1) throw new Error(`Unclosed [ : ${stack.length - 1}`);
+
+    function optimize(nodes) {
+      const mapped = [];
+
+      for (const node of normalizeSequence(nodes)) {
+        if (node.type !== "loop_raw") {
+          mapped.push(node);
+          continue;
+        }
+
+        mapped.push(optimizeLoop(optimize(node.body)));
+      }
+
+      return normalizeSequence(mapped);
+    }
+
+    const ir = optimize(program);
+
+    function count(nodes) {
+      let total = 0;
+      for (const node of nodes) {
+        total++;
+        if (node.type === "loop") total += count(node.body);
+        if (node.type === "linear") total += node.targets.length;
+      }
+      return total;
+    }
+
+    return { ir, bfOps, irOps: count(ir) };
+  }
+
+  function compileBrainfuckToWasm(source) {
+    const { ir, bfOps, irOps } = parseBrainfuck(source);
+    const I32 = 0x7f;
+    const FUNC = 0x60;
+    const EMPTY = 0x40;
+
+    const typeSection = section(
+      1,
+      vec([
+        [FUNC, ...u32(1), I32, ...u32(0)],
+        [FUNC, ...u32(0), ...u32(1), I32],
+        [FUNC, ...u32(0), ...u32(0)],
+      ]),
+    );
+
+    const importSection = section(
+      2,
+      vec([
+        [...str("env"), ...str("putchar"), 0x00, ...u32(0)],
+        [...str("env"), ...str("getchar"), 0x00, ...u32(1)],
+      ]),
+    );
+
+    const functionSection = section(3, vec([[...u32(2)]]));
+    const memorySection = section(5, vec([[0x01, ...u32(TAPE_PAGES), ...u32(TAPE_PAGES)]]));
+    const exportSection = section(
+      7,
+      vec([
+        [...str("memory"), 0x02, ...u32(0)],
+        [...str("main"), 0x00, ...u32(2)],
+      ]),
+    );
+
+    const code = [];
+    const op = (...bytes) => code.push(...bytes);
+    const localGet = (index) => op(0x20, ...u32(index));
+    const localSet = (index) => op(0x21, ...u32(index));
+    const constI32 = (value) => op(0x41, ...i32(value));
+    const load8 = () => op(0x2d, ...u32(0), ...u32(0));
+    const store8 = () => op(0x3a, ...u32(0), ...u32(0));
+
+    function emitCellAddress(offset = 0) {
+      localGet(0);
+      if (offset !== 0) {
+        constI32(offset);
+        op(0x6a);
+      }
+    }
+
+    function emitLoadCell(offset = 0) {
+      emitCellAddress(offset);
+      load8();
+    }
+
+    function emitStoreConst(value, offset = 0) {
+      emitCellAddress(offset);
+      constI32(value);
+      store8();
+    }
+
+    function emitNodes(nodes) {
+      for (const node of nodes) {
+        if (node.type === "add") {
+          emitCellAddress();
+          emitLoadCell();
+          constI32(node.value);
+          op(0x6a);
+          store8();
+          continue;
+        }
+
+        if (node.type === "move") {
+          localGet(0);
+          constI32(node.value);
+          op(0x6a);
+          localSet(0);
+          continue;
+        }
+
+        if (node.type === "clear") {
+          emitStoreConst(0);
+          continue;
+        }
+
+        if (node.type === "linear") {
+          emitLoadCell();
+          op(0x04, EMPTY);
+
+          for (const target of node.targets) {
+            emitCellAddress(target.offset);
+            emitLoadCell(target.offset);
+            emitLoadCell();
+            constI32(target.factor);
+            op(0x6c);
+            op(0x6a);
+            store8();
+          }
+
+          emitStoreConst(0);
+          op(0x0b);
+          continue;
+        }
+
+        if (node.type === "out") {
+          emitLoadCell();
+          op(0x10, ...u32(0));
+          continue;
+        }
+
+        if (node.type === "in") {
+          emitCellAddress();
+          op(0x10, ...u32(1));
+          store8();
+          continue;
+        }
+
+        if (node.type === "loop") {
+          op(0x02, EMPTY);
+          op(0x03, EMPTY);
+          emitLoadCell();
+          op(0x45);
+          op(0x0d, ...u32(1));
+          emitNodes(node.body);
+          emitLoadCell();
+          op(0x0d, ...u32(0));
+          op(0x0b);
+          op(0x0b);
+          continue;
+        }
+
+        throw new Error(`Unknown IR node: ${node.type}`);
+      }
+    }
+
+    constI32(0);
+    localSet(0);
+    emitNodes(ir);
+    op(0x0b);
+
+    const locals = [...u32(1), ...u32(1), I32];
+    const body = [...locals, ...code];
+    const codeSection = section(10, vec([[...u32(body.length), ...body]]));
+
+    return {
+      moduleBytes: new Uint8Array([
+        0x00, 0x61, 0x73, 0x6d,
+        0x01, 0x00, 0x00, 0x00,
+        ...typeSection,
+        ...importSection,
+        ...functionSection,
+        ...memorySection,
+        ...exportSection,
+        ...codeSection,
+      ]),
+      bfOps,
+      irOps,
+    };
+  }
+
+  self.onmessage = async (event) => {
+    if (event.data?.type !== "run") return;
+
+    try {
+      const inputBytes = encoder.encode(event.data.input ?? "");
+      let inputIndex = 0;
+      const output = [];
+
+      const lowerStart = performance.now();
+      const compiled = compileBrainfuckToWasm(event.data.source ?? "");
+      const lowerEnd = performance.now();
+
+      self.postMessage({ type: "phase", phase: "jit" });
+      const jitStart = performance.now();
+      const module = await WebAssembly.compile(compiled.moduleBytes);
+      const jitEnd = performance.now();
+
+      const instance = new WebAssembly.Instance(module, {
+        env: {
+          putchar(value) {
+            output.push(value & 0xff);
+          },
+          getchar() {
+            return inputIndex < inputBytes.length ? inputBytes[inputIndex++] : 0;
+          },
+        },
+      });
+
+      self.postMessage({ type: "phase", phase: "exec" });
+      const execStart = performance.now();
+      instance.exports.main();
+      const execEnd = performance.now();
+
+      const outputBytes = new Uint8Array(output);
+      self.postMessage(
+        {
+          type: "result",
+          output: outputBytes.buffer,
+          bfOps: compiled.bfOps,
+          irOps: compiled.irOps,
+          wasmSize: compiled.moduleBytes.byteLength,
+          lowerMs: lowerEnd - lowerStart,
+          compileMs: jitEnd - jitStart,
+          execMs: execEnd - execStart,
+        },
+        [outputBytes.buffer],
+      );
+    } catch (error) {
+      self.postMessage({
+        type: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+}
+
+const els = {
+  source: document.getElementById("source"),
+  input: document.getElementById("input"),
+  output: document.getElementById("output"),
+  sourceInfo: document.getElementById("sourceInfo"),
+  trace: document.getElementById("trace"),
+  run: document.getElementById("run"),
+  stop: document.getElementById("stop"),
+  example: document.getElementById("example"),
+  clear: document.getElementById("clear"),
+  statusCell: document.getElementById("statusCell"),
+  statusText: document.getElementById("statusText"),
+  irOps: document.getElementById("irOps"),
+  wasmSize: document.getElementById("wasmSize"),
+  lowerMs: document.getElementById("lowerMs"),
+  compileMs: document.getElementById("compileMs"),
+  execMs: document.getElementById("execMs"),
+};
+
+let worker = null;
+let running = false;
+const decoder = new TextDecoder();
+
+function createWorker() {
+  const blob = new Blob([`(${workerMain.toString()})()`], { type: "text/javascript" });
+  const url = URL.createObjectURL(blob);
+  const nextWorker = new Worker(url);
+  URL.revokeObjectURL(url);
+  return nextWorker;
+}
+
+function setStatus(text, kind = "") {
+  els.statusText.textContent = text;
+  els.statusCell.className = `status-cell status-main ${kind}`.trim();
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} KiB`;
+}
+
+function updateSourceInfo() {
+  let count = 0;
+  for (const ch of els.source.value) if (BF_CHARS.has(ch)) count++;
+  els.sourceInfo.textContent = `${count.toLocaleString()} BF ops`;
+}
+
+function finishRun() {
+  running = false;
+  els.run.disabled = false;
+  els.stop.disabled = true;
+}
+
+function stopRun() {
+  if (!running || !worker) return;
+  worker.terminate();
+  worker = null;
+  finishRun();
+  els.trace.textContent = "terminated";
+  setStatus("stopped", "");
+}
+
+function run() {
+  if (running) return;
+
+  running = true;
+  els.run.disabled = true;
+  els.stop.disabled = false;
+  els.output.textContent = "";
+  els.trace.textContent = "lowering BF → IR → Wasm";
+  setStatus("lowering", "running");
+
+  worker = createWorker();
+  worker.onmessage = (event) => {
+    const message = event.data;
+
+    if (message.type === "phase") {
+      if (message.phase === "jit") {
+        els.trace.textContent = "WebAssembly.compile";
+        setStatus("JIT compiling", "running");
+      } else if (message.phase === "exec") {
+        els.trace.textContent = "native execution";
+        setStatus("running", "running");
+      }
+      return;
+    }
+
+    if (message.type === "result") {
+      els.output.textContent = decoder.decode(new Uint8Array(message.output));
+      els.irOps.textContent = message.irOps.toLocaleString();
+      els.wasmSize.textContent = formatBytes(message.wasmSize);
+      els.lowerMs.textContent = `${message.lowerMs.toFixed(2)} ms`;
+      els.compileMs.textContent = `${message.compileMs.toFixed(2)} ms`;
+      els.execMs.textContent = `${message.execMs.toFixed(2)} ms`;
+      els.trace.textContent = `${message.bfOps.toLocaleString()} BF → ${message.irOps.toLocaleString()} IR → ${formatBytes(message.wasmSize)}`;
+      setStatus("complete", "ok");
+      worker.terminate();
+      worker = null;
+      finishRun();
+      return;
+    }
+
+    if (message.type === "error") {
+      els.trace.textContent = "compile/runtime trap";
+      setStatus(message.message, "error");
+      console.error(message.message);
+      worker.terminate();
+      worker = null;
+      finishRun();
+    }
+  };
+
+  worker.onerror = (event) => {
+    els.trace.textContent = "worker failure";
+    setStatus(event.message || "Worker failed", "error");
+    console.error(event.error ?? event.message);
+    if (worker) worker.terminate();
+    worker = null;
+    finishRun();
+  };
+
+  worker.postMessage({ type: "run", source: els.source.value, input: els.input.value });
+}
+
+els.source.addEventListener("input", updateSourceInfo);
+els.run.addEventListener("click", run);
+els.stop.addEventListener("click", stopRun);
+els.example.addEventListener("click", () => {
+  els.source.value = HELLO_WORLD;
+  updateSourceInfo();
+});
+els.clear.addEventListener("click", () => {
+  stopRun();
+  els.source.value = "";
+  els.input.value = "";
+  els.output.textContent = "";
+  els.trace.textContent = "idle";
+  els.irOps.textContent = "—";
+  els.wasmSize.textContent = "—";
+  els.lowerMs.textContent = "—";
+  els.compileMs.textContent = "—";
+  els.execMs.textContent = "—";
+  setStatus("ready");
+  updateSourceInfo();
+});
+
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    run();
+  }
+});
+
+updateSourceInfo();
+</script>
+</body>
+</html>
