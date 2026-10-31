@@ -1,0 +1,31 @@
+name: Build KSKRM2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".kskrm2-build/trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Reconstruct KSKRM2
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .kskrm2-build/part-* | base64 -d | gzip -dc > pages/KSKRM2.html
+          printf '%s  %s\n' 'c826304aca9f8a082a82c77bad09e9dafa08f39159602d86336d695528a6236d' 'pages/KSKRM2.html' | sha256sum -c -
+          grep -Fq '<title>KSKRM2 — クソコラジャケットメーカー</title>' pages/KSKRM2.html
+          rm -rf .kskrm2-build
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add KSKRM2"
+          git push origin HEAD:main
