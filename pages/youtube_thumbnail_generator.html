@@ -692,7 +692,7 @@ Implementation summary: 658x245 canvas renderer, live metadata editing, thumbnai
           ctx.restore();
         }
 
-        if ((hasThumbnail || !forExport) && state.showDuration && state.duration.trim()) {
+        if (state.showDuration && state.duration.trim()) {
           const label = state.duration.trim();
           ctx.font = "700 12px Arial, sans-serif";
           const textWidth = ctx.measureText(label).width;
