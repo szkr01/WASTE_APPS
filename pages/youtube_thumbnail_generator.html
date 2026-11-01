@@ -679,7 +679,7 @@ Implementation summary: 658x245 canvas renderer, live metadata editing, thumbnai
         }
 
         const watched = Math.max(0, Math.min(100, Number(state.progress) || 0));
-        if ((hasThumbnail || !forExport) && watched > 0) {
+        if (watched > 0) {
           ctx.save();
           roundedRectPath(ctx, thumb.x, thumb.y, thumb.w, thumb.h, thumb.r);
           ctx.clip();
