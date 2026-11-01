@@ -1,0 +1,2147 @@
+<!doctype html>
+<!--
+Context:
+- Build a simple, intuitive local audio metadata editor.
+- Album artwork is the primary task and should be visually dominant.
+- Audio files and artwork are operated mainly through drag & drop.
+- Follow DESIGN_0020.md: neutral bluish light/dark system, system UI font, 0.5px hairlines,
+  4/8/12/16/20/28px radius scale, restrained elevation, semantic blue only for interaction.
+- Motion follows emil-design-eng / transitions-dev principles: short purpose-driven transitions,
+  transform/opacity where possible, active press feedback, hover-gating, reduced-motion support.
+
+Implementation:
+- Single HTML file with inline CSS/JS.
+- TailwindCSS is used for structural layout utilities; component visuals remain semantic CSS.
+- Font Awesome is imported before icons are used.
+- Audio metadata parsing/writing is lazily loaded from TagLib-Wasm via esm.sh.
+- Files never leave the browser. Modified audio is returned as a local download.
+-->
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AudioMeta - 音声メタデータエディター</title>
+    <meta
+      name="description"
+      content="音声ファイルをドラッグ＆ドロップして、アルバムアートワークを中心にタイトル・アーティスト・アルバムなどのメタデータをブラウザ内で編集できるツールです。"
+    />
+    <meta name="page:icon" content="fas fa-compact-disc" />
+    <meta name="page:color" content="#4176E6" />
+    <meta name="theme-color" content="#ffffff" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+      integrity="sha512-Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #ffffff;
+        --surface-1: #ffffff;
+        --surface-2: #ffffff;
+        --surface-3: #ffffff;
+        --sidebar: #f9fafb;
+        --text-1: #0f1115;
+        --text-2: #61666b;
+        --text-3: #81858c;
+        --placeholder: #adb2b8;
+        --dim: #e1e5ee;
+        --blue: #4176e6;
+        --blue-soft: #edf3fe;
+        --selector: #f5f6f7;
+        --hover: rgba(38, 49, 72, 0.06);
+        --active: rgba(38, 49, 72, 0.1);
+        --strong-hover: rgba(38, 49, 72, 0.14);
+        --l1: rgba(0, 0, 0, 0.04);
+        --l2: rgba(0, 0, 0, 0.1);
+        --l3: rgba(0, 0, 0, 0.12);
+        --l4: rgba(0, 0, 0, 0.16);
+        --toast: #353638;
+        --toast-text: #ffffff;
+        --danger: #ec1313;
+        --success: #22c55e;
+        --warning: #f59e0b;
+        --shadow-panel:
+          0 0 0 0.5px var(--l4),
+          0 3px 8px rgba(0, 0, 0, 0.03),
+          0 0 16px rgba(0, 0, 0, 0.02);
+        --shadow-soft:
+          0 0 0 0.5px var(--l2),
+          0 4px 16px rgba(0, 0, 0, 0.03),
+          0 0 24px rgba(0, 0, 0, 0.03);
+        --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+        --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --page: #151517;
+        --surface-1: #232324;
+        --surface-2: #2c2c2e;
+        --surface-3: #353638;
+        --sidebar: #1b1b1c;
+        --text-1: #f9fafb;
+        --text-2: #cfd3d6;
+        --text-3: #adb2b8;
+        --placeholder: #81858c;
+        --dim: #43454a;
+        --blue: #7aaaff;
+        --blue-soft: #2c2c2e;
+        --selector: #353638;
+        --hover: rgba(255, 255, 255, 0.08);
+        --active: rgba(255, 255, 255, 0.14);
+        --strong-hover: rgba(255, 255, 255, 0.24);
+        --l1: rgba(255, 255, 255, 0.06);
+        --l2: rgba(255, 255, 255, 0.12);
+        --l3: rgba(255, 255, 255, 0.16);
+        --l4: rgba(255, 255, 255, 0.2);
+        --toast: #43454a;
+        --toast-text: #ffffff;
+        --danger: #f25a5a;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --page: #151517;
+          --surface-1: #232324;
+          --surface-2: #2c2c2e;
+          --surface-3: #353638;
+          --sidebar: #1b1b1c;
+          --text-1: #f9fafb;
+          --text-2: #cfd3d6;
+          --text-3: #adb2b8;
+          --placeholder: #81858c;
+          --dim: #43454a;
+          --blue: #7aaaff;
+          --blue-soft: #2c2c2e;
+          --selector: #353638;
+          --hover: rgba(255, 255, 255, 0.08);
+          --active: rgba(255, 255, 255, 0.14);
+          --strong-hover: rgba(255, 255, 255, 0.24);
+          --l1: rgba(255, 255, 255, 0.06);
+          --l2: rgba(255, 255, 255, 0.12);
+          --l3: rgba(255, 255, 255, 0.16);
+          --l4: rgba(255, 255, 255, 0.2);
+          --toast: #43454a;
+          --danger: #f25a5a;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--text-1);
+        font-family:
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          "Helvetica Neue",
+          Helvetica,
+          Arial,
+          sans-serif;
+        font-size: 14px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button,
+      [role="button"] {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      ::selection {
+        background: color-mix(in srgb, var(--blue) 24%, transparent);
+      }
+
+      ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--text-3) 32%, transparent);
+        border-radius: 999px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .superellipse {
+        corner-shape: superellipse(1.5);
+      }
+
+      .header-inner {
+        width: min(1480px, calc(100% - 48px));
+        min-height: 72px;
+        margin: 0 auto;
+      }
+
+      .app-header {
+        min-height: 72px;
+        border-bottom: 0.5px solid var(--l2);
+        background: color-mix(in srgb, var(--page) 92%, transparent);
+        backdrop-filter: blur(22px) saturate(130%);
+        -webkit-backdrop-filter: blur(22px) saturate(130%);
+      }
+
+      .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+        corner-shape: superellipse(1.5);
+        background: var(--text-1);
+        color: var(--page);
+        display: grid;
+        place-items: center;
+        box-shadow: 0 0 0 0.5px var(--l2);
+      }
+
+      .icon-button,
+      .button,
+      .compact-button,
+      .file-row,
+      .artwork-card {
+        user-select: none;
+      }
+
+      .icon-button {
+        width: 36px;
+        height: 36px;
+        border: 0;
+        border-radius: 12px;
+        corner-shape: superellipse(1.5);
+        color: var(--text-2);
+        background: transparent;
+        display: inline-grid;
+        place-items: center;
+        cursor: pointer;
+        transition:
+          background-color 140ms ease,
+          color 140ms ease,
+          transform 140ms var(--ease-out);
+      }
+
+      .button {
+        min-height: 36px;
+        border: 0;
+        border-radius: 12px;
+        corner-shape: superellipse(1.5);
+        padding: 0 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background-color 140ms ease,
+          color 140ms ease,
+          transform 140ms var(--ease-out),
+          opacity 140ms ease;
+      }
+
+      .button.primary {
+        background: var(--text-1);
+        color: var(--page);
+      }
+
+      .button.secondary {
+        background: var(--selector);
+        color: var(--text-1);
+      }
+
+      .button.ghost {
+        background: transparent;
+        color: var(--text-2);
+      }
+
+      .button:disabled,
+      .icon-button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .button:not(:disabled):active,
+      .icon-button:not(:disabled):active,
+      .artwork-card:active {
+        transform: scale(0.97);
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        .icon-button:hover,
+        .button.ghost:hover {
+          background: var(--hover);
+          color: var(--text-1);
+        }
+
+        .button.secondary:hover {
+          background: color-mix(in srgb, var(--selector) 74%, var(--text-1) 6%);
+        }
+
+        .button.primary:hover {
+          background: color-mix(in srgb, var(--text-1) 84%, var(--page) 16%);
+        }
+      }
+
+      .button:focus-visible,
+      .icon-button:focus-visible,
+      .file-row:focus-visible,
+      .artwork-card:focus-visible {
+        outline: 2px solid var(--blue);
+        outline-offset: 2px;
+      }
+
+      .shell {
+        width: min(1480px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+      }
+
+      .empty-card,
+      .editor-card {
+        background: var(--surface-1);
+        border: 0;
+        border-radius: 28px;
+        corner-shape: superellipse(1.5);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .empty-card {
+        min-height: min(720px, calc(100vh - 152px));
+        display: grid;
+        place-items: center;
+        padding: 32px;
+      }
+
+      .empty-inner {
+        width: min(900px, 100%);
+        display: grid;
+        grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+        align-items: center;
+        gap: 48px;
+      }
+
+      .empty-art {
+        width: min(100%, 420px);
+        aspect-ratio: 1;
+        justify-self: center;
+        border-radius: 20px;
+        corner-shape: superellipse(1.5);
+        border: 1px dashed color-mix(in srgb, var(--text-3) 44%, transparent);
+        background: var(--sidebar);
+        display: grid;
+        place-items: center;
+        color: var(--text-3);
+      }
+
+      .empty-art i {
+        font-size: clamp(52px, 8vw, 92px);
+        opacity: 0.68;
+      }
+
+      .empty-title {
+        margin: 0;
+        font-size: clamp(24px, 3vw, 36px);
+        line-height: 1.18;
+        letter-spacing: -0.025em;
+        font-weight: 700;
+      }
+
+      .empty-copy {
+        margin: 12px 0 22px;
+        max-width: 520px;
+        color: var(--text-2);
+        font-size: 15px;
+        line-height: 1.75;
+      }
+
+      .format-line {
+        margin-top: 14px;
+        color: var(--text-3);
+        font-size: 12px;
+      }
+
+      .editor-card {
+        padding: 28px;
+      }
+
+      .editor-grid {
+        display: grid;
+        grid-template-columns: minmax(340px, 0.96fr) minmax(420px, 1.04fr);
+        gap: 28px;
+        align-items: start;
+      }
+
+      .artwork-wrap {
+        min-width: 0;
+      }
+
+      .artwork-card {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1;
+        overflow: hidden;
+        border: 0.5px solid var(--l4);
+        border-radius: 20px;
+        corner-shape: superellipse(1.5);
+        background: var(--sidebar);
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        isolation: isolate;
+        transition:
+          transform 160ms var(--ease-out),
+          box-shadow 160ms ease,
+          border-color 160ms ease;
+      }
+
+      .artwork-card[data-has-art="true"] {
+        background: #101010;
+      }
+
+      .artwork-card.drag-art {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+      }
+
+      .artwork-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .artwork-placeholder {
+        color: var(--text-3);
+        text-align: center;
+        padding: 28px;
+      }
+
+      .artwork-placeholder i {
+        display: block;
+        font-size: clamp(48px, 7vw, 76px);
+        margin-bottom: 16px;
+        opacity: 0.62;
+      }
+
+      .artwork-placeholder strong {
+        display: block;
+        color: var(--text-2);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .artwork-placeholder span {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+      }
+
+      .artwork-action {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        min-height: 40px;
+        border-radius: 12px;
+        corner-shape: superellipse(1.5);
+        background: rgba(15, 17, 21, 0.72);
+        color: white;
+        backdrop-filter: blur(18px) saturate(120%);
+        -webkit-backdrop-filter: blur(18px) saturate(120%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        opacity: 0;
+        transform: translateY(4px);
+        pointer-events: none;
+        transition:
+          opacity 160ms var(--ease-out),
+          transform 160ms var(--ease-out);
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        .artwork-card:hover .artwork-action {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .artwork-card:focus-visible .artwork-action,
+      .artwork-card.drag-art .artwork-action {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .art-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 28px;
+        margin-top: 10px;
+        color: var(--text-3);
+        font-size: 12px;
+      }
+
+      .art-meta .changed {
+        color: var(--blue);
+        font-weight: 500;
+      }
+
+      .editor-panel {
+        min-width: 0;
+        padding: 2px 0 0;
+      }
+
+      .track-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 22px;
+      }
+
+      .track-name {
+        min-width: 0;
+      }
+
+      .track-name h1 {
+        margin: 0;
+        color: var(--text-1);
+        font-size: 21px;
+        line-height: 1.35;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .track-file {
+        margin-top: 5px;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        color: var(--text-3);
+        font-size: 12px;
+      }
+
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--blue);
+        display: inline-block;
+      }
+
+      .fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px 12px;
+      }
+
+      .field {
+        min-width: 0;
+      }
+
+      .field.span-2 {
+        grid-column: 1 / -1;
+      }
+
+      .field label {
+        display: block;
+        margin: 0 0 6px 2px;
+        color: var(--text-2);
+        font-size: 12px;
+        line-height: 18px;
+        font-weight: 500;
+      }
+
+      .field input,
+      .field textarea {
+        width: 100%;
+        border: 0.5px solid var(--l3);
+        border-radius: 12px;
+        corner-shape: superellipse(1.5);
+        background: var(--surface-2);
+        color: var(--text-1);
+        outline: none;
+        transition:
+          border-color 120ms ease,
+          box-shadow 120ms ease,
+          background-color 120ms ease;
+      }
+
+      .field input {
+        height: 38px;
+        padding: 0 11px;
+      }
+
+      .field textarea {
+        min-height: 76px;
+        resize: vertical;
+        padding: 9px 11px;
+        line-height: 1.5;
+      }
+
+      .field input::placeholder,
+      .field textarea::placeholder {
+        color: var(--placeholder);
+      }
+
+      .field input:focus,
+      .field textarea:focus {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 14%, transparent);
+      }
+
+      .technical-strip {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        corner-shape: superellipse(1.5);
+        background: var(--sidebar);
+        color: var(--text-2);
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .technical-item {
+        min-width: 0;
+      }
+
+      .technical-item span {
+        display: block;
+        color: var(--text-3);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .technical-item strong {
+        display: block;
+        margin-top: 2px;
+        color: var(--text-1);
+        font-size: 12px;
+        line-height: 1.5;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .editor-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 20px;
+      }
+
+      .local-note {
+        color: var(--text-3);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .local-note i {
+        color: var(--success);
+      }
+
+      .queue-card {
+        margin-top: 16px;
+        border: 0.5px solid var(--l4);
+        border-radius: 20px;
+        corner-shape: superellipse(1.5);
+        background: var(--surface-1);
+        overflow: hidden;
+      }
+
+      .queue-head {
+        min-height: 52px;
+        padding: 0 14px 0 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 0.5px solid var(--l2);
+      }
+
+      .queue-title {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-weight: 600;
+      }
+
+      .queue-count {
+        color: var(--text-3);
+        font-size: 12px;
+        font-weight: 400;
+      }
+
+      .queue-list {
+        max-height: 286px;
+        overflow: auto;
+        padding: 6px;
+      }
+
+      .file-row {
+        width: 100%;
+        min-height: 62px;
+        border: 0;
+        border-radius: 12px;
+        corner-shape: superellipse(1.5);
+        background: transparent;
+        color: inherit;
+        display: grid;
+        grid-template-columns: 46px minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 8px 8px 10px;
+        text-align: left;
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          transform 120ms var(--ease-out);
+      }
+
+      .file-row[data-active="true"] {
+        background: var(--blue-soft);
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        .file-row:not([data-active="true"]):hover {
+          background: var(--hover);
+        }
+      }
+
+      .file-row:active {
+        transform: scale(0.995);
+      }
+
+      .file-thumb {
+        width: 46px;
+        height: 46px;
+        border-radius: 8px;
+        corner-shape: superellipse(1.5);
+        background: var(--selector);
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+        color: var(--text-3);
+        box-shadow: 0 0 0 0.5px var(--l2);
+      }
+
+      .file-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .file-main {
+        min-width: 0;
+      }
+
+      .file-title {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        font-size: 13px;
+        line-height: 20px;
+        font-weight: 600;
+      }
+
+      .file-title-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dirty-dot {
+        flex: 0 0 auto;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--blue);
+      }
+
+      .file-sub {
+        margin-top: 1px;
+        color: var(--text-3);
+        font-size: 11px;
+        line-height: 18px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-format {
+        color: var(--text-3);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+
+      .remove-file {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 8px;
+        color: var(--text-3);
+        background: transparent;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        transition:
+          background-color 120ms ease,
+          color 120ms ease,
+          transform 120ms var(--ease-out);
+      }
+
+      .remove-file:active {
+        transform: scale(0.96);
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        .remove-file:hover {
+          color: var(--danger);
+          background: color-mix(in srgb, var(--danger) 8%, transparent);
+        }
+      }
+
+      .loading-ring {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 1.5px solid color-mix(in srgb, var(--text-3) 24%, transparent);
+        border-top-color: var(--text-2);
+        animation: spin 800ms linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .drop-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        padding: 24px;
+        background: color-mix(in srgb, var(--page) 82%, transparent);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: grid;
+        place-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms var(--ease-out);
+      }
+
+      .drop-overlay[data-open="true"] {
+        opacity: 1;
+      }
+
+      .drop-overlay-box {
+        width: min(760px, calc(100vw - 48px));
+        min-height: 360px;
+        border: 1px dashed color-mix(in srgb, var(--blue) 56%, transparent);
+        border-radius: 28px;
+        corner-shape: superellipse(1.5);
+        background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+        display: grid;
+        place-items: center;
+        text-align: center;
+        color: var(--text-2);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .drop-overlay-box i {
+        display: block;
+        color: var(--blue);
+        font-size: 46px;
+        margin-bottom: 14px;
+      }
+
+      .drop-overlay-box strong {
+        display: block;
+        color: var(--text-1);
+        font-size: 18px;
+        line-height: 1.4;
+      }
+
+      .drop-overlay-box span {
+        display: block;
+        margin-top: 6px;
+        color: var(--text-3);
+        font-size: 12px;
+      }
+
+      .toast-stack {
+        position: fixed;
+        z-index: 100;
+        left: 50%;
+        bottom: 22px;
+        transform: translateX(-50%);
+        display: grid;
+        gap: 8px;
+        width: min(420px, calc(100vw - 32px));
+        pointer-events: none;
+      }
+
+      .toast {
+        min-height: 42px;
+        padding: 9px 12px;
+        border-radius: 12px;
+        corner-shape: superellipse(1.5);
+        background: var(--toast);
+        color: var(--toast-text);
+        box-shadow:
+          0 0 0 0.5px rgba(255, 255, 255, 0.12),
+          0 8px 30px rgba(0, 0, 0, 0.16);
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+        transition:
+          opacity 180ms var(--ease-out),
+          transform 180ms var(--ease-out);
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+
+      .toast i {
+        color: #ffffff;
+        opacity: 0.82;
+      }
+
+      .sr-only {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      @media (max-width: 980px) {
+        .shell {
+          width: min(100% - 28px, 900px);
+          padding-top: 18px;
+        }
+
+        .editor-grid,
+        .empty-inner {
+          grid-template-columns: 1fr;
+        }
+
+        .artwork-wrap {
+          width: min(100%, 620px);
+          margin: 0 auto;
+        }
+
+        .empty-inner {
+          gap: 28px;
+        }
+
+        .empty-copy-wrap {
+          text-align: center;
+        }
+
+        .empty-copy {
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .editor-card {
+          padding: 18px;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .app-header {
+          min-height: 62px;
+        }
+
+        .header-inner {
+          width: calc(100% - 20px);
+          min-height: 62px;
+        }
+
+        .shell {
+          width: min(100% - 20px, 600px);
+          padding: 10px 0 28px;
+        }
+
+        .header-copy {
+          display: none;
+        }
+
+        .editor-card {
+          border-radius: 20px;
+          padding: 12px;
+        }
+
+        .fields {
+          grid-template-columns: 1fr;
+        }
+
+        .field.span-2 {
+          grid-column: auto;
+        }
+
+        .technical-strip {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .track-head {
+          margin-bottom: 16px;
+        }
+
+        .track-head .button {
+          padding-inline: 10px;
+        }
+
+        .editor-actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .editor-actions .button {
+          width: 100%;
+        }
+
+        .local-note {
+          justify-content: center;
+        }
+
+        .file-row {
+          grid-template-columns: 42px minmax(0, 1fr) auto;
+        }
+
+        .file-thumb {
+          width: 42px;
+          height: 42px;
+        }
+
+        .file-format {
+          display: none;
+        }
+
+        .empty-card {
+          min-height: calc(100vh - 102px);
+          padding: 18px;
+          border-radius: 20px;
+        }
+      }
+
+      @media (pointer: coarse) {
+        .field input,
+        .field textarea {
+          font-size: 16px;
+        }
+
+        .artwork-action {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+        }
+
+        .button,
+        .icon-button,
+        .file-row,
+        .remove-file,
+        .artwork-card,
+        .artwork-action,
+        .drop-overlay,
+        .toast {
+          transition-duration: 0ms !important;
+        }
+
+        .loading-ring {
+          animation-duration: 2400ms;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="app-header sticky top-0 z-40">
+      <div class="header-inner flex items-center justify-between gap-4">
+        <div class="flex min-w-0 items-center gap-3">
+          <div class="brand-mark" aria-hidden="true">
+            <i class="fa-solid fa-wave-square"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="truncate text-[15px] font-semibold leading-5">AudioMeta</div>
+            <div class="header-copy truncate text-[11px] leading-4" style="color: var(--text-3)">
+              音声メタデータをローカルで編集
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <button
+            class="icon-button"
+            id="themeButton"
+            type="button"
+            aria-label="テーマを切り替え"
+            title="テーマを切り替え"
+          >
+            <i id="themeIcon" class="fa-solid fa-circle-half-stroke"></i>
+          </button>
+          <button class="button secondary" id="addFilesButton" type="button">
+            <i class="fa-solid fa-plus"></i>
+            <span>音声を追加</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="emptyState" class="empty-card superellipse">
+        <div class="empty-inner">
+          <div class="empty-art superellipse" aria-hidden="true">
+            <i class="fa-solid fa-compact-disc"></i>
+          </div>
+          <div class="empty-copy-wrap">
+            <h1 class="empty-title">音声を落とすだけ。</h1>
+            <p class="empty-copy">
+              音声ファイルをこの画面へドラッグ＆ドロップ。アルバムアートを大きく確認しながら、
+              タイトル・アーティスト・アルバムなど必要なタグだけを編集できます。
+            </p>
+            <button class="button primary" id="emptyAddButton" type="button">
+              <i class="fa-solid fa-folder-open"></i>
+              ファイルを選ぶ
+            </button>
+            <div class="format-line">
+              MP3 / FLAC / M4A / MP4 / AAC / OGG / OPUS / WAV / AIFF など
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="workspace" hidden>
+        <div class="editor-card superellipse">
+          <div class="editor-grid">
+            <div class="artwork-wrap">
+              <button
+                id="artworkCard"
+                class="artwork-card superellipse"
+                type="button"
+                data-has-art="false"
+                aria-label="アルバムアートを変更"
+              >
+                <img id="artworkImage" class="artwork-image" alt="" hidden />
+                <div id="artworkPlaceholder" class="artwork-placeholder">
+                  <i class="fa-regular fa-image"></i>
+                  <strong>アートワークをドロップ</strong>
+                  <span>JPEG / PNG / WebP</span>
+                </div>
+                <div class="artwork-action">
+                  <i class="fa-solid fa-image"></i>
+                  <span>ドロップ / クリックで変更</span>
+                </div>
+              </button>
+              <div class="art-meta">
+                <span id="artInfo">アートワークなし</span>
+                <span id="artChanged" class="changed" hidden>変更済み</span>
+              </div>
+            </div>
+
+            <div class="editor-panel">
+              <div class="track-head">
+                <div class="track-name">
+                  <h1 id="activeFilename">—</h1>
+                  <div class="track-file">
+                    <span id="activeFormat">—</span>
+                    <span aria-hidden="true">•</span>
+                    <span id="activeSize">—</span>
+                    <span id="dirtyLabel" hidden>
+                      <span class="status-dot"></span>
+                      未保存
+                    </span>
+                  </div>
+                </div>
+                <button class="button ghost" id="resetButton" type="button" title="変更を元に戻す">
+                  <i class="fa-solid fa-rotate-left"></i>
+                  <span class="max-[620px]:hidden">元に戻す</span>
+                </button>
+              </div>
+
+              <form id="metadataForm" autocomplete="off">
+                <div class="fields">
+                  <div class="field span-2">
+                    <label for="titleInput">タイトル</label>
+                    <input id="titleInput" data-field="title" type="text" placeholder="タイトル" />
+                  </div>
+
+                  <div class="field">
+                    <label for="artistInput">アーティスト</label>
+                    <input id="artistInput" data-field="artist" type="text" placeholder="アーティスト" />
+                  </div>
+
+                  <div class="field">
+                    <label for="albumInput">アルバム</label>
+                    <input id="albumInput" data-field="album" type="text" placeholder="アルバム" />
+                  </div>
+
+                  <div class="field">
+                    <label for="yearInput">年</label>
+                    <input
+                      id="yearInput"
+                      data-field="year"
+                      type="text"
+                      inputmode="numeric"
+                      placeholder="2026"
+                    />
+                  </div>
+
+                  <div class="field">
+                    <label for="trackInput">トラック</label>
+                    <input
+                      id="trackInput"
+                      data-field="track"
+                      type="text"
+                      inputmode="numeric"
+                      placeholder="1"
+                    />
+                  </div>
+
+                  <div class="field span-2">
+                    <label for="genreInput">ジャンル</label>
+                    <input id="genreInput" data-field="genre" type="text" placeholder="ジャンル" />
+                  </div>
+
+                  <div class="field span-2">
+                    <label for="commentInput">コメント</label>
+                    <textarea id="commentInput" data-field="comment" placeholder="コメント"></textarea>
+                  </div>
+                </div>
+              </form>
+
+              <div class="technical-strip" aria-label="音声情報">
+                <div class="technical-item">
+                  <span>Codec</span>
+                  <strong id="techCodec">—</strong>
+                </div>
+                <div class="technical-item">
+                  <span>Bitrate</span>
+                  <strong id="techBitrate">—</strong>
+                </div>
+                <div class="technical-item">
+                  <span>Sample rate</span>
+                  <strong id="techSampleRate">—</strong>
+                </div>
+                <div class="technical-item">
+                  <span>Duration</span>
+                  <strong id="techDuration">—</strong>
+                </div>
+              </div>
+
+              <div class="editor-actions">
+                <div class="local-note">
+                  <i class="fa-solid fa-shield-halved"></i>
+                  <span>ファイル内容はブラウザ外へ送信しません</span>
+                </div>
+                <button id="saveButton" class="button primary" type="button">
+                  <i class="fa-solid fa-download"></i>
+                  <span id="saveButtonText">保存してダウンロード</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section class="queue-card superellipse" aria-label="音声ファイル一覧">
+          <div class="queue-head">
+            <div class="queue-title">
+              <span>ファイル</span>
+              <span id="queueCount" class="queue-count">0</span>
+            </div>
+            <button id="clearButton" class="button ghost" type="button">
+              <i class="fa-solid fa-xmark"></i>
+              すべて消す
+            </button>
+          </div>
+          <div id="queueList" class="queue-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <input
+      id="audioInput"
+      class="sr-only"
+      type="file"
+      multiple
+      accept="audio/*,.mp3,.flac,.m4a,.mp4,.aac,.ogg,.opus,.wav,.aiff,.aif,.wma,.ape,.wv,.mpc,.tta,.dsf,.dff,.mka,.webm"
+    />
+    <input
+      id="artInput"
+      class="sr-only"
+      type="file"
+      accept="image/jpeg,image/png,image/webp"
+    />
+
+    <div id="dropOverlay" class="drop-overlay" data-open="false" aria-hidden="true">
+      <div class="drop-overlay-box superellipse">
+        <div>
+          <i class="fa-solid fa-arrow-down-to-bracket"></i>
+          <strong>ここに音声ファイルをドロップ</strong>
+          <span>複数ファイルをまとめて追加できます</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <script type="module">
+      const TAGLIB_URL = "https://esm.sh/taglib-wasm@2.4.0/simple?bundle";
+
+      const AUDIO_EXTENSIONS = new Set([
+        "mp3",
+        "flac",
+        "m4a",
+        "mp4",
+        "aac",
+        "ogg",
+        "opus",
+        "wav",
+        "wave",
+        "aiff",
+        "aif",
+        "wma",
+        "ape",
+        "wv",
+        "mpc",
+        "tta",
+        "dsf",
+        "dff",
+        "mka",
+        "webm",
+      ]);
+
+      const state = {
+        tracks: [],
+        activeId: null,
+        libraryPromise: null,
+        globalDragDepth: 0,
+        theme: localStorage.getItem("audio-meta-theme") || "system",
+      };
+
+      const els = {
+        emptyState: document.getElementById("emptyState"),
+        workspace: document.getElementById("workspace"),
+        audioInput: document.getElementById("audioInput"),
+        artInput: document.getElementById("artInput"),
+        addFilesButton: document.getElementById("addFilesButton"),
+        emptyAddButton: document.getElementById("emptyAddButton"),
+        themeButton: document.getElementById("themeButton"),
+        themeIcon: document.getElementById("themeIcon"),
+        artworkCard: document.getElementById("artworkCard"),
+        artworkImage: document.getElementById("artworkImage"),
+        artworkPlaceholder: document.getElementById("artworkPlaceholder"),
+        artInfo: document.getElementById("artInfo"),
+        artChanged: document.getElementById("artChanged"),
+        activeFilename: document.getElementById("activeFilename"),
+        activeFormat: document.getElementById("activeFormat"),
+        activeSize: document.getElementById("activeSize"),
+        dirtyLabel: document.getElementById("dirtyLabel"),
+        metadataForm: document.getElementById("metadataForm"),
+        titleInput: document.getElementById("titleInput"),
+        artistInput: document.getElementById("artistInput"),
+        albumInput: document.getElementById("albumInput"),
+        yearInput: document.getElementById("yearInput"),
+        trackInput: document.getElementById("trackInput"),
+        genreInput: document.getElementById("genreInput"),
+        commentInput: document.getElementById("commentInput"),
+        techCodec: document.getElementById("techCodec"),
+        techBitrate: document.getElementById("techBitrate"),
+        techSampleRate: document.getElementById("techSampleRate"),
+        techDuration: document.getElementById("techDuration"),
+        saveButton: document.getElementById("saveButton"),
+        saveButtonText: document.getElementById("saveButtonText"),
+        resetButton: document.getElementById("resetButton"),
+        queueCount: document.getElementById("queueCount"),
+        queueList: document.getElementById("queueList"),
+        clearButton: document.getElementById("clearButton"),
+        dropOverlay: document.getElementById("dropOverlay"),
+        toastStack: document.getElementById("toastStack"),
+      };
+
+      function activeTrack() {
+        return state.tracks.find((track) => track.id === state.activeId) || null;
+      }
+
+      function uid() {
+        return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+      }
+
+      function extOf(name) {
+        const dot = name.lastIndexOf(".");
+        return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+      }
+
+      function isAudioFile(file) {
+        return file.type.startsWith("audio/") || AUDIO_EXTENSIONS.has(extOf(file.name));
+      }
+
+      function isImageFile(file) {
+        return ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+      }
+
+      function firstTag(value, fallback = "") {
+        if (Array.isArray(value)) return String(value[0] ?? fallback);
+        if (value === null || value === undefined) return fallback;
+        return String(value);
+      }
+
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes)) return "—";
+        if (bytes < 1024) return `${bytes} B`;
+        const units = ["KB", "MB", "GB"];
+        let value = bytes / 1024;
+        let unit = units[0];
+        for (let i = 1; i < units.length && value >= 1024; i += 1) {
+          value /= 1024;
+          unit = units[i];
+        }
+        return `${value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${unit}`;
+      }
+
+      function formatDuration(seconds) {
+        if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+        const total = Math.round(seconds);
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const secs = total % 60;
+        return hours > 0
+          ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+          : `${minutes}:${String(secs).padStart(2, "0")}`;
+      }
+
+      function detectImageMime(bytes) {
+        if (!bytes || bytes.length < 12) return "image/jpeg";
+        if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+        if (
+          bytes[0] === 0x89 &&
+          bytes[1] === 0x50 &&
+          bytes[2] === 0x4e &&
+          bytes[3] === 0x47
+        ) {
+          return "image/png";
+        }
+        if (
+          String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+          String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+        ) {
+          return "image/webp";
+        }
+        return "image/jpeg";
+      }
+
+      function revokeUrl(url) {
+        if (url) URL.revokeObjectURL(url);
+      }
+
+      function createArtUrl(bytes, mime) {
+        if (!bytes || !bytes.length) return null;
+        return URL.createObjectURL(new Blob([bytes], { type: mime || detectImageMime(bytes) }));
+      }
+
+      function setTheme(theme) {
+        state.theme = theme;
+        localStorage.setItem("audio-meta-theme", theme);
+        if (theme === "system") {
+          document.documentElement.removeAttribute("data-theme");
+          els.themeIcon.className = "fa-solid fa-circle-half-stroke";
+        } else {
+          document.documentElement.dataset.theme = theme;
+          els.themeIcon.className = theme === "dark" ? "fa-solid fa-moon" : "fa-solid fa-sun";
+        }
+      }
+
+      function cycleTheme() {
+        const next =
+          state.theme === "system" ? "light" : state.theme === "light" ? "dark" : "system";
+        setTheme(next);
+        const label = next === "system" ? "システム" : next === "light" ? "ライト" : "ダーク";
+        showToast(`テーマ: ${label}`, "fa-solid fa-circle-half-stroke");
+      }
+
+      function showToast(message, icon = "fa-solid fa-circle-info") {
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        toast.innerHTML = `<i class="${icon}" aria-hidden="true"></i><span></span>`;
+        toast.querySelector("span").textContent = message;
+        els.toastStack.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add("show"));
+        window.setTimeout(() => {
+          toast.classList.remove("show");
+          window.setTimeout(() => toast.remove(), 200);
+        }, 2800);
+      }
+
+      async function loadTagLib() {
+        if (!state.libraryPromise) {
+          state.libraryPromise = import(TAGLIB_URL).catch((error) => {
+            state.libraryPromise = null;
+            throw error;
+          });
+        }
+        return state.libraryPromise;
+      }
+
+      async function bytesFromTrack(track) {
+        if (track.modifiedBytes) return track.modifiedBytes;
+        return new Uint8Array(await track.file.arrayBuffer());
+      }
+
+      async function inspectTrack(track) {
+        track.loading = true;
+        renderQueue();
+
+        try {
+          const lib = await loadTagLib();
+          const bytes = new Uint8Array(await track.file.arrayBuffer());
+
+          const [tags, props] = await Promise.all([
+            lib.readTags(bytes),
+            lib.readProperties(bytes),
+          ]);
+
+          track.tags = {
+            title: firstTag(tags.title),
+            artist: firstTag(tags.artist),
+            album: firstTag(tags.album),
+            year: tags.year ? String(tags.year) : "",
+            track: tags.track ? String(tags.track) : "",
+            genre: firstTag(tags.genre),
+            comment: firstTag(tags.comment),
+          };
+
+          track.originalTags = { ...track.tags };
+          track.props = props || {};
+          track.format =
+            props?.containerFormat && props.containerFormat !== "unknown"
+              ? props.containerFormat
+              : extOf(track.file.name).toUpperCase() || "AUDIO";
+
+          if (state.activeId === track.id) {
+            await ensureArtwork(track, bytes, lib);
+          }
+        } catch (error) {
+          console.error("Metadata read failed:", error);
+          track.error = true;
+          track.tags = {
+            title: "",
+            artist: "",
+            album: "",
+            year: "",
+            track: "",
+            genre: "",
+            comment: "",
+          };
+          track.originalTags = { ...track.tags };
+          track.props = {};
+          showToast(`${track.file.name}: メタデータを読み取れませんでした`, "fa-solid fa-triangle-exclamation");
+        } finally {
+          track.loading = false;
+          renderQueue();
+          if (state.activeId === track.id) renderEditor();
+        }
+      }
+
+      async function ensureArtwork(track, sourceBytes = null, lib = null) {
+        if (track.artLoaded) return;
+        track.artLoaded = true;
+
+        try {
+          const api = lib || (await loadTagLib());
+          const bytes = sourceBytes || (await bytesFromTrack(track));
+          const art = await api.readCoverArt(bytes);
+
+          if (art && art.length) {
+            track.artData = new Uint8Array(art);
+            track.artMime = detectImageMime(track.artData);
+            revokeUrl(track.artUrl);
+            track.artUrl = createArtUrl(track.artData, track.artMime);
+          }
+        } catch (error) {
+          console.error("Artwork read failed:", error);
+        } finally {
+          if (state.activeId === track.id) {
+            renderEditor();
+            renderQueue();
+          }
+        }
+      }
+
+      async function addFiles(fileList) {
+        const files = Array.from(fileList).filter(isAudioFile);
+        if (!files.length) {
+          showToast("対応する音声ファイルがありません", "fa-solid fa-triangle-exclamation");
+          return;
+        }
+
+        const existing = new Set(
+          state.tracks.map((track) => `${track.file.name}|${track.file.size}|${track.file.lastModified}`),
+        );
+        const fresh = files.filter(
+          (file) => !existing.has(`${file.name}|${file.size}|${file.lastModified}`),
+        );
+
+        if (!fresh.length) {
+          showToast("同じファイルはすでに追加されています", "fa-solid fa-copy");
+          return;
+        }
+
+        for (const file of fresh) {
+          state.tracks.push({
+            id: uid(),
+            file,
+            tags: {
+              title: "",
+              artist: "",
+              album: "",
+              year: "",
+              track: "",
+              genre: "",
+              comment: "",
+            },
+            originalTags: null,
+            props: {},
+            format: extOf(file.name).toUpperCase() || "AUDIO",
+            artData: null,
+            artMime: null,
+            artUrl: null,
+            artLoaded: false,
+            artDirty: false,
+            dirty: false,
+            loading: true,
+            saving: false,
+            modifiedBytes: null,
+            error: false,
+          });
+        }
+
+        if (!state.activeId) {
+          state.activeId = state.tracks[0].id;
+        }
+
+        render();
+
+        for (const track of state.tracks.filter((item) => item.loading && !item.originalTags)) {
+          inspectTrack(track);
+        }
+
+        showToast(`${fresh.length}件の音声を追加しました`, "fa-solid fa-music");
+      }
+
+      function markDirty(track) {
+        track.dirty =
+          track.artDirty ||
+          Object.keys(track.tags).some(
+            (key) => String(track.tags[key] ?? "") !== String(track.originalTags?.[key] ?? ""),
+          );
+      }
+
+      function render() {
+        const hasTracks = state.tracks.length > 0;
+        els.emptyState.hidden = hasTracks;
+        els.workspace.hidden = !hasTracks;
+        if (hasTracks) {
+          renderEditor();
+          renderQueue();
+        }
+      }
+
+      function renderEditor() {
+        const track = activeTrack();
+        if (!track) return;
+
+        els.activeFilename.textContent = track.file.name;
+        els.activeFormat.textContent = track.format || extOf(track.file.name).toUpperCase() || "AUDIO";
+        els.activeSize.textContent = formatBytes(track.file.size);
+        els.dirtyLabel.hidden = !track.dirty;
+
+        const disabled = track.loading || track.saving;
+        for (const input of els.metadataForm.querySelectorAll("[data-field]")) {
+          const key = input.dataset.field;
+          input.value = track.tags[key] ?? "";
+          input.disabled = disabled;
+        }
+
+        els.saveButton.disabled = disabled || !track.dirty;
+        els.resetButton.disabled = disabled || !track.dirty;
+        els.saveButtonText.textContent = track.saving ? "保存中…" : "保存してダウンロード";
+
+        els.techCodec.textContent = track.props?.codec || "—";
+        els.techBitrate.textContent = Number.isFinite(track.props?.bitrate)
+          ? `${Math.round(track.props.bitrate)} kbps`
+          : "—";
+        els.techSampleRate.textContent = Number.isFinite(track.props?.sampleRate)
+          ? `${(track.props.sampleRate / 1000).toFixed(track.props.sampleRate % 1000 ? 1 : 0)} kHz`
+          : "—";
+        els.techDuration.textContent = formatDuration(track.props?.duration);
+
+        if (!track.artLoaded && !track.loading) {
+          ensureArtwork(track);
+        }
+
+        if (track.artUrl) {
+          els.artworkImage.src = track.artUrl;
+          els.artworkImage.hidden = false;
+          els.artworkPlaceholder.hidden = true;
+          els.artworkCard.dataset.hasArt = "true";
+          els.artInfo.textContent = `${track.artMime?.replace("image/", "").toUpperCase() || "IMAGE"} • ${formatBytes(track.artData?.byteLength || 0)}`;
+        } else {
+          els.artworkImage.removeAttribute("src");
+          els.artworkImage.hidden = true;
+          els.artworkPlaceholder.hidden = false;
+          els.artworkCard.dataset.hasArt = "false";
+          els.artInfo.textContent = track.loading ? "アートワークを読み込み中…" : "アートワークなし";
+        }
+
+        els.artChanged.hidden = !track.artDirty;
+        els.artworkCard.disabled = disabled;
+      }
+
+      function renderQueue() {
+        els.queueCount.textContent = String(state.tracks.length);
+        els.clearButton.disabled = state.tracks.length === 0;
+        els.queueList.replaceChildren();
+
+        for (const track of state.tracks) {
+          const row = document.createElement("div");
+          row.className = "file-row";
+          row.dataset.trackId = track.id;
+          row.dataset.active = String(track.id === state.activeId);
+          row.setAttribute("role", "button");
+          row.setAttribute("tabindex", "0");
+          row.setAttribute("aria-label", `${track.file.name} を編集`);
+
+          const thumb = document.createElement("div");
+          thumb.className = "file-thumb";
+          if (track.artUrl) {
+            const img = document.createElement("img");
+            img.src = track.artUrl;
+            img.alt = "";
+            thumb.appendChild(img);
+          } else if (track.loading) {
+            const ring = document.createElement("span");
+            ring.className = "loading-ring";
+            thumb.appendChild(ring);
+          } else {
+            const icon = document.createElement("i");
+            icon.className = "fa-solid fa-music";
+            thumb.appendChild(icon);
+          }
+
+          const main = document.createElement("div");
+          main.className = "file-main";
+
+          const title = document.createElement("div");
+          title.className = "file-title";
+
+          const titleText = document.createElement("span");
+          titleText.className = "file-title-text";
+          titleText.textContent =
+            track.tags.title || track.file.name.replace(/\.[^.]+$/, "") || track.file.name;
+          title.appendChild(titleText);
+
+          if (track.dirty) {
+            const dirty = document.createElement("span");
+            dirty.className = "dirty-dot";
+            dirty.title = "未保存";
+            title.appendChild(dirty);
+          }
+
+          const sub = document.createElement("div");
+          sub.className = "file-sub";
+          const artistAlbum = [track.tags.artist, track.tags.album].filter(Boolean).join(" • ");
+          sub.textContent = track.error
+            ? "メタデータ読み取りエラー"
+            : track.loading
+              ? "メタデータを読み込み中…"
+              : artistAlbum || formatBytes(track.file.size);
+
+          main.append(title, sub);
+
+          const format = document.createElement("div");
+          format.className = "file-format";
+          format.textContent = track.format || extOf(track.file.name);
+
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "remove-file";
+          remove.dataset.removeId = track.id;
+          remove.setAttribute("aria-label", `${track.file.name} を削除`);
+          remove.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+
+          row.append(thumb, main, format, remove);
+          els.queueList.appendChild(row);
+        }
+      }
+
+      async function selectTrack(id) {
+        if (state.activeId === id) return;
+        state.activeId = id;
+        renderEditor();
+        renderQueue();
+
+        const track = activeTrack();
+        if (track && !track.artLoaded && !track.loading) {
+          await ensureArtwork(track);
+        }
+      }
+
+      function removeTrack(id) {
+        const index = state.tracks.findIndex((track) => track.id === id);
+        if (index < 0) return;
+
+        const [removed] = state.tracks.splice(index, 1);
+        revokeUrl(removed.artUrl);
+
+        if (state.activeId === id) {
+          const next = state.tracks[index] || state.tracks[index - 1] || state.tracks[0] || null;
+          state.activeId = next?.id || null;
+        }
+
+        render();
+      }
+
+      function clearTracks() {
+        for (const track of state.tracks) revokeUrl(track.artUrl);
+        state.tracks = [];
+        state.activeId = null;
+        render();
+      }
+
+      async function setArtwork(file) {
+        const track = activeTrack();
+        if (!track || !isImageFile(file)) {
+          showToast("JPEG / PNG / WebP画像を選んでください", "fa-solid fa-image");
+          return;
+        }
+
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        revokeUrl(track.artUrl);
+        track.artData = bytes;
+        track.artMime = file.type || detectImageMime(bytes);
+        track.artUrl = createArtUrl(bytes, track.artMime);
+        track.artLoaded = true;
+        track.artDirty = true;
+        markDirty(track);
+        renderEditor();
+        renderQueue();
+      }
+
+      function resetActive() {
+        const track = activeTrack();
+        if (!track || !track.originalTags) return;
+
+        track.tags = { ...track.originalTags };
+        track.artDirty = false;
+        track.dirty = false;
+
+        if (track.artLoaded) {
+          track.artLoaded = false;
+          revokeUrl(track.artUrl);
+          track.artUrl = null;
+          track.artData = null;
+          track.artMime = null;
+          ensureArtwork(track);
+        }
+
+        renderEditor();
+        renderQueue();
+        showToast("変更を元に戻しました", "fa-solid fa-rotate-left");
+      }
+
+      async function saveActive() {
+        const track = activeTrack();
+        if (!track || track.loading || track.saving || !track.dirty) return;
+
+        track.saving = true;
+        renderEditor();
+        renderQueue();
+
+        try {
+          const lib = await loadTagLib();
+          const source = await bytesFromTrack(track);
+
+          const updates = {
+            title: track.tags.title,
+            artist: track.tags.artist,
+            album: track.tags.album,
+            year: Number.parseInt(track.tags.year, 10) || 0,
+            track: Number.parseInt(track.tags.track, 10) || 0,
+            genre: track.tags.genre,
+            comment: track.tags.comment,
+          };
+
+          let output = await lib.applyTags(source, updates);
+
+          if (track.artDirty && track.artData?.length) {
+            output = await lib.applyCoverArt(output, track.artData, track.artMime || "image/jpeg");
+          }
+
+          track.modifiedBytes = new Uint8Array(output);
+          track.originalTags = { ...track.tags };
+          track.artDirty = false;
+          track.dirty = false;
+
+          const blob = new Blob([track.modifiedBytes], {
+            type: track.file.type || "application/octet-stream",
+          });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = track.file.name;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+
+          showToast("メタデータを書き込んだファイルを保存しました", "fa-solid fa-check");
+        } catch (error) {
+          console.error("Metadata write failed:", error);
+          showToast("保存に失敗しました。コンソールに詳細を出力しました", "fa-solid fa-triangle-exclamation");
+        } finally {
+          track.saving = false;
+          renderEditor();
+          renderQueue();
+        }
+      }
+
+      function handleFieldInput(event) {
+        const input = event.target.closest("[data-field]");
+        if (!input) return;
+
+        const track = activeTrack();
+        if (!track || track.loading || track.saving) return;
+
+        track.tags[input.dataset.field] = input.value;
+        markDirty(track);
+        els.dirtyLabel.hidden = !track.dirty;
+        els.saveButton.disabled = !track.dirty;
+        els.resetButton.disabled = !track.dirty;
+        renderQueue();
+      }
+
+      function filesFromTransfer(event) {
+        return Array.from(event.dataTransfer?.files || []);
+      }
+
+      function transferHasImage(event) {
+        const items = Array.from(event.dataTransfer?.items || []);
+        return items.some((item) => item.kind === "file" && item.type.startsWith("image/"));
+      }
+
+      function transferHasAudio(event) {
+        const items = Array.from(event.dataTransfer?.items || []);
+        return items.some(
+          (item) =>
+            item.kind === "file" &&
+            (item.type.startsWith("audio/") || item.type === "" || item.type === "video/mp4"),
+        );
+      }
+
+      els.addFilesButton.addEventListener("click", () => els.audioInput.click());
+      els.emptyAddButton.addEventListener("click", () => els.audioInput.click());
+      els.audioInput.addEventListener("change", async () => {
+        await addFiles(els.audioInput.files);
+        els.audioInput.value = "";
+      });
+
+      els.themeButton.addEventListener("click", cycleTheme);
+      setTheme(state.theme);
+
+      els.metadataForm.addEventListener("input", handleFieldInput);
+
+      els.artworkCard.addEventListener("click", () => {
+        if (!els.artworkCard.disabled) els.artInput.click();
+      });
+
+      els.artInput.addEventListener("change", async () => {
+        const file = els.artInput.files?.[0];
+        if (file) await setArtwork(file);
+        els.artInput.value = "";
+      });
+
+      els.artworkCard.addEventListener("dragenter", (event) => {
+        if (!transferHasImage(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        els.artworkCard.classList.add("drag-art");
+      });
+
+      els.artworkCard.addEventListener("dragover", (event) => {
+        if (!transferHasImage(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+      });
+
+      els.artworkCard.addEventListener("dragleave", (event) => {
+        event.stopPropagation();
+        if (!els.artworkCard.contains(event.relatedTarget)) {
+          els.artworkCard.classList.remove("drag-art");
+        }
+      });
+
+      els.artworkCard.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        els.artworkCard.classList.remove("drag-art");
+        const image = filesFromTransfer(event).find(isImageFile);
+        if (image) await setArtwork(image);
+      });
+
+      els.saveButton.addEventListener("click", saveActive);
+      els.resetButton.addEventListener("click", resetActive);
+      els.clearButton.addEventListener("click", clearTracks);
+
+      els.queueList.addEventListener("click", (event) => {
+        const remove = event.target.closest("[data-remove-id]");
+        if (remove) {
+          event.preventDefault();
+          event.stopPropagation();
+          removeTrack(remove.dataset.removeId);
+          return;
+        }
+
+        const row = event.target.closest("[data-track-id]");
+        if (row) selectTrack(row.dataset.trackId);
+      });
+
+      els.queueList.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        if (event.target.closest("[data-remove-id]")) return;
+        const row = event.target.closest("[data-track-id]");
+        if (!row) return;
+        event.preventDefault();
+        selectTrack(row.dataset.trackId);
+      });
+
+      window.addEventListener("dragenter", (event) => {
+        if (!transferHasAudio(event) || transferHasImage(event)) return;
+        event.preventDefault();
+        state.globalDragDepth += 1;
+        els.dropOverlay.dataset.open = "true";
+        els.dropOverlay.setAttribute("aria-hidden", "false");
+      });
+
+      window.addEventListener("dragover", (event) => {
+        if (!transferHasAudio(event) || transferHasImage(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      });
+
+      window.addEventListener("dragleave", (event) => {
+        if (!transferHasAudio(event) || transferHasImage(event)) return;
+        event.preventDefault();
+        state.globalDragDepth = Math.max(0, state.globalDragDepth - 1);
+        if (state.globalDragDepth === 0) {
+          els.dropOverlay.dataset.open = "false";
+          els.dropOverlay.setAttribute("aria-hidden", "true");
+        }
+      });
+
+      window.addEventListener("drop", async (event) => {
+        if (transferHasImage(event) && !event.target.closest("#artworkCard")) {
+          event.preventDefault();
+          state.globalDragDepth = 0;
+          els.dropOverlay.dataset.open = "false";
+          els.dropOverlay.setAttribute("aria-hidden", "true");
+          if (state.tracks.length) {
+            showToast("画像は大きなアートワーク欄へドロップしてください", "fa-solid fa-image");
+          }
+          return;
+        }
+
+        const files = filesFromTransfer(event);
+        const audio = files.filter(isAudioFile);
+        if (!audio.length) return;
+
+        event.preventDefault();
+        state.globalDragDepth = 0;
+        els.dropOverlay.dataset.open = "false";
+        els.dropOverlay.setAttribute("aria-hidden", "true");
+        await addFiles(audio);
+      });
+
+      window.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
+          event.preventDefault();
+          els.audioInput.click();
+          return;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          saveActive();
+        }
+      });
+
+      window.addEventListener("beforeunload", () => {
+        for (const track of state.tracks) revokeUrl(track.artUrl);
+      });
+
+      render();
+    </script>
+  </body>
+</html>
