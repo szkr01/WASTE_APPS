@@ -1,0 +1,954 @@
+<!--
+Context: Build a single-file YouTube lockup/thumbnail generator from the supplied visual reference and structural YouTube lockup sample.
+Implementation summary: 658x245 canvas renderer, live metadata editing, thumbnail URL/upload input, watched-progress rendering, verified/duration toggles, arbitrary PNG export resolution, and transparent thumbnail export when no image is set. The supplied DOM is reference material only and is not exposed as an import feature.
+-->
+<!doctype html>
+<html lang="ja" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YouTube Thumbnail Generator</title>
+  <meta name="description" content="YouTube風の横長動画ロックアップを編集し、サムネイル、タイトル、チャンネル、再生数、公開時期、再生進捗を反映したPNGを書き出せるジェネレータ。">
+  <meta name="page:icon" content="fab fa-youtube">
+  <meta name="page:color" content="#ff0033">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #151517;
+      --surface-1: #232324;
+      --surface-2: #2c2c2e;
+      --surface-3: #353638;
+      --text: #f9fafb;
+      --text-2: #cfd3d6;
+      --text-3: #adb2b8;
+      --muted: #81858c;
+      --blue: #7aaaff;
+      --border-1: rgba(255,255,255,.06);
+      --border-2: rgba(255,255,255,.12);
+      --border-3: rgba(255,255,255,.16);
+      --hover: rgba(255,255,255,.08);
+      --active: rgba(255,255,255,.14);
+      --ease-out: cubic-bezier(.23,1,.32,1);
+      --ease-smooth-out: cubic-bezier(.22,1,.36,1);
+      --duration-quick: 150ms;
+      --duration-fast: 250ms;
+    }
+
+    html[data-theme="light"] {
+      color-scheme: light;
+      --page: #ffffff;
+      --surface-1: #ffffff;
+      --surface-2: #f9fafb;
+      --surface-3: #f5f6f7;
+      --text: #0f1115;
+      --text-2: #61666b;
+      --text-3: #81858c;
+      --muted: #adb2b8;
+      --blue: #4176e6;
+      --border-1: rgba(0,0,0,.04);
+      --border-2: rgba(0,0,0,.10);
+      --border-3: rgba(0,0,0,.12);
+      --hover: rgba(38,49,72,.06);
+      --active: rgba(38,49,72,.10);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    button, input, textarea, select { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+
+    .hairline { box-shadow: inset 0 0 0 .5px var(--border-2); }
+    .panel-elevation {
+      border: 0;
+      box-shadow: 0 0 0 .5px var(--border-2), 0 3px 8px rgba(0,0,0,.04), 0 0 20px rgba(0,0,0,.05);
+    }
+    .superellipse { corner-shape: superellipse(1.5); }
+
+    .btn {
+      height: 36px;
+      border: 0;
+      border-radius: 12px;
+      corner-shape: superellipse(1.5);
+      padding: 0 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      color: var(--text);
+      background: transparent;
+      cursor: pointer;
+      transition: transform 140ms var(--ease-out), background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: var(--text); color: var(--page); }
+    .btn-secondary { background: var(--surface-3); }
+    .btn-ghost { background: transparent; }
+    .btn-icon { width: 36px; padding: 0; }
+    .btn:focus-visible, .field:focus-visible, .drop-zone:focus-visible, .seg-btn:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+
+    @media (hover:hover) and (pointer:fine) {
+      .btn:not(.btn-primary):hover { background: var(--hover); }
+      .btn-primary:hover { filter: brightness(.92); }
+      .field:hover { box-shadow: inset 0 0 0 .5px var(--border-3); }
+      .drop-zone:hover { background: var(--hover); }
+    }
+
+    .field {
+      width: 100%;
+      min-height: 36px;
+      border: 0;
+      border-radius: 12px;
+      corner-shape: superellipse(1.5);
+      background: var(--surface-3);
+      color: var(--text);
+      box-shadow: inset 0 0 0 .5px var(--border-2);
+      padding: 8px 10px;
+      outline: none;
+      transition: box-shadow 140ms ease, background-color 140ms ease;
+    }
+    .field::placeholder { color: var(--muted); }
+    .field:focus { box-shadow: inset 0 0 0 .5px var(--blue), 0 0 0 1px color-mix(in srgb, var(--blue) 35%, transparent); }
+    textarea.field { resize: vertical; min-height: 112px; line-height: 1.45; }
+
+    .label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--text-2);
+      font-size: 12px;
+      line-height: 18px;
+      margin-bottom: 6px;
+    }
+
+    .section-title {
+      color: var(--text-3);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      margin: 0 0 10px;
+    }
+
+    .toggle {
+      appearance: none;
+      width: 34px;
+      height: 20px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--surface-3);
+      box-shadow: inset 0 0 0 .5px var(--border-3);
+      cursor: pointer;
+      position: relative;
+      flex: 0 0 auto;
+      transition: background-color 180ms var(--ease-smooth-out);
+    }
+    .toggle::after {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      background: var(--text-3);
+      transition: transform 180ms var(--ease-smooth-out), background-color 180ms ease;
+    }
+    .toggle:checked { background: var(--blue); box-shadow: none; }
+    .toggle:checked::after { transform: translateX(14px); background: #fff; }
+
+    .canvas-shell {
+      width: 100%;
+      background: #0f0f0f;
+      border-radius: 16px;
+      corner-shape: superellipse(1.5);
+      overflow: hidden;
+      box-shadow: 0 0 0 .5px rgba(255,255,255,.10), 0 8px 30px rgba(0,0,0,.18);
+    }
+    #previewCanvas { display:block; width:100%; aspect-ratio:658/245; }
+
+    .drop-zone {
+      position: relative;
+      min-height: 84px;
+      border-radius: 16px;
+      corner-shape: superellipse(1.5);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--surface-2);
+      box-shadow: inset 0 0 0 .5px var(--border-2);
+      cursor: pointer;
+      transition: background-color 140ms ease, box-shadow 140ms ease;
+      outline: none;
+    }
+    .drop-zone[data-dragging="true"] { box-shadow: inset 0 0 0 1px var(--blue); background: color-mix(in srgb, var(--blue) 8%, var(--surface-2)); }
+    .drop-thumb {
+      width: 96px;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      border-radius: 8px;
+      corner-shape: superellipse(1.5);
+      background: #0f0f0f;
+      flex: 0 0 auto;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+      padding: 2px;
+      border-radius: 12px;
+      corner-shape: superellipse(1.5);
+      background: var(--surface-3);
+    }
+    .seg-btn {
+      height: 30px;
+      border: 0;
+      border-radius: 8px;
+      corner-shape: superellipse(1.5);
+      color: var(--text-3);
+      background: transparent;
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+      transition: color 160ms ease, background-color 160ms ease, transform 120ms var(--ease-out);
+    }
+    .seg-btn[aria-selected="true"] {
+      color: var(--text);
+      background: var(--surface-1);
+      box-shadow: 0 0 0 .5px var(--border-2), 0 2px 8px rgba(0,0,0,.08);
+    }
+    .seg-btn:active { transform: scale(.98); }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      max-width: min(360px, calc(100vw - 40px));
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      corner-shape: superellipse(1.5);
+      background: #43454a;
+      color: #fff;
+      box-shadow: 0 0 0 .5px rgba(255,255,255,.18), 0 6px 26px rgba(0,0,0,.22);
+      opacity: 0;
+      transform: translateY(10px) scale(.98);
+      pointer-events: none;
+      transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+      z-index: 50;
+    }
+    .toast[data-show="true"] { opacity: 1; transform: translateY(0) scale(1); }
+
+    .scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+    .scrollbar::-webkit-scrollbar-thumb { background: #545557; border-radius: 999px; }
+    html[data-theme="light"] .scrollbar::-webkit-scrollbar-thumb { background: #d4d4d4; }
+
+    @media (max-width: 980px) {
+      .workspace-grid { grid-template-columns: 1fr !important; }
+      .editor-panel { max-height: none !important; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+      .btn, .field, .toggle, .toggle::after, .toast, .seg-btn { transition-duration: 0ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="mx-auto w-full max-w-[1500px] px-4 py-4 lg:px-6 lg:py-5">
+    <header class="mb-4 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-[#ff0033] text-white superellipse" aria-hidden="true">
+            <i class="fa-brands fa-youtube text-[15px]"></i>
+          </div>
+          <div class="min-w-0">
+            <h1 class="m-0 truncate text-[15px] font-semibold leading-5">YouTube Lockup Generator</h1>
+            <p class="m-0 mt-0.5 text-[12px] leading-[18px] text-[var(--text-3)]">658×245の検索・関連動画風ロックアップを生成</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="themeButton" class="btn btn-icon btn-ghost" type="button" aria-label="テーマを切り替え" title="テーマを切り替え">
+          <i id="themeIcon" class="fa-solid fa-sun text-[13px]"></i>
+        </button>
+        <button id="resetButton" class="btn btn-ghost" type="button"><i class="fa-solid fa-rotate-left text-[12px]"></i>リセット</button>
+        <button id="exportButton" class="btn btn-primary" type="button"><i class="fa-solid fa-download text-[12px]"></i>PNGを書き出す</button>
+      </div>
+    </header>
+
+    <div class="workspace-grid grid grid-cols-[minmax(0,1fr)_390px] gap-4 items-start">
+      <section class="min-w-0">
+        <div class="panel-elevation superellipse rounded-[20px] bg-[var(--surface-1)] p-3 sm:p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <span class="text-[12px] font-medium text-[var(--text-2)]">プレビュー</span>
+              <span class="rounded-md bg-[var(--surface-3)] px-1.5 py-0.5 text-[10px] text-[var(--text-3)]">658 × 245</span>
+            </div>
+            <span id="imageStatus" class="truncate text-[11px] text-[var(--text-3)]">画像未選択</span>
+          </div>
+          <div id="canvasDropTarget" class="canvas-shell" title="画像をここへドロップして差し替え">
+            <canvas id="previewCanvas" width="1316" height="490" aria-label="YouTubeロックアッププレビュー"></canvas>
+          </div>
+          <div class="mt-3 text-[11px] text-[var(--text-3)]">画像をプレビューへドロップしても差し替え可能</div>
+        </div>
+
+        <div class="mt-4">
+          <section class="hairline superellipse rounded-[16px] bg-[var(--surface-1)] p-3.5">
+            <h2 class="section-title">THUMBNAIL</h2>
+            <label id="dropZone" class="drop-zone" tabindex="0" data-dragging="false">
+              <input id="imageFile" type="file" accept="image/*" class="sr-only">
+              <img id="dropThumb" class="drop-thumb hidden" alt="選択中のサムネイル">
+              <div id="dropThumbPlaceholder" class="drop-thumb flex items-center justify-center text-[var(--text-3)]" aria-hidden="true">
+                <i class="fa-regular fa-image text-[18px]"></i>
+              </div>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-[13px] font-medium text-[var(--text)]">画像を選択</span>
+                <span class="mt-1 block text-[11px] leading-4 text-[var(--text-3)]">16:9へ中央クロップ。PNG / JPG / WebP</span>
+              </span>
+              <i class="fa-solid fa-arrow-up-from-bracket text-[12px] text-[var(--text-3)]" aria-hidden="true"></i>
+            </label>
+            <div class="mt-3">
+              <label class="label" for="imageUrl">画像URL</label>
+              <div class="flex gap-2">
+                <input id="imageUrl" class="field min-w-0" type="url" spellcheck="false">
+                <button id="loadUrlButton" class="btn btn-secondary shrink-0" type="button">読込</button>
+              </div>
+            </div>
+          </section>
+
+
+        </div>
+      </section>
+
+      <aside class="editor-panel scrollbar panel-elevation superellipse max-h-[calc(100vh-40px)] overflow-y-auto rounded-[20px] bg-[var(--surface-1)] p-3.5 lg:sticky lg:top-5">
+        <section>
+          <h2 class="section-title">METADATA</h2>
+          <div class="space-y-3">
+            <div>
+              <label class="label" for="titleInput">タイトル <span id="titleCount">35</span></label>
+              <textarea id="titleInput" class="field" rows="2" maxlength="180"></textarea>
+            </div>
+            <div>
+              <label class="label" for="channelInput">チャンネル</label>
+              <input id="channelInput" class="field" type="text" maxlength="80">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="label" for="viewsInput">再生数</label>
+                <input id="viewsInput" class="field" type="text" maxlength="40">
+              </div>
+              <div>
+                <label class="label" for="ageInput">公開時期</label>
+                <input id="ageInput" class="field" type="text" maxlength="40">
+              </div>
+            </div>
+            <div class="grid grid-cols-[1fr_120px] gap-2">
+              <div>
+                <label class="label" for="durationInput">動画時間</label>
+                <input id="durationInput" class="field" type="text" maxlength="12">
+              </div>
+              <div>
+                <label class="label" for="progressInput">視聴進捗</label>
+                <div class="relative">
+                  <input id="progressInput" class="field pr-7" type="number" min="0" max="100" step="1" inputmode="numeric">
+                  <span class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-3)]">%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="my-4 h-px bg-[var(--border-1)]"></div>
+
+        <section>
+          <h2 class="section-title">DISPLAY</h2>
+          <div class="space-y-1">
+            <label class="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-xl px-2.5 py-1.5 hover:bg-[var(--hover)] superellipse">
+              <span>
+                <span class="block text-[13px]">確認済みバッジ</span>
+                <span class="block text-[10px] text-[var(--text-3)]">チャンネル名の右側</span>
+              </span>
+              <input id="verifiedToggle" class="toggle" type="checkbox" checked>
+            </label>
+            <label class="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-xl px-2.5 py-1.5 hover:bg-[var(--hover)] superellipse">
+              <span>
+                <span class="block text-[13px]">時間バッジ</span>
+                <span class="block text-[10px] text-[var(--text-3)]">サムネ右下の音符 + 時間</span>
+              </span>
+              <input id="durationToggle" class="toggle" type="checkbox" checked>
+            </label>
+            <label class="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-xl px-2.5 py-1.5 hover:bg-[var(--hover)] superellipse">
+              <span>
+                <span class="block text-[13px]">再生アイコン</span>
+                <span class="block text-[10px] text-[var(--text-3)]">再生数の左側</span>
+              </span>
+              <input id="playToggle" class="toggle" type="checkbox" checked>
+            </label>
+          </div>
+        </section>
+
+        <div class="my-4 h-px bg-[var(--border-1)]"></div>
+
+        <section>
+          <h2 class="section-title">OUTPUT</h2>
+          <div class="space-y-3">
+            <div>
+              <label class="label" for="outputPreset">解像度</label>
+              <select id="outputPreset" class="field">
+                <option value="658x245">658 × 245</option>
+                <option value="1316x490" selected>1316 × 490</option>
+                <option value="1974x735">1974 × 735</option>
+                <option value="2632x980">2632 × 980</option>
+                <option value="custom">カスタム</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="label" for="outputWidth">幅</label>
+                <input id="outputWidth" class="field" type="number" min="1" step="1" inputmode="numeric" value="1316">
+              </div>
+              <div>
+                <label class="label" for="outputHeight">高さ</label>
+                <input id="outputHeight" class="field" type="number" min="1" step="1" inputmode="numeric" value="490">
+              </div>
+            </div>
+            <div class="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[11px] leading-[17px] text-[var(--text-3)] superellipse">
+              サムネ未設定時は、PNGのサムネ領域だけ透過して書き出します。
+            </div>
+          </div>
+        </section>
+
+      </aside>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" data-show="false">
+    <i id="toastIcon" class="fa-solid fa-check text-[12px]"></i>
+    <span id="toastText" class="text-[12px]"></span>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const BASE_W = 658;
+      const BASE_H = 245;
+      const PREVIEW_SCALE = 2;
+      const DEFAULTS = {
+        title: "TOKYO MACHINE - DIGITAL MIRAGE 2020",
+        channel: "Proximity",
+        views: "26万",
+        age: "6 年前",
+        duration: "30:00",
+        verified: true,
+        showDuration: true,
+        showPlay: true,
+        progress: 43,
+        imageUrl: "",
+      };
+
+      const el = {
+        canvas: document.getElementById("previewCanvas"),
+        canvasDropTarget: document.getElementById("canvasDropTarget"),
+        title: document.getElementById("titleInput"),
+        channel: document.getElementById("channelInput"),
+        views: document.getElementById("viewsInput"),
+        age: document.getElementById("ageInput"),
+        duration: document.getElementById("durationInput"),
+        progress: document.getElementById("progressInput"),
+        verified: document.getElementById("verifiedToggle"),
+        durationToggle: document.getElementById("durationToggle"),
+        playToggle: document.getElementById("playToggle"),
+        imageUrl: document.getElementById("imageUrl"),
+        imageFile: document.getElementById("imageFile"),
+        loadUrl: document.getElementById("loadUrlButton"),
+        dropZone: document.getElementById("dropZone"),
+        dropThumb: document.getElementById("dropThumb"),
+        dropThumbPlaceholder: document.getElementById("dropThumbPlaceholder"),
+        imageStatus: document.getElementById("imageStatus"),
+        titleCount: document.getElementById("titleCount"),
+        outputPreset: document.getElementById("outputPreset"),
+        outputWidth: document.getElementById("outputWidth"),
+        outputHeight: document.getElementById("outputHeight"),
+        export: document.getElementById("exportButton"),
+        reset: document.getElementById("resetButton"),
+        theme: document.getElementById("themeButton"),
+        themeIcon: document.getElementById("themeIcon"),
+        toast: document.getElementById("toast"),
+        toastText: document.getElementById("toastText"),
+        toastIcon: document.getElementById("toastIcon"),
+      };
+
+      const state = {
+        ...DEFAULTS,
+        image: null,
+        imageSource: DEFAULTS.imageUrl,
+        imageObjectUrl: null,
+      };
+
+      let renderQueued = false;
+      let toastTimer = null;
+
+      function showToast(message, type = "ok") {
+        if (toastTimer) clearTimeout(toastTimer);
+        el.toastText.textContent = message;
+        el.toastIcon.className = type === "error" ? "fa-solid fa-circle-exclamation text-[12px]" : "fa-solid fa-check text-[12px]";
+        el.toast.dataset.show = "true";
+        toastTimer = setTimeout(() => {
+          el.toast.dataset.show = "false";
+          toastTimer = null;
+        }, 2200);
+      }
+
+      function queueRender() {
+        if (renderQueued) return;
+        renderQueued = true;
+        requestAnimationFrame(() => {
+          renderQueued = false;
+          renderPreview();
+        });
+      }
+
+      function roundedRectPath(ctx, x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rr);
+        ctx.arcTo(x + w, y + h, x, y + h, rr);
+        ctx.arcTo(x, y + h, x, y, rr);
+        ctx.arcTo(x, y, x + w, y, rr);
+        ctx.closePath();
+      }
+
+      function drawImageCover(ctx, img, x, y, w, h, radius) {
+        ctx.save();
+        roundedRectPath(ctx, x, y, w, h, radius);
+        ctx.clip();
+        const ir = img.width / img.height;
+        const tr = w / h;
+        let sx = 0;
+        let sy = 0;
+        let sw = img.width;
+        let sh = img.height;
+        if (ir > tr) {
+          sw = img.height * tr;
+          sx = (img.width - sw) / 2;
+        } else {
+          sh = img.width / tr;
+          sy = (img.height - sh) / 2;
+        }
+        ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+        ctx.restore();
+      }
+
+      function drawThumbnailFallback(ctx, x, y, w, h) {
+        ctx.save();
+        roundedRectPath(ctx, x, y, w, h, 12);
+        ctx.clip();
+        ctx.fillStyle = "#232323";
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#343434";
+        ctx.fillRect(x, y + h * 0.62, w, h * 0.38);
+        ctx.fillStyle = "#6a6a6a";
+        ctx.font = "600 13px Arial, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("THUMBNAIL", x + w / 2, y + h / 2);
+        ctx.restore();
+      }
+
+      function splitTextToLines(ctx, text, maxWidth, maxLines) {
+        const source = String(text || "").trim();
+        if (!source) return [""];
+        const tokens = source.split(/(\s+)/).filter(Boolean);
+        const lines = [];
+        let line = "";
+        for (const token of tokens) {
+          const test = line + token;
+          if (line && ctx.measureText(test).width > maxWidth) {
+            lines.push(line.trimEnd());
+            line = token.trimStart();
+            if (lines.length === maxLines - 1) break;
+          } else {
+            line = test;
+          }
+        }
+        if (lines.length < maxLines && line) lines.push(line.trimEnd());
+        if (lines.length === maxLines) {
+          const consumed = lines.join(" ").replace(/\s+/g, " ").trim();
+          const normalized = source.replace(/\s+/g, " ").trim();
+          if (consumed.length < normalized.length) {
+            let last = lines[maxLines - 1];
+            while (last.length > 1 && ctx.measureText(last + "…").width > maxWidth) last = last.slice(0, -1);
+            lines[maxLines - 1] = last.trimEnd() + "…";
+          }
+        }
+        return lines;
+      }
+
+      function drawVerified(ctx, x, y) {
+        ctx.save();
+        ctx.fillStyle = "#aaa";
+        ctx.beginPath();
+        ctx.arc(x, y, 6.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#0f0f0f";
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(x - 2.6, y + .1);
+        ctx.lineTo(x - .5, y + 2.1);
+        ctx.lineTo(x + 3.1, y - 2.1);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawPlayIcon(ctx, x, y) {
+        ctx.save();
+        ctx.strokeStyle = "#aaa";
+        ctx.lineWidth = 1;
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(x, y - 4);
+        ctx.lineTo(x + 6.3, y);
+        ctx.lineTo(x, y + 4);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawMusicNote(ctx, x, y) {
+        ctx.save();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(x + 2.8, y + 5.2, 2.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(x + 4.2, y - 4.3, 1.55, 9.4);
+        ctx.beginPath();
+        ctx.moveTo(x + 5.6, y - 4.3);
+        ctx.lineTo(x + 10.2, y - 2.2);
+        ctx.lineTo(x + 10.2, y + .3);
+        ctx.lineTo(x + 5.6, y - 1.7);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function renderToCanvas(canvas, targetWidth, targetHeight, forExport = false) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(targetWidth / BASE_W, 0, 0, targetHeight / BASE_H, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+
+        ctx.fillStyle = "#0f0f0f";
+        ctx.fillRect(0, 0, BASE_W, BASE_H);
+
+        const thumb = { x: 3, y: 11, w: 407, h: 229, r: 12 };
+        const hasThumbnail = state.image && state.image.complete && state.image.naturalWidth > 0;
+        if (hasThumbnail) {
+          drawImageCover(ctx, state.image, thumb.x, thumb.y, thumb.w, thumb.h, thumb.r);
+        } else if (forExport) {
+          ctx.save();
+          ctx.globalCompositeOperation = "destination-out";
+          roundedRectPath(ctx, thumb.x, thumb.y, thumb.w, thumb.h, thumb.r);
+          ctx.fill();
+          ctx.restore();
+        } else {
+          drawThumbnailFallback(ctx, thumb.x, thumb.y, thumb.w, thumb.h);
+        }
+
+        const watched = Math.max(0, Math.min(100, Number(state.progress) || 0));
+        if ((hasThumbnail || !forExport) && watched > 0) {
+          ctx.save();
+          roundedRectPath(ctx, thumb.x, thumb.y, thumb.w, thumb.h, thumb.r);
+          ctx.clip();
+          const barH = 4;
+          const barY = thumb.y + thumb.h - barH;
+          ctx.fillStyle = "rgba(255,255,255,.28)";
+          ctx.fillRect(thumb.x, barY, thumb.w, barH);
+          ctx.fillStyle = "#ff0033";
+          ctx.fillRect(thumb.x, barY, thumb.w * watched / 100, barH);
+          ctx.restore();
+        }
+
+        if ((hasThumbnail || !forExport) && state.showDuration && state.duration.trim()) {
+          const label = state.duration.trim();
+          ctx.font = "700 12px Arial, sans-serif";
+          const textWidth = ctx.measureText(label).width;
+          const badgeW = Math.ceil(textWidth + 28);
+          const badgeH = 20;
+          const bx = thumb.x + thumb.w - badgeW - 7;
+          const by = thumb.y + thumb.h - badgeH - 7;
+          ctx.save();
+          ctx.fillStyle = "rgba(0,0,0,.76)";
+          roundedRectPath(ctx, bx, by, badgeW, badgeH, 4);
+          ctx.fill();
+          drawMusicNote(ctx, bx + 6, by + 9.4);
+          ctx.fillStyle = "#fff";
+          ctx.textBaseline = "middle";
+          ctx.textAlign = "left";
+          ctx.fillText(label, bx + 21, by + badgeH / 2 + .2);
+          ctx.restore();
+        }
+
+        const metaX = 422;
+        const metaW = 226;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = "#f1f1f1";
+        ctx.font = "700 14px Arial, sans-serif";
+        const titleLines = splitTextToLines(ctx, state.title, metaW - 4, 3);
+        const titleTop = 26;
+        const lineH = 19;
+        titleLines.forEach((line, i) => ctx.fillText(line, metaX, titleTop + i * lineH));
+
+        const channelY = titleTop + titleLines.length * lineH + 1;
+        ctx.font = "400 12px Arial, sans-serif";
+        ctx.fillStyle = "#aaa";
+        ctx.fillText(state.channel, metaX, channelY);
+        if (state.verified && state.channel.trim()) {
+          const channelW = ctx.measureText(state.channel).width;
+          drawVerified(ctx, metaX + channelW + 9, channelY - 4);
+        }
+
+        const statsY = channelY + 22;
+        let statsX = metaX;
+        if (state.showPlay) {
+          drawPlayIcon(ctx, statsX + 1, statsY - 4);
+          statsX += 13;
+        }
+        ctx.fillStyle = "#aaa";
+        ctx.font = "400 12px Arial, sans-serif";
+        ctx.fillText(state.views, statsX, statsY);
+        statsX += ctx.measureText(state.views).width + 7;
+        ctx.fillStyle = "#717171";
+        ctx.fillText("·", statsX, statsY);
+        statsX += ctx.measureText("·").width + 7;
+        ctx.fillStyle = "#aaa";
+        ctx.fillText(state.age, statsX, statsY);
+      }
+
+      function renderPreview() {
+        renderToCanvas(el.canvas, BASE_W * PREVIEW_SCALE, BASE_H * PREVIEW_SCALE);
+      }
+
+      function syncStateFromFields() {
+        state.title = el.title.value;
+        state.channel = el.channel.value;
+        state.views = el.views.value;
+        state.age = el.age.value;
+        state.duration = el.duration.value;
+        state.progress = Math.max(0, Math.min(100, Number(el.progress.value) || 0));
+        state.verified = el.verified.checked;
+        state.showDuration = el.durationToggle.checked;
+        state.showPlay = el.playToggle.checked;
+        el.titleCount.textContent = String(el.title.value.length);
+        queueRender();
+      }
+
+      function syncFields() {
+        el.title.value = state.title;
+        el.channel.value = state.channel;
+        el.views.value = state.views;
+        el.age.value = state.age;
+        el.duration.value = state.duration;
+        el.progress.value = String(state.progress);
+        el.verified.checked = state.verified;
+        el.durationToggle.checked = state.showDuration;
+        el.playToggle.checked = state.showPlay;
+        el.imageUrl.value = state.imageSource && !state.imageSource.startsWith("data:") && !state.imageSource.startsWith("blob:") ? state.imageSource : "";
+        el.titleCount.textContent = String(state.title.length);
+      }
+
+      function revokeObjectUrl() {
+        if (state.imageObjectUrl) {
+          URL.revokeObjectURL(state.imageObjectUrl);
+          state.imageObjectUrl = null;
+        }
+      }
+
+      function setImageObject(img, sourceLabel, previewSrc) {
+        state.image = img;
+        state.imageSource = sourceLabel;
+        el.dropThumb.src = previewSrc || img.src;
+        el.dropThumb.classList.remove("hidden");
+        el.dropThumbPlaceholder.classList.add("hidden");
+        el.imageStatus.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+        queueRender();
+      }
+
+      function loadImageDirect(src, sourceLabel = src, allowCorsFallback = true) {
+        const image = new Image();
+        image.decoding = "async";
+        image.crossOrigin = "anonymous";
+        el.imageStatus.textContent = "画像を読み込み中";
+        image.onload = () => setImageObject(image, sourceLabel, src);
+        image.onerror = () => {
+          if (allowCorsFallback) {
+            const fallback = new Image();
+            fallback.decoding = "async";
+            fallback.onload = () => {
+              setImageObject(fallback, sourceLabel, src);
+              el.imageStatus.textContent = "表示のみ / CORS制限あり";
+              showToast("画像は表示できたが、PNG出力時にCORS制限がかかる可能性がある", "error");
+            };
+            fallback.onerror = () => {
+              el.imageStatus.textContent = "画像を読み込めません";
+              showToast("画像URLを読み込めなかった", "error");
+            };
+            fallback.src = src;
+          } else {
+            el.imageStatus.textContent = "画像を読み込めません";
+            showToast("画像を読み込めなかった", "error");
+          }
+        };
+        image.src = src;
+      }
+
+      function loadFile(file) {
+        if (!file || !file.type.startsWith("image/")) {
+          showToast("画像ファイルを選択してほしい", "error");
+          return;
+        }
+        revokeObjectUrl();
+        state.imageObjectUrl = URL.createObjectURL(file);
+        loadImageDirect(state.imageObjectUrl, state.imageObjectUrl, false);
+        el.imageUrl.value = "";
+      }
+
+      function getOutputSize() {
+        const width = Math.round(Number(el.outputWidth.value));
+        const height = Math.round(Number(el.outputHeight.value));
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null;
+        return { width, height };
+      }
+
+      function syncOutputPreset() {
+        const size = getOutputSize();
+        if (!size) {
+          el.outputPreset.value = "custom";
+          return;
+        }
+        const key = `${size.width}x${size.height}`;
+        el.outputPreset.value = [...el.outputPreset.options].some((option) => option.value === key) ? key : "custom";
+      }
+
+      function exportPng() {
+        const size = getOutputSize();
+        if (!size) {
+          showToast("出力サイズは1以上の整数で指定してほしい", "error");
+          return;
+        }
+        const out = document.createElement("canvas");
+        try {
+          renderToCanvas(out, size.width, size.height, true);
+          const link = document.createElement("a");
+          link.download = `youtube_lockup_${size.width}x${size.height}.png`;
+          link.href = out.toDataURL("image/png");
+          link.click();
+          showToast("PNGを書き出した");
+        } catch (error) {
+          console.error(error);
+          showToast("PNGを書き出せなかった。画像URLのCORS制限または出力サイズを確認してほしい", "error");
+        }
+      }
+
+      function resetAll() {
+        revokeObjectUrl();
+        Object.assign(state, DEFAULTS, { image: null, imageSource: "", imageObjectUrl: null });
+        el.dropThumb.removeAttribute("src");
+        el.dropThumb.classList.add("hidden");
+        el.dropThumbPlaceholder.classList.remove("hidden");
+        el.imageStatus.textContent = "画像未選択";
+        el.outputPreset.value = "1316x490";
+        el.outputWidth.value = "1316";
+        el.outputHeight.value = "490";
+        syncFields();
+        queueRender();
+        showToast("初期値へ戻した");
+      }
+
+      function setTheme(next) {
+        document.documentElement.dataset.theme = next;
+        el.themeIcon.className = next === "dark" ? "fa-solid fa-sun text-[13px]" : "fa-solid fa-moon text-[13px]";
+        try { localStorage.setItem("yt-lockup-theme", next); } catch (_) {}
+      }
+
+      [el.title, el.channel, el.views, el.age, el.duration, el.progress].forEach((input) => input.addEventListener("input", syncStateFromFields));
+      [el.verified, el.durationToggle, el.playToggle].forEach((input) => input.addEventListener("change", syncStateFromFields));
+      el.imageFile.addEventListener("change", () => loadFile(el.imageFile.files?.[0]));
+      el.loadUrl.addEventListener("click", () => {
+        const url = el.imageUrl.value.trim();
+        if (!url) return showToast("画像URLを入力してほしい", "error");
+        revokeObjectUrl();
+        loadImageDirect(url);
+      });
+      el.imageUrl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          el.loadUrl.click();
+        }
+      });
+      el.outputPreset.addEventListener("change", () => {
+        if (el.outputPreset.value === "custom") return;
+        const [width, height] = el.outputPreset.value.split("x");
+        el.outputWidth.value = width;
+        el.outputHeight.value = height;
+      });
+      [el.outputWidth, el.outputHeight].forEach((input) => input.addEventListener("input", syncOutputPreset));
+      el.export.addEventListener("click", exportPng);
+      el.reset.addEventListener("click", resetAll);
+      el.theme.addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+      el.dropZone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          el.imageFile.click();
+        }
+      });
+
+      [el.dropZone, el.canvasDropTarget].forEach((target) => {
+        target.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          el.dropZone.dataset.dragging = "true";
+        });
+        target.addEventListener("dragleave", () => { el.dropZone.dataset.dragging = "false"; });
+        target.addEventListener("drop", (event) => {
+          event.preventDefault();
+          el.dropZone.dataset.dragging = "false";
+          loadFile(event.dataTransfer?.files?.[0]);
+        });
+      });
+
+      window.addEventListener("beforeunload", revokeObjectUrl);
+
+      let storedTheme = "dark";
+      try { storedTheme = localStorage.getItem("yt-lockup-theme") || "dark"; } catch (_) {}
+      setTheme(storedTheme === "light" ? "light" : "dark");
+      syncFields();
+      el.imageStatus.textContent = "画像未選択";
+      renderPreview();
+    })();
+  </script>
+</body>
+</html>
