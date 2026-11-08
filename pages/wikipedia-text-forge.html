@@ -20,8 +20,8 @@
     button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
     .shell { width:100%; max-width:none; margin:0 auto; padding:0 clamp(14px,1.6vw,28px); }
     .app-header { border-bottom:.5px solid var(--line); }
-    .app-header-inner { min-height:78px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
-    .symbol { display:grid; place-items:center; flex:none; width:40px; height:40px; border-radius:12px; background:var(--field); color:var(--blue); }
+    .app-header-inner { height:60px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .symbol { display:grid; place-items:center; flex:none; width:34px; height:34px; border-radius:12px; background:var(--field); color:var(--blue); }
     .eyebrow { font-size:10px; letter-spacing:.12em; font-weight:600; color:var(--muted); }
     h1 { margin:2px 0 0; font-weight:650; font-size:19px; line-height:1.3; letter-spacing:-.025em; }
     .top-note { color:var(--muted); font-size:12px; }
@@ -29,16 +29,16 @@
     .status-dot[data-state="ready"] { background:var(--success); }
     .status-dot[data-state="error"] { background:var(--error); }
     .status-dot[data-state="busy"] { background:var(--blue); }
-    .workspace { display:grid; grid-template-columns:260px minmax(0,1fr); gap:14px; padding-top:14px; padding-bottom:14px; align-items:start; height:calc(100dvh - 78px); min-height:620px; }
+    .workspace { position:relative; display:grid; grid-template-columns:clamp(218px,20vw,252px) minmax(0,1fr); gap:10px; padding-top:10px; padding-bottom:10px; align-items:stretch; height:calc(100dvh - 60px); min-height:0; }
     .workspace.settings-hidden { grid-template-columns:minmax(0,1fr); }
-    .workspace.settings-hidden .sidebar { display:none; }
+    .workspace.settings-hidden .sidebar { min-width:0; min-height:0; height:100%; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
     .sidebar { min-width:0; }
-    .panel { background:var(--surface); border:.5px solid var(--line); border-radius:20px; padding:20px; }
-    .panel + .panel { margin-top:12px; }
-    .section-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; }
+    .panel { background:var(--surface); border:.5px solid var(--line); border-radius:16px; padding:14px; }
+    .panel + .panel { margin-top:8px; }
+    .section-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; }
     .section-title { margin:0; font-size:14px; font-weight:650; }
     .section-marker { font:500 11px Consolas,monospace; color:var(--muted); }
-    .field-group { margin-top:17px; }
+    .field-group { margin-top:11px; }
     .field-label { display:flex; justify-content:space-between; align-items:center; margin:0 0 9px; font-size:12px; color:var(--sub); font-weight:520; }
     .field-hint { margin-top:8px; color:var(--muted); font-size:11px; line-height:1.55; }
     .field { height:40px; width:100%; padding:0 12px; background:var(--field); border:.5px solid var(--line); border-radius:12px; color:var(--text); font-size:13px; outline:none; }
@@ -54,7 +54,7 @@
     .action-secondary:hover:not(:disabled) { background:var(--hover); color:var(--text); }
     .action-ghost { background:transparent; color:var(--sub); }
     .action-ghost:hover:not(:disabled) { background:var(--hover); }
-    .separator { height:.5px; background:var(--line); margin:20px 0; }
+    .separator { height:.5px; background:var(--line); margin:12px 0; }
     .switch-row { display:flex; align-items:center; justify-content:space-between; gap:14px; }
     .toggle { position:relative; display:inline-flex; align-items:center; flex:none; width:38px; height:23px; }
     .toggle input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
@@ -64,17 +64,17 @@
     .toggle input:checked + .toggle-track::after { transform:translateX(15px); background:#151517; }
     .toggle input:focus-visible + .toggle-track { outline:2px solid var(--blue); outline-offset:3px; }
     .range { width:100%; height:18px; accent-color:var(--blue); cursor:pointer; }
-    .dictionary-status { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border-radius:12px; background:var(--field); margin-top:16px; font-size:11px; color:var(--muted); line-height:1.5; }
+    .dictionary-status { display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border-radius:12px; background:var(--field); margin-top:10px; font-size:11px; color:var(--muted); line-height:1.5; }
     .dictionary-status i { margin-top:2px; }
     .file-fallback { display:block; margin-top:10px; cursor:pointer; font-size:11px; color:var(--blue); }
     .file-fallback input { display:none; }
     .micro-link { color:var(--blue); text-decoration:none; }
     .micro-link:hover { text-decoration:underline dotted; text-underline-offset:3px; }
     .output-panel { display:flex; flex-direction:column; min-width:0; height:100%; min-height:0; border:.5px solid var(--line); background:var(--surface); border-radius:20px; overflow:hidden; }
-    .output-header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:19px 22px; border-bottom:.5px solid var(--line); flex-wrap:wrap; }
+    .output-header { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 14px; border-bottom:.5px solid var(--line); flex-wrap:wrap; }
     .output-title { font-size:14px; font-weight:650; margin:0; }
     .output-sub { margin:5px 0 0; font-size:11px; color:var(--muted); }
-    .stats { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:12px 22px; border-bottom:.5px solid var(--line); background:rgba(255,255,255,.012); }
+    .stats { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 14px; border-bottom:.5px solid var(--line); background:rgba(255,255,255,.012); }
     .stat { display:flex; gap:7px; align-items:baseline; font-size:12px; }
     .stat-num { color:var(--text); font-variant-numeric:tabular-nums; font-weight:650; }
     .stat-unit { color:var(--muted); font-size:11px; }
@@ -85,24 +85,25 @@
     .empty-icon { margin:0 auto 18px; display:grid; place-items:center; width:60px; height:60px; border:.5px solid var(--line); background:var(--field); border-radius:20px; color:var(--muted); font-size:20px; }
     .empty-title { color:var(--sub); font-size:14px; font-weight:600; }
     .empty-description { color:var(--muted); font-size:12px; line-height:1.8; margin-top:8px; }
-    .footerbar { padding:12px 20px 14px; border-top:.5px solid var(--line); }
+    .footerbar { padding:9px 14px; border-top:.5px solid var(--line); }
     .progress-track { height:3px; background:var(--field); border-radius:999px; overflow:hidden; }
     .progress-fill { width:0%; height:100%; background:var(--blue); transition:width 180ms ease-out; }
     .footer-info { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-top:11px; color:var(--muted); font-size:11px; line-height:1.5; }
-    .article-list { list-style:none; margin:0; padding:0; max-height:210px; overflow:auto; }
+    .article-list { list-style:none; margin:0; padding:0; max-height:min(24dvh,160px); overflow:auto; }
     .article-list li { display:flex; gap:8px; align-items:baseline; padding:7px 0; font-size:11px; border-bottom:.5px solid rgba(255,255,255,.055); }
     .article-list li:last-child { border:0; }
     .article-list .index { flex:none; min-width:19px; color:var(--muted); font:11px Consolas,monospace; }
     .article-list a { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--sub); text-decoration:none; }
     .article-list a:hover { color:var(--blue); }
-    .small-note { margin:16px 2px 0; font-size:10px; line-height:1.65; color:var(--muted); }
+    .small-note { margin:10px 2px 0; font-size:10px; line-height:1.5; color:var(--muted); }
     [hidden] { display:none !important; }
     ::-webkit-scrollbar { width:5px; height:5px; }
     ::-webkit-scrollbar-thumb { background:#545557; border-radius:4px; }
     ::-webkit-scrollbar-thumb:hover { background:#65676B; }
     @media (hover:hover) { .action-ghost:hover,.action-secondary:hover { transition-duration:120ms; } }
-    @media (max-width:900px) { .workspace { grid-template-columns:1fr; height:auto; min-height:0; } .sidebar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } .panel + .panel { margin:0; } .small-note { grid-column:1/-1; } .output-panel { height:78dvh; min-height:520px; } }
-    @media (max-width:650px) { .shell { padding:0 14px; } .app-header-inner { min-height:70px; } .top-note { display:none; } .workspace { padding-top:14px; gap:14px; } .sidebar { display:block; } .sidebar .panel + .panel { margin-top:12px; } .output-header { padding:15px; } .stats { padding:10px 15px; gap:12px; } #output { padding:18px; font-size:13px; } .output-panel { height:72dvh; min-height:460px; } }
+    @media (max-width:900px) { .workspace { grid-template-columns:minmax(0,1fr); height:calc(100dvh - 60px); } .sidebar { position:absolute; z-index:5; left:10px; top:10px; bottom:10px; width:min(304px,calc(100% - 20px)); height:auto; padding:0 6px 0 0; background:var(--bg); box-shadow:0 4px 24px rgba(0,0,0,.4); } .output-panel { height:100%; } }
+    @media (max-width:650px) { .shell { padding:0 10px; } .app-header-inner { height:54px; } .workspace { height:calc(100dvh - 54px); padding-top:8px; padding-bottom:8px; } .sidebar { top:8px; bottom:8px; left:8px; } .top-note { display:none; } .output-header { padding:9px 10px; } .output-sub { display:none; } .stats { padding:6px 10px; gap:8px; } #output { padding:12px; font-size:13px; } .footerbar { padding:8px 10px; } .footer-info { flex-wrap:wrap; gap:4px; } .action { height:32px; padding:0 10px; } h1 { font-size:16px; } }
+    @media (max-width:390px) { #toggleSettingsLabel { display:none; } .eyebrow { font-size:9px; } .output-header { gap:6px; } .stats { gap:6px; } .stat { font-size:11px; } }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; } }
   </style>
 </head>
@@ -155,7 +156,7 @@
         <div class="stat"><span class="stat-num" id="statReplacements">0</span><span class="stat-unit">replaced</span></div>
       </div>
       <div class="output-area">
-        <textarea id="output" readonly spellcheck="false" aria-label="Markdownテキスト" placeholder=""></textarea>
+        <textarea id="output" spellcheck="false" aria-label="Markdownテキスト（編集可能）" placeholder=""></textarea>
         <div class="empty-overlay" id="emptyOverlay">
           <div class="empty-icon"><i class="fa-solid fa-align-left" aria-hidden="true"></i></div>
           <div class="empty-title">ここにMarkdownが生成されます</div>
@@ -273,6 +274,50 @@
     function toMarkdown(text) {
       return text.replace(/\r\n/g,"\n").replace(/^(={2,6})\s*(.*?)\s*\1\s*$/gm,(_,marks,title) => "#".repeat(Math.min(6,marks.length)) + " " + title).replace(/\n{3,}/g,"\n\n").trim();
     }
+    const editHistory = [""];
+    let editIndex = 0;
+    let lastTyping = 0;
+    function syncTextUI() {
+      const text = el("output").value;
+      el("emptyOverlay").hidden = text.length > 0;
+      el("copyButton").disabled = !text;
+      el("saveButton").disabled = !text;
+      el("statChars").textContent = text.length.toLocaleString();
+      const bytes = encoder.encode(text).length;
+      el("statBytes").textContent = bytes < 1024 ? bytes + " B" : (bytes / 1024).toFixed(1) + " KB";
+    }
+    function rememberEdit(typing = false) {
+      const text = el("output").value;
+      if (editHistory[editIndex] === text) return;
+      const now = performance.now();
+      if (typing && lastTyping && now - lastTyping < 650 && editIndex > 0) {
+        editHistory.splice(editIndex + 1);
+        editHistory[editIndex] = text;
+      } else {
+        editHistory.splice(editIndex + 1);
+        editHistory.push(text);
+        if (editHistory.length > 60) editHistory.shift();
+        editIndex = editHistory.length - 1;
+      }
+      lastTyping = typing ? now : 0;
+    }
+    function setOutput(text) {
+      if (el("output").value !== text) {
+        el("output").value = text;
+        rememberEdit();
+      }
+      syncTextUI();
+    }
+    function navigateHistory(direction) {
+      const next = editIndex + direction;
+      if (next < 0 || next >= editHistory.length) return;
+      editIndex = next;
+      lastTyping = 0;
+      el("output").value = editHistory[editIndex];
+      el("output").focus();
+      el("output").setSelectionRange(el("output").value.length,el("output").value.length);
+      syncTextUI();
+    }
     function render() {
       const enabled = el("projectionEnabled").checked;
       const rate = Number(el("projectionRate").value)/100;
@@ -289,14 +334,8 @@
           (enabled && loaded && changed >= 0 ? " · 文章に単語置換を適用" : "") + "\n";
       });
       const output = parts.join("\n\n");
-      el("output").value = output;
-      el("emptyOverlay").hidden = articles.length > 0;
-      el("copyButton").disabled = !output;
-      el("saveButton").disabled = !output;
+      setOutput(output);
       el("statArticles").textContent = articles.length.toLocaleString();
-      el("statChars").textContent = output.length.toLocaleString();
-      const bytes = encoder.encode(output).length;
-      el("statBytes").textContent = (bytes < 1024 ? bytes + " B" : (bytes / 1024).toFixed(1) + " KB");
       el("statReplacements").textContent = changed.toLocaleString();
       el("listCount").textContent = String(articles.length);
       el("articleList").replaceChildren();
@@ -380,6 +419,24 @@
       el("toggleSettings").setAttribute("aria-expanded",String(!hidden));
       el("toggleSettingsLabel").textContent=hidden?"設定を表示":"設定を隠す";
     });
+    el("output").addEventListener("input",()=>{ rememberEdit(true); syncTextUI(); });
+    el("output").addEventListener("keydown",event=>{
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key=event.key.toLowerCase();
+      if (key === "z" || key === "y") {
+        event.preventDefault();
+        navigateHistory((key === "y" || event.shiftKey) ? 1 : -1);
+      }
+    });
+    const narrowView = matchMedia("(max-width:900px)");
+    function updateResponsiveLayout() {
+      const hide=narrowView.matches;
+      el("workspace").classList.toggle("settings-hidden",hide);
+      el("toggleSettings").setAttribute("aria-expanded",String(!hide));
+      el("toggleSettingsLabel").textContent=hide?"設定を表示":"設定を隠す";
+    }
+    narrowView.addEventListener("change",updateResponsiveLayout);
+    updateResponsiveLayout();
     el("generateButton").addEventListener("click",generate);
     el("stopButton").addEventListener("click",()=>controller?.abort());
     el("projectionEnabled").addEventListener("change",updateProjection);
