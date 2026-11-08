@@ -18,7 +18,7 @@
     button { cursor:pointer; }
     button:disabled { cursor:not-allowed; opacity:.4; }
     button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
-    .shell { max-width:1500px; margin:0 auto; padding:0 28px; }
+    .shell { width:100%; max-width:none; margin:0 auto; padding:0 clamp(14px,1.6vw,28px); }
     .app-header { border-bottom:.5px solid var(--line); }
     .app-header-inner { min-height:78px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
     .symbol { display:grid; place-items:center; flex:none; width:40px; height:40px; border-radius:12px; background:var(--field); color:var(--blue); }
@@ -29,7 +29,9 @@
     .status-dot[data-state="ready"] { background:var(--success); }
     .status-dot[data-state="error"] { background:var(--error); }
     .status-dot[data-state="busy"] { background:var(--blue); }
-    .workspace { display:grid; grid-template-columns:304px minmax(0,1fr); gap:20px; padding-top:26px; padding-bottom:28px; align-items:start; min-height:calc(100dvh - 80px); }
+    .workspace { display:grid; grid-template-columns:260px minmax(0,1fr); gap:14px; padding-top:14px; padding-bottom:14px; align-items:start; height:calc(100dvh - 78px); min-height:620px; }
+    .workspace.settings-hidden { grid-template-columns:minmax(0,1fr); }
+    .workspace.settings-hidden .sidebar { display:none; }
     .sidebar { min-width:0; }
     .panel { background:var(--surface); border:.5px solid var(--line); border-radius:20px; padding:20px; }
     .panel + .panel { margin-top:12px; }
@@ -68,7 +70,7 @@
     .file-fallback input { display:none; }
     .micro-link { color:var(--blue); text-decoration:none; }
     .micro-link:hover { text-decoration:underline dotted; text-underline-offset:3px; }
-    .output-panel { display:flex; flex-direction:column; min-width:0; min-height:calc(100dvh - 132px); border:.5px solid var(--line); background:var(--surface); border-radius:20px; overflow:hidden; }
+    .output-panel { display:flex; flex-direction:column; min-width:0; height:100%; min-height:0; border:.5px solid var(--line); background:var(--surface); border-radius:20px; overflow:hidden; }
     .output-header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:19px 22px; border-bottom:.5px solid var(--line); flex-wrap:wrap; }
     .output-title { font-size:14px; font-weight:650; margin:0; }
     .output-sub { margin:5px 0 0; font-size:11px; color:var(--muted); }
@@ -76,8 +78,8 @@
     .stat { display:flex; gap:7px; align-items:baseline; font-size:12px; }
     .stat-num { color:var(--text); font-variant-numeric:tabular-nums; font-weight:650; }
     .stat-unit { color:var(--muted); font-size:11px; }
-    .output-area { flex:1; position:relative; min-height:480px; display:flex; }
-    #output { display:block; width:100%; height:100%; flex:1; resize:none; border:0; background:transparent; outline:none; color:#D7DAE0; padding:25px 28px; font:12px/1.85 "SF Mono","JetBrains Mono",Consolas,"Liberation Mono","Microsoft YaHei",sans-serif; tab-size:2; white-space:pre-wrap; overflow-wrap:anywhere; caret-color:var(--blue); }
+    .output-area { flex:1 1 0; position:relative; min-height:0; }
+    #output { position:absolute; inset:0; display:block; width:100%; height:100%; resize:none; border:0; background:transparent; outline:none; color:#D7DAE0; padding:24px; font:14px/1.75 "SF Mono","JetBrains Mono",Consolas,"Liberation Mono","Microsoft YaHei",sans-serif; tab-size:2; white-space:pre-wrap; overflow-wrap:anywhere; caret-color:var(--blue); }
     #output::placeholder { color:#65676B; }
     .empty-overlay { position:absolute; inset:0; pointer-events:none; display:grid; place-content:center; padding:28px; text-align:center; }
     .empty-icon { margin:0 auto 18px; display:grid; place-items:center; width:60px; height:60px; border:.5px solid var(--line); background:var(--field); border-radius:20px; color:var(--muted); font-size:20px; }
@@ -99,8 +101,8 @@
     ::-webkit-scrollbar-thumb { background:#545557; border-radius:4px; }
     ::-webkit-scrollbar-thumb:hover { background:#65676B; }
     @media (hover:hover) { .action-ghost:hover,.action-secondary:hover { transition-duration:120ms; } }
-    @media (max-width:900px) { .workspace { grid-template-columns:1fr; } .sidebar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } .panel + .panel { margin:0; } .small-note { grid-column:1/-1; } .output-panel { min-height:70dvh; } }
-    @media (max-width:650px) { .shell { padding:0 14px; } .app-header-inner { min-height:70px; } .top-note { display:none; } .workspace { padding-top:14px; gap:14px; } .sidebar { display:block; } .sidebar .panel + .panel { margin-top:12px; } .output-header { padding:15px; } .stats { padding:10px 15px; gap:12px; } .output-area { min-height:420px; } #output { padding:18px; font-size:12px; } .output-panel { min-height:72dvh; } }
+    @media (max-width:900px) { .workspace { grid-template-columns:1fr; height:auto; min-height:0; } .sidebar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } .panel + .panel { margin:0; } .small-note { grid-column:1/-1; } .output-panel { height:78dvh; min-height:520px; } }
+    @media (max-width:650px) { .shell { padding:0 14px; } .app-header-inner { min-height:70px; } .top-note { display:none; } .workspace { padding-top:14px; gap:14px; } .sidebar { display:block; } .sidebar .panel + .panel { margin-top:12px; } .output-header { padding:15px; } .stats { padding:10px 15px; gap:12px; } #output { padding:18px; font-size:13px; } .output-panel { height:72dvh; min-height:460px; } }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; } }
   </style>
 </head>
@@ -111,11 +113,11 @@
         <div class="symbol"><i class="fa-solid fa-book-open" aria-hidden="true"></i></div>
         <div><div class="eyebrow">WASTE APPS / TEXT TOOLS</div><h1>Wikipedia Text Forge</h1></div>
       </div>
-      <div class="top-note"><span class="status-dot" id="topDot" data-state="ready"></span><span id="topStatus">Ready</span><span class="mx-3 opacity-30">/</span>日本語版 Wikipedia</div>
+      <div class="flex items-center gap-3"><button id="toggleSettings" class="action action-secondary" type="button" aria-controls="settingsSidebar" aria-expanded="true"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span id="toggleSettingsLabel">設定を隠す</span></button><div class="top-note"><span class="status-dot" id="topDot" data-state="ready"></span><span id="topStatus">Ready</span><span class="mx-3 opacity-30">/</span>日本語版 Wikipedia</div></div>
     </div>
   </header>
-  <main class="shell workspace">
-    <aside class="sidebar">
+  <main class="shell workspace" id="workspace">
+    <aside class="sidebar" id="settingsSidebar">
       <section class="panel">
         <div class="section-head"><h2 class="section-title">記事を取得</h2><span class="section-marker">01 / SOURCE</span></div>
         <label class="field-label" for="articleCount">記事数 <span>1–100</span></label>
@@ -373,6 +375,11 @@
         if (articles.length && el("projectionEnabled").checked) await updateProjection();
       }
     }
+    el("toggleSettings").addEventListener("click",()=>{
+      const hidden=el("workspace").classList.toggle("settings-hidden");
+      el("toggleSettings").setAttribute("aria-expanded",String(!hidden));
+      el("toggleSettingsLabel").textContent=hidden?"設定を表示":"設定を隠す";
+    });
     el("generateButton").addEventListener("click",generate);
     el("stopButton").addEventListener("click",()=>controller?.abort());
     el("projectionEnabled").addEventListener("change",updateProjection);
