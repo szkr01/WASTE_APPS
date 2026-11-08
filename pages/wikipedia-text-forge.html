@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>Wikipedia Text Forge</title>
+  <meta name="description" content="日本語Wikipediaからランダムな記事を集めてMarkdownに統合し、辞書を使った単語射影・コピー・保存ができるテキストジェネレーター。">
+  <meta name="page:icon" content="fas fa-book-open">
+  <meta name="page:color" content="#7AAAFF">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root { color-scheme:dark; --bg:#151517; --surface:#232324; --field:#2C2C2E; --hover:#353638; --text:#F9FAFB; --sub:#CFD3D6; --muted:#81858C; --line:rgba(255,255,255,.12); --blue:#7AAAFF; --success:#4ED17E; --error:#F25A5A; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans",Meiryo,Arial,sans-serif; }
+    * { box-sizing:border-box; }
+    body { background:var(--bg); color:var(--text); margin:0; min-width:320px; }
+    button,input,select,textarea { font:inherit; }
+    button { cursor:pointer; }
+    button:disabled { cursor:not-allowed; opacity:.4; }
+    button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+    .shell { max-width:1500px; margin:0 auto; padding:0 28px; }
+    .app-header { border-bottom:.5px solid var(--line); }
+    .app-header-inner { min-height:78px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .symbol { display:grid; place-items:center; flex:none; width:40px; height:40px; border-radius:12px; background:var(--field); color:var(--blue); }
+    .eyebrow { font-size:10px; letter-spacing:.12em; font-weight:600; color:var(--muted); }
+    h1 { margin:2px 0 0; font-weight:650; font-size:19px; line-height:1.3; letter-spacing:-.025em; }
+    .top-note { color:var(--muted); font-size:12px; }
+    .status-dot { display:inline-block; width:7px; height:7px; margin-right:7px; border-radius:50%; background:var(--muted); }
+    .status-dot[data-state="ready"] { background:var(--success); }
+    .status-dot[data-state="error"] { background:var(--error); }
+    .status-dot[data-state="busy"] { background:var(--blue); }
+    .workspace { display:grid; grid-template-columns:304px minmax(0,1fr); gap:20px; padding-top:26px; padding-bottom:28px; align-items:start; min-height:calc(100dvh - 80px); }
+    .sidebar { min-width:0; }
+    .panel { background:var(--surface); border:.5px solid var(--line); border-radius:20px; padding:20px; }
+    .panel + .panel { margin-top:12px; }
+    .section-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; }
+    .section-title { margin:0; font-size:14px; font-weight:650; }
+    .section-marker { font:500 11px Consolas,monospace; color:var(--muted); }
+    .field-group { margin-top:17px; }
+    .field-label { display:flex; justify-content:space-between; align-items:center; margin:0 0 9px; font-size:12px; color:var(--sub); font-weight:520; }
+    .field-hint { margin-top:8px; color:var(--muted); font-size:11px; line-height:1.55; }
+    .field { height:40px; width:100%; padding:0 12px; background:var(--field); border:.5px solid var(--line); border-radius:12px; color:var(--text); font-size:13px; outline:none; }
+    .field:focus { border-color:var(--blue); }
+    .input-inline { display:flex; align-items:center; gap:10px; }
+    .input-inline .field { flex:1; width:0; font-variant-numeric:tabular-nums; }
+    .suffix { color:var(--muted); font-size:12px; white-space:nowrap; }
+    .action { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:36px; padding:0 14px; border:0; border-radius:12px; font-size:12px; font-weight:600; transition:background 120ms ease,transform 120ms ease; }
+    .action:active:not(:disabled) { transform:scale(.97); }
+    .action-primary { background:var(--text); color:var(--bg); }
+    .action-primary:hover:not(:disabled) { background:#EBEEF2; }
+    .action-secondary { background:var(--field); color:var(--sub); border:.5px solid var(--line); }
+    .action-secondary:hover:not(:disabled) { background:var(--hover); color:var(--text); }
+    .action-ghost { background:transparent; color:var(--sub); }
+    .action-ghost:hover:not(:disabled) { background:var(--hover); }
+    .separator { height:.5px; background:var(--line); margin:20px 0; }
+    .switch-row { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .toggle { position:relative; display:inline-flex; align-items:center; flex:none; width:38px; height:23px; }
+    .toggle input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+    .toggle-track { width:38px; height:23px; border-radius:999px; background:#43454A; transition:background 160ms ease; pointer-events:none; }
+    .toggle-track::after { content:""; position:absolute; width:17px; height:17px; top:3px; left:3px; background:#F9FAFB; border-radius:50%; transition:transform 160ms cubic-bezier(.23,1,.32,1); }
+    .toggle input:checked + .toggle-track { background:var(--blue); }
+    .toggle input:checked + .toggle-track::after { transform:translateX(15px); background:#151517; }
+    .toggle input:focus-visible + .toggle-track { outline:2px solid var(--blue); outline-offset:3px; }
+    .range { width:100%; height:18px; accent-color:var(--blue); cursor:pointer; }
+    .dictionary-status { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border-radius:12px; background:var(--field); margin-top:16px; font-size:11px; color:var(--muted); line-height:1.5; }
+    .dictionary-status i { margin-top:2px; }
+    .file-fallback { display:block; margin-top:10px; cursor:pointer; font-size:11px; color:var(--blue); }
+    .file-fallback input { display:none; }
+    .micro-link { color:var(--blue); text-decoration:none; }
+    .micro-link:hover { text-decoration:underline dotted; text-underline-offset:3px; }
+    .output-panel { display:flex; flex-direction:column; min-width:0; min-height:calc(100dvh - 132px); border:.5px solid var(--line); background:var(--surface); border-radius:20px; overflow:hidden; }
+    .output-header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:19px 22px; border-bottom:.5px solid var(--line); flex-wrap:wrap; }
+    .output-title { font-size:14px; font-weight:650; margin:0; }
+    .output-sub { margin:5px 0 0; font-size:11px; color:var(--muted); }
+    .stats { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:12px 22px; border-bottom:.5px solid var(--line); background:rgba(255,255,255,.012); }
+    .stat { display:flex; gap:7px; align-items:baseline; font-size:12px; }
+    .stat-num { color:var(--text); font-variant-numeric:tabular-nums; font-weight:650; }
+    .stat-unit { color:var(--muted); font-size:11px; }
+    .output-area { flex:1; position:relative; min-height:480px; display:flex; }
+    #output { display:block; width:100%; height:100%; flex:1; resize:none; border:0; background:transparent; outline:none; color:#D7DAE0; padding:25px 28px; font:12px/1.85 "SF Mono","JetBrains Mono",Consolas,"Liberation Mono","Microsoft YaHei",sans-serif; tab-size:2; white-space:pre-wrap; overflow-wrap:anywhere; caret-color:var(--blue); }
+    #output::placeholder { color:#65676B; }
+    .empty-overlay { position:absolute; inset:0; pointer-events:none; display:grid; place-content:center; padding:28px; text-align:center; }
+    .empty-icon { margin:0 auto 18px; display:grid; place-items:center; width:60px; height:60px; border:.5px solid var(--line); background:var(--field); border-radius:20px; color:var(--muted); font-size:20px; }
+    .empty-title { color:var(--sub); font-size:14px; font-weight:600; }
+    .empty-description { color:var(--muted); font-size:12px; line-height:1.8; margin-top:8px; }
+    .footerbar { padding:12px 20px 14px; border-top:.5px solid var(--line); }
+    .progress-track { height:3px; background:var(--field); border-radius:999px; overflow:hidden; }
+    .progress-fill { width:0%; height:100%; background:var(--blue); transition:width 180ms ease-out; }
+    .footer-info { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-top:11px; color:var(--muted); font-size:11px; line-height:1.5; }
+    .article-list { list-style:none; margin:0; padding:0; max-height:210px; overflow:auto; }
+    .article-list li { display:flex; gap:8px; align-items:baseline; padding:7px 0; font-size:11px; border-bottom:.5px solid rgba(255,255,255,.055); }
+    .article-list li:last-child { border:0; }
+    .article-list .index { flex:none; min-width:19px; color:var(--muted); font:11px Consolas,monospace; }
+    .article-list a { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--sub); text-decoration:none; }
+    .article-list a:hover { color:var(--blue); }
+    .small-note { margin:16px 2px 0; font-size:10px; line-height:1.65; color:var(--muted); }
+    [hidden] { display:none !important; }
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-thumb { background:#545557; border-radius:4px; }
+    ::-webkit-scrollbar-thumb:hover { background:#65676B; }
+    @media (hover:hover) { .action-ghost:hover,.action-secondary:hover { transition-duration:120ms; } }
+    @media (max-width:900px) { .workspace { grid-template-columns:1fr; } .sidebar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } .panel + .panel { margin:0; } .small-note { grid-column:1/-1; } .output-panel { min-height:70dvh; } }
+    @media (max-width:650px) { .shell { padding:0 14px; } .app-header-inner { min-height:70px; } .top-note { display:none; } .workspace { padding-top:14px; gap:14px; } .sidebar { display:block; } .sidebar .panel + .panel { margin-top:12px; } .output-header { padding:15px; } .stats { padding:10px 15px; gap:12px; } .output-area { min-height:420px; } #output { padding:18px; font-size:12px; } .output-panel { min-height:72dvh; } }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; } }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="shell app-header-inner">
+      <div class="flex items-center gap-3">
+        <div class="symbol"><i class="fa-solid fa-book-open" aria-hidden="true"></i></div>
+        <div><div class="eyebrow">WASTE APPS / TEXT TOOLS</div><h1>Wikipedia Text Forge</h1></div>
+      </div>
+      <div class="top-note"><span class="status-dot" id="topDot" data-state="ready"></span><span id="topStatus">Ready</span><span class="mx-3 opacity-30">/</span>日本語版 Wikipedia</div>
+    </div>
+  </header>
+  <main class="shell workspace">
+    <aside class="sidebar">
+      <section class="panel">
+        <div class="section-head"><h2 class="section-title">記事を取得</h2><span class="section-marker">01 / SOURCE</span></div>
+        <label class="field-label" for="articleCount">記事数 <span>1–100</span></label>
+        <div class="input-inline"><input id="articleCount" class="field" type="number" min="1" max="100" step="1" value="12"><span class="suffix">articles</span></div>
+        <p class="field-hint">記事本文を取得し、見出しを含むMarkdownにまとめます。記事は重複しないよう収集します。</p>
+        <button id="generateButton" class="action action-primary w-full mt-5" type="button"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> ランダムに収集する</button>
+        <button id="stopButton" class="action action-secondary w-full mt-2" type="button" hidden><i class="fa-solid fa-stop" aria-hidden="true"></i> 取得を停止</button>
+        <div class="separator"></div>
+        <div class="flex items-center justify-between gap-3"><span class="field-label !mb-0">収集した記事</span><span class="section-marker" id="listCount">0</span></div>
+        <ul class="article-list mt-2" id="articleList" aria-label="取得した記事一覧"><li style="color:var(--muted)">まだ記事がありません</li></ul>
+      </section>
+      <section class="panel">
+        <div class="section-head"><h2 class="section-title">単語の射影</h2><span class="section-marker">02 / TRANSFORM</span></div>
+        <div class="switch-row"><div><div class="text-[13px] font-medium">ランダム置換</div><div class="field-hint !mt-1">原文を残して再変換できます</div></div><label class="toggle" aria-label="単語置換を有効化"><input id="projectionEnabled" type="checkbox"><span class="toggle-track"></span></label></div>
+        <div class="field-group"><label class="field-label" for="partMode">置換する品詞</label><select id="partMode" class="field"><option value="noun">名詞</option><option value="proper">名詞 + 固有名詞</option><option value="extended">名詞 + 形容詞 + 動詞 + 副詞</option></select></div>
+        <div class="field-group"><label class="field-label" for="projectionRate">置換率 <span id="rateLabel">40%</span></label><input id="projectionRate" class="range" type="range" min="0" max="100" step="5" value="40"><div class="flex justify-between text-[10px] mt-1" style="color:var(--muted)"><span>原文</span><span>すべて置換</span></div></div>
+        <button id="rerollButton" class="action action-secondary w-full mt-5" type="button"><i class="fa-solid fa-dice" aria-hidden="true"></i> 射影先を再抽選</button>
+        <div class="dictionary-status"><i class="fa-solid fa-database" aria-hidden="true"></i><span id="dictionaryStatus">辞書は射影を有効にすると読み込みます</span></div>
+        <label class="file-fallback" id="fileFallback" hidden>CSV辞書を手動で読み込む <i class="fa-solid fa-arrow-up-from-bracket ml-1"></i><input id="dictionaryFiles" type="file" accept=".csv,text/csv" multiple></label>
+      </section>
+      <div class="small-note">取得元: <a class="micro-link" href="https://ja.wikipedia.org/" target="_blank" rel="noopener noreferrer">Wikipedia 日本語版</a><br>単語分割はブラウザの <code>Intl.Segmenter</code> を使います。品詞照合はWASTE_APPSの辞書による近似です。</div>
+    </aside>
+    <section class="output-panel" aria-label="Markdown出力">
+      <div class="output-header">
+        <div><h2 class="output-title">Markdown output</h2><p class="output-sub">Raw text → dictionary projection → Markdown</p></div>
+        <div class="flex gap-2 flex-wrap">
+          <button id="saveButton" class="action action-secondary" type="button" disabled><i class="fa-regular fa-file-lines" aria-hidden="true"></i> .md 保存</button>
+          <button id="copyButton" class="action action-primary" type="button" disabled><i class="fa-regular fa-copy" aria-hidden="true"></i> コピー</button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="stat-num" id="statArticles">0</span><span class="stat-unit">articles</span></div>
+        <div class="stat"><span class="stat-num" id="statChars">0</span><span class="stat-unit">characters</span></div>
+        <div class="stat"><span class="stat-num" id="statBytes">0 KB</span><span class="stat-unit">UTF-8</span></div>
+        <div class="stat"><span class="stat-num" id="statReplacements">0</span><span class="stat-unit">replaced</span></div>
+      </div>
+      <div class="output-area">
+        <textarea id="output" readonly spellcheck="false" aria-label="Markdownテキスト" placeholder=""></textarea>
+        <div class="empty-overlay" id="emptyOverlay">
+          <div class="empty-icon"><i class="fa-solid fa-align-left" aria-hidden="true"></i></div>
+          <div class="empty-title">ここにMarkdownが生成されます</div>
+          <div class="empty-description">左の「ランダムに収集する」を押して開始<br>記事の取得後、コピーや辞書置換ができます</div>
+        </div>
+      </div>
+      <div class="footerbar">
+        <div class="progress-track" role="progressbar" aria-label="取得進捗" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="footer-info"><span id="activityText" aria-live="polite">待機中</span><span>文章ライセンス: <a class="micro-link" href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a></span></div>
+      </div>
+    </section>
+  </main>
+  <script>
+  (() => {
+    "use strict";
+    const el = id => document.getElementById(id);
+    const api = "https://ja.wikipedia.org/w/api.php";
+    const names = { noun:["Noun.csv"], proper:["Noun.csv","Noun.proper.csv","Noun.name.csv","Noun.place.csv","Noun.org.csv"], extended:["Noun.csv","Adj.csv","Verb.csv","Adverb.csv"] };
+    const types = { "Noun.csv":"noun","Noun.proper.csv":"noun","Noun.name.csv":"noun","Noun.place.csv":"noun","Noun.org.csv":"noun","Adj.csv":"adj","Verb.csv":"verb","Adverb.csv":"adverb" };
+    const lexicons = new Map();
+    const segmenter = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("ja",{granularity:"word"}) : null;
+    const encoder = new TextEncoder();
+    let articles = [];
+    let controller = null;
+    let seed = Math.floor(Math.random() * 0xFFFFFFFF);
+    let loadingDictionary = null;
+
+    function status(message,state="ready") {
+      el("topStatus").textContent = message;
+      el("topDot").dataset.state = state;
+      el("activityText").textContent = message;
+    }
+    function progress(value) {
+      const amount = Math.max(0,Math.min(100,value));
+      el("progressFill").style.width = amount + "%";
+      el("progressTrack").setAttribute("aria-valuenow",String(Math.round(amount)));
+    }
+    async function apiRequest(options,signal) {
+      const query = new URLSearchParams({ action:"query",format:"json",formatversion:"2",origin:"*",...options });
+      const response = await fetch(api + "?" + query,{signal});
+      if (!response.ok) throw new Error("Wikipedia API HTTP " + response.status);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.info || data.error.code);
+      return data.query;
+    }
+    function hash(text,salt) {
+      let result = (2166136261 ^ salt) >>> 0;
+      for (let i=0;i<text.length;i++) { result ^= text.charCodeAt(i); result = Math.imul(result,16777619) >>> 0; }
+      return result >>> 0;
+    }
+    function parseCsv(text) {
+      const words = new Set();
+      for (const line of text.split(/\r?\n/)) {
+        const comma = line.indexOf(",");
+        if (comma < 2) continue;
+        const word = line.slice(0,comma);
+        if (word.length >= 2 && /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー々〆ヵヶ]+$/u.test(word)) words.add(word);
+      }
+      return {set:words,words:[...words]};
+    }
+    async function loadDictionary() {
+      if (!el("projectionEnabled").checked) return false;
+      const required = names[el("partMode").value];
+      if (required.every(name => lexicons.has(name))) return true;
+      if (loadingDictionary) await loadingDictionary;
+      if (required.every(name => lexicons.has(name))) return true;
+      loadingDictionary = (async () => {
+        for (const name of required) {
+          if (lexicons.has(name)) continue;
+          el("dictionaryStatus").textContent = "辞書を読込中: " + name;
+          const response = await fetch("../Assets/dict/" + name);
+          if (!response.ok) throw new Error("辞書 HTTP " + response.status + ": " + name);
+          lexicons.set(name,parseCsv(await response.text()));
+        }
+      })();
+      try {
+        await loadingDictionary;
+        el("dictionaryStatus").textContent = required.length + "ファイル読み込み済み / " + required.map(name => lexicons.get(name).words.length.toLocaleString()).join(" + ") + " 語";
+        el("fileFallback").hidden = true;
+        return true;
+      } catch (error) {
+        el("dictionaryStatus").textContent = "辞書を読み込めません: " + error.message;
+        el("fileFallback").hidden = false;
+        status("辞書が未読込です。CSVを選択してください","error");
+        return false;
+      } finally {
+        loadingDictionary = null;
+      }
+    }
+    function transform(text,pools,rate) {
+      if (!segmenter || rate <= 0 || !pools.length) return {text,count:0};
+      let count = 0;
+      let result = "";
+      const grouped = new Map();
+      for (const entry of pools) {
+        if (!grouped.has(entry.type)) grouped.set(entry.type,{set:new Set(),words:[]});
+        const target = grouped.get(entry.type);
+        for (const word of entry.data.words) { if (!target.set.has(word)) { target.set.add(word); target.words.push(word); } }
+      }
+      for (const part of segmenter.segment(text)) {
+        const word = part.segment;
+        if (!part.isWordLike || word.length < 2 || hash(word,seed ^ 0x51a3) / 4294967296 >= rate) { result += word; continue; }
+        let substitute = "";
+        for (const target of grouped.values()) {
+          if (!target.set.has(word) || target.words.length < 2) continue;
+          const index = hash(word,seed ^ 0xe3b9) % target.words.length;
+          substitute = target.words[index];
+          if (substitute === word) substitute = target.words[(index+1) % target.words.length];
+          break;
+        }
+        if (substitute) { result += substitute; count++; } else result += word;
+      }
+      return {text:result,count};
+    }
+    function toMarkdown(text) {
+      return text.replace(/\r\n/g,"\n").replace(/^(={2,6})\s*(.*?)\s*\1\s*$/gm,(_,marks,title) => "#".repeat(Math.min(6,marks.length)) + " " + title).replace(/\n{3,}/g,"\n\n").trim();
+    }
+    function render() {
+      const enabled = el("projectionEnabled").checked;
+      const rate = Number(el("projectionRate").value)/100;
+      const loaded = names[el("partMode").value].every(name => lexicons.has(name));
+      const pools = enabled && loaded ? names[el("partMode").value].map(name => ({type:types[name],data:lexicons.get(name)})) : [];
+      let changed = 0;
+      const parts = articles.map((article,i) => {
+        const projected = transform(article.extract,pools,rate);
+        changed += projected.count;
+        const source = "https://ja.wikipedia.org/?curid=" + article.pageid;
+        const history = "https://ja.wikipedia.org/w/index.php?curid=" + article.pageid + "&action=history";
+        return "# " + article.title + "\n\n" + toMarkdown(projected.text) + "\n\n---\n\n" +
+          "出典: [" + article.title + "](" + source + ") · [編集履歴](" + history + ") · [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)" +
+          (enabled && loaded && changed >= 0 ? " · 文章に単語置換を適用" : "") + "\n";
+      });
+      const output = parts.join("\n\n");
+      el("output").value = output;
+      el("emptyOverlay").hidden = articles.length > 0;
+      el("copyButton").disabled = !output;
+      el("saveButton").disabled = !output;
+      el("statArticles").textContent = articles.length.toLocaleString();
+      el("statChars").textContent = output.length.toLocaleString();
+      const bytes = encoder.encode(output).length;
+      el("statBytes").textContent = (bytes < 1024 ? bytes + " B" : (bytes / 1024).toFixed(1) + " KB");
+      el("statReplacements").textContent = changed.toLocaleString();
+      el("listCount").textContent = String(articles.length);
+      el("articleList").replaceChildren();
+      if (!articles.length) {
+        const li = document.createElement("li"); li.textContent="まだ記事がありません"; li.style.color="var(--muted)"; el("articleList").append(li);
+      }
+      for (const [i,article] of articles.entries()) {
+        const li=document.createElement("li"),num=document.createElement("span"),link=document.createElement("a");
+        num.className="index"; num.textContent=String(i+1).padStart(2,"0");
+        link.href="https://ja.wikipedia.org/?curid="+article.pageid; link.target="_blank"; link.rel="noopener noreferrer"; link.textContent=article.title;
+        li.append(num,link); el("articleList").append(li);
+      }
+    }
+    async function updateProjection() {
+      if (el("projectionEnabled").checked) {
+        if (!segmenter) { el("dictionaryStatus").textContent="このブラウザは Intl.Segmenter に非対応です"; return; }
+        const ready = await loadDictionary();
+        if (!ready) { render(); return; }
+      }
+      render();
+    }
+    async function generate() {
+      if (controller) return;
+      const n = Number(el("articleCount").value);
+      if (!Number.isInteger(n) || n < 1 || n > 100) { status("記事数は1～100の整数にしてください","error"); return; }
+      const job = new AbortController();
+      controller = job;
+      articles = [];
+      render();
+      progress(0);
+      el("generateButton").disabled = true;
+      el("stopButton").hidden = false;
+      const seen = new Set();
+      let failure = null;
+      try {
+        for (let attempt=0;attempt<4 && articles.length<n;attempt++) {
+          const missing = n-articles.length;
+          const groupSizes=[];
+          for (let i=0;i<missing;i+=4) groupSizes.push(Math.min(4,missing-i));
+          const candidates=[];
+          for (let start=0;start<groupSizes.length;start+=3) {
+            const groups = groupSizes.slice(start,start+3);
+            const results = await Promise.all(groups.map(size => apiRequest({list:"random",rnnamespace:"0",rnfilterredir:"nonredirects",rnminsize:"1200",rnlimit:String(size)},job.signal)));
+            for (const result of results) for (const page of result.random || []) {
+              if (!seen.has(page.id)) { seen.add(page.id); candidates.push(page.id); }
+            }
+            progress(30*Math.min(1,(start+groups.length)/groupSizes.length));
+            status("記事を選定中 · " + candidates.length + " 件","busy");
+          }
+          for (let start=0;start<candidates.length;start+=10) {
+            const ids=candidates.slice(start,start+10);
+            const query=await apiRequest({prop:"extracts",pageids:ids.join("|"),explaintext:"1",exsectionformat:"wiki",exlimit:"10"},job.signal);
+            const byId=new Map((query.pages || []).map(page => [page.pageid,page]));
+            for (const id of ids) {
+              const page=byId.get(id);
+              if (page && typeof page.extract === "string" && page.extract.trim().length > 80 && articles.length<n) {
+                articles.push({pageid:id,title:page.title,extract:page.extract});
+              }
+            }
+            progress(30+70*articles.length/n);
+            status("本文を取得中 · " + articles.length + " / " + n + " 件","busy");
+            render();
+          }
+        }
+        if (articles.length<n) failure="取得できた記事は " + articles.length + " / " + n + " 件です";
+      } catch (error) {
+        if (error.name !== "AbortError") failure=error.message;
+        else failure="取得を停止しました";
+      } finally {
+        controller=null;
+        el("generateButton").disabled=false;
+        el("stopButton").hidden=true;
+        render();
+        progress(100*articles.length/n);
+        status(failure || ("完了 · " + articles.length + " 記事を収集"),failure?"error":"ready");
+        if (articles.length && el("projectionEnabled").checked) await updateProjection();
+      }
+    }
+    el("generateButton").addEventListener("click",generate);
+    el("stopButton").addEventListener("click",()=>controller?.abort());
+    el("projectionEnabled").addEventListener("change",updateProjection);
+    el("partMode").addEventListener("change",updateProjection);
+    el("projectionRate").addEventListener("input",()=>{el("rateLabel").textContent=el("projectionRate").value+"%";render();});
+    el("rerollButton").addEventListener("click",()=>{seed=Math.floor(Math.random()*0xFFFFFFFF);render();status("射影先を再抽選しました");});
+    el("dictionaryFiles").addEventListener("change",async event=>{
+      for (const file of event.target.files) {
+        if (types[file.name]) lexicons.set(file.name,parseCsv(await file.text()));
+      }
+      await updateProjection();
+    });
+    el("copyButton").addEventListener("click",async()=>{
+      const value=el("output").value;
+      if (!value) return;
+      try { await navigator.clipboard.writeText(value); }
+      catch {
+        el("output").focus();
+        el("output").select();
+        if (!document.execCommand("copy")) { status("コピーできませんでした。テキストを選択してコピーしてください","error"); return; }
+      }
+      status("Markdownをクリップボードにコピーしました");
+      const button=el("copyButton");
+      button.innerHTML='<i class="fa-solid fa-check" aria-hidden="true"></i> コピー済み';
+      setTimeout(()=>{button.innerHTML='<i class="fa-regular fa-copy" aria-hidden="true"></i> コピー';},1400);
+    });
+    el("saveButton").addEventListener("click",()=>{
+      const value=el("output").value;
+      if (!value) return;
+      const date=new Date();
+      const stamp=[date.getFullYear(),String(date.getMonth()+1).padStart(2,"0"),String(date.getDate()).padStart(2,"0")].join("")+"_"+[date.getHours(),date.getMinutes(),date.getSeconds()].map(v=>String(v).padStart(2,"0")).join("");
+      const url=URL.createObjectURL(new Blob([value],{type:"text/markdown;charset=utf-8"}));
+      const anchor=document.createElement("a");
+      anchor.href=url; anchor.download="Wikipedia_Text_"+stamp+".md"; anchor.click();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      status("Markdownファイルを保存しました");
+    });
+    render();
+  })();
+  </script>
+</body>
+</html>
