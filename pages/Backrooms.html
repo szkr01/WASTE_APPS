@@ -102,43 +102,53 @@ bool lightAt(vec2 xz){vec2 q=inCell(xz);return abs(q.y)<1.08&&abs(abs(q.x)-1.57)
 struct Hit{float t;vec3 n;int type;};
 vec2 slabInterval(float origin,float direction,float index){
  float center=index*uSpacing;
- return direction>0.
-  ?vec2((center-PILLAR-origin)/direction,(center+PILLAR-origin)/direction)
-  :vec2((center+PILLAR-origin)/direction,(center-PILLAR-origin)/direction);
+ float safeDir=mix(-1.,1.,step(0.,direction))*max(abs(direction),1.e-7);
+ vec2 t=(vec2(center-PILLAR,center+PILLAR)-origin)/safeDir;
+ vec2 interval=vec2(min(t.x,t.y),max(t.x,t.y));
+ float stationary=1.-step(1.e-7,abs(direction));
+ float inside=1.-step(PILLAR,abs(origin-center));
+ return mix(interval,vec2(mix(VERY_FAR,-VERY_FAR,inside),VERY_FAR),stationary);
 }
 Hit trace(vec3 ro,vec3 rd,float limit){
- Hit hit;hit.t=limit;hit.n=vec3(0);hit.type=0;
- if(rd.y<-.00001){float t=-ro.y/rd.y;if(t>.002&&t<hit.t){hit.t=t;hit.n=vec3(0,1,0);hit.type=1;}}
- if(rd.y>.00001){float t=(H-ro.y)/rd.y;if(t>.002&&t<hit.t){hit.t=t;hit.n=vec3(0,-1,0);hit.type=2;}}
- // Intersect the infinite periodic X and Z pillar bands, skipping empty cells.
- // An axis-aligned corridor ray outside either band cannot hit any column.
- const float EPS=0.0000001;
- bool stillX=abs(rd.x)<EPS,stillZ=abs(rd.z)<EPS;
- bool noX=stillX&&abs(mod(ro.x+uSpacing*.5,uSpacing)-uSpacing*.5)>PILLAR;
- bool noZ=stillZ&&abs(mod(ro.z+uSpacing*.5,uSpacing)-uSpacing*.5)>PILLAR;
- if(!noX&&!noZ){
-  float ix=0.,iz=0.;
-  vec2 sx=vec2(-VERY_FAR,VERY_FAR),sz=vec2(-VERY_FAR,VERY_FAR);
-  if(!stillX){ix=rd.x>0.?ceil((ro.x-PILLAR)/uSpacing):floor((ro.x+PILLAR)/uSpacing);sx=slabInterval(ro.x,rd.x,ix);}
-  if(!stillZ){iz=rd.z>0.?ceil((ro.z-PILLAR)/uSpacing):floor((ro.z+PILLAR)/uSpacing);sz=slabInterval(ro.z,rd.z,iz);}
-  for(int i=0;i<96;i++){
-   float nearT=max(sx.x,sz.x),farT=min(sx.y,sz.y);
-   if(farT>=max(nearT,.001)&&nearT<hit.t&&farT>.001){
-    hit.t=max(nearT,.001);hit.type=3;
-    hit.n=sx.x>sz.x?vec3(-sign(rd.x),0,0):vec3(0,0,-sign(rd.z));
-    break;
-   }
-   if(sx.y<sz.y){
-    if(stillX)break;
-    ix+=sign(rd.x);sx=slabInterval(ro.x,rd.x,ix);
-   }else{
-    if(stillZ)break;
-    iz+=sign(rd.z);sz=slabInterval(ro.z,rd.z,iz);
-   }
-   if(max(sx.x,sz.x)>hit.t)break;
+ Hit hit;
+ // Plane intersection and normal selection without dynamic conditionals.
+ float downward=1.-step(-.00001,rd.y),upward=step(.00001,rd.y);
+ float floorT=mix(limit,-ro.y/min(rd.y,-.00001),downward);
+ float ceilingT=mix(limit,(H-ro.y)/max(rd.y,.00001),upward);
+ floorT=mix(limit,floorT,step(.002,floorT));
+ ceilingT=mix(limit,ceilingT,step(.002,ceilingT));
+ hit.t=min(limit,min(floorT,ceilingT));
+ float planeValid=1.-step(limit,hit.t);
+ float floorMask=step(floorT,ceilingT);
+ hit.type=int(planeValid*mix(2.,1.,floorMask));
+ hit.n=vec3(0.,mix(-1.,1.,floorMask),0.);
+ // Intersect periodic X/Z pillar strips. Parallel rays are represented
+ // by infinite slabs or unreachable slabs, so no per-axis if is necessary.
+ float movingX=step(1.e-7,abs(rd.x)),movingZ=step(1.e-7,abs(rd.z));
+ float ix=mix(floor((ro.x+PILLAR)/uSpacing),ceil((ro.x-PILLAR)/uSpacing),step(0.,rd.x));
+ float iz=mix(floor((ro.z+PILLAR)/uSpacing),ceil((ro.z-PILLAR)/uSpacing),step(0.,rd.z));
+ ix=mix(floor(ro.x/uSpacing+.5),ix,movingX);
+ iz=mix(floor(ro.z/uSpacing+.5),iz,movingZ);
+ vec2 sx=slabInterval(ro.x,rd.x,ix),sz=slabInterval(ro.z,rd.z,iz);
+ for(int i=0;i<96;i++){
+  float nearT=max(sx.x,sz.x),farT=min(sx.y,sz.y);
+  if(farT>=max(nearT,.001)&&nearT>.001&&nearT<hit.t){
+   float faceX=step(sz.x,sx.x);
+   hit.t=nearT;
+   hit.type=3;
+   hit.n=vec3(-sign(rd.x)*faceX,0.,-sign(rd.z)*(1.-faceX));
+   break;
   }
+  float advanceX=1.-step(sz.y,sx.y);
+  ix+=advanceX*sign(rd.x);
+  iz+=(1.-advanceX)*sign(rd.z);
+  sx=mix(sx,slabInterval(ro.x,rd.x,ix),advanceX);
+  sz=mix(sz,slabInterval(ro.z,rd.z,iz),1.-advanceX);
+  if(max(sx.x,sz.x)>hit.t)break;
  }
- if(hit.type==2&&lightAt(ro.xz+rd.xz*hit.t))hit.type=4;
+ vec2 q=inCell(ro.xz+rd.xz*hit.t);
+ float panel=step(abs(q.y),1.08)*step(abs(abs(q.x)-1.57),.69);
+ hit.type=int(mix(float(hit.type),4.,float(hit.type==2)*panel));
  return hit;
 }
 vec3 material(vec3 p,vec3 n,int kind){
@@ -163,20 +173,20 @@ vec3 material(vec3 p,vec3 n,int kind){
 }
 vec3 cosineDirection(vec3 n){float r1=2.*PI*rand(),r2=rand();float sr=sqrt(r2);vec3 a=normalize(cross(abs(n.y)<.95?vec3(0,1,0):vec3(1,0,0),n));vec3 b=cross(n,a);return normalize(a*cos(r1)*sr+b*sin(r1)*sr+n*sqrt(1.-r2));}
 vec3 directLight(vec3 p,vec3 n,vec3 albedo){
- if(n.y<-.95)return vec3(0);
  vec2 c=floor(p.xz/uSpacing+.5)*uSpacing;
- float which=rand()<.5?-1.:1.;
+ float which=mix(-1.,1.,step(.5,rand()));
  vec3 lightPos=vec3(c.x+which*1.57+(rand()-.5)*1.38,H-.007,c.y+(rand()-.5)*2.16);
  vec3 toLight=lightPos-p;
  float r2=dot(toLight,toLight);
  vec3 l=toLight*inversesqrt(max(r2,.001));
  float cosSurface=max(dot(n,l),0.);
  float cosEmitter=max(l.y,0.);
+ // Keep one early exit to avoid an unnecessary shadow traversal.
  if(cosSurface<=0.||cosEmitter<=0.)return vec3(0);
  Hit shadow=trace(p+n*.013,l,sqrt(r2)-.032);
- if(shadow.type!=0)return vec3(0);
+ float visibility=1.-step(.5,float(shadow.type));
  float area=1.38*2.16*2.;
- return albedo*(uIntensity/PI)*area*cosSurface*cosEmitter/max(r2,.1)*vec3(1.0,1.013,.82);
+ return albedo*(uIntensity/PI)*area*cosSurface*cosEmitter/max(r2,.1)*vec3(1.0,1.013,.82)*visibility;
 }
 vec3 path(vec3 ro,vec3 rd){
  vec3 light=vec3(0),weight=vec3(1);
@@ -193,9 +203,11 @@ vec3 path(vec3 ro,vec3 rd){
   float trans=exp(-uHaze*t);
   light+=weight*(1.-trans)*vec3(.28,.285,.15);
   weight*=trans;
-  if(h.type==0){light+=weight*farRadiance;break;}
+  if(h.type==0||h.type==4){
+   light+=weight*mix(farRadiance,uIntensity*vec3(1.0,1.035,.85),float(h.type==4));
+   break;
+  }
   vec3 p=ro+rd*t;
-  if(h.type==4){light+=weight*uIntensity*vec3(1.0,1.035,.85);break;}
   vec3 alb=material(p,h.n,h.type);
   light+=weight*directLight(p,h.n,alb);
   // Low-level bounced fill approximates distant panels outside the sampled cell.
