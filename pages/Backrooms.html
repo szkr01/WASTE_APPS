@@ -100,39 +100,43 @@ float noise2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix
 vec2 inCell(vec2 p){return mod(p,uSpacing)-vec2(.5*uSpacing);}
 bool lightAt(vec2 xz){vec2 q=inCell(xz);return abs(q.y)<1.08&&abs(abs(q.x)-1.57)<.69;}
 struct Hit{float t;vec3 n;int type;};
+vec2 slabInterval(float origin,float direction,float index){
+ float center=index*uSpacing;
+ return direction>0.
+  ?vec2((center-PILLAR-origin)/direction,(center+PILLAR-origin)/direction)
+  :vec2((center+PILLAR-origin)/direction,(center-PILLAR-origin)/direction);
+}
 Hit trace(vec3 ro,vec3 rd,float limit){
  Hit hit;hit.t=limit;hit.n=vec3(0);hit.type=0;
  if(rd.y<-.00001){float t=-ro.y/rd.y;if(t>.002&&t<hit.t){hit.t=t;hit.n=vec3(0,1,0);hit.type=1;}}
  if(rd.y>.00001){float t=(H-ro.y)/rd.y;if(t>.002&&t<hit.t){hit.t=t;hit.n=vec3(0,-1,0);hit.type=2;}}
- vec2 cell=floor(ro.xz/uSpacing+.5);
- vec2 stepDir=sign(rd.xz);
- vec2 boundary=(cell+stepDir*.5)*uSpacing;
- vec2 inv=1.0/max(abs(rd.xz),vec2(.0000001));
- vec2 tEdge=(boundary-ro.xz)*sign(rd.xz)*inv;
- if(abs(rd.x)<.0000001)tEdge.x=VERY_FAR;
- if(abs(rd.z)<.0000001)tEdge.y=VERY_FAR;
- vec2 tDelta=uSpacing*inv;
- float tCell=0.;
- for(int i=0;i<2048;i++){
-  if(tCell>hit.t)break;
-  vec3 mn=vec3(cell.x*uSpacing-PILLAR,0.,cell.y*uSpacing-PILLAR);
-  vec3 mx=vec3(cell.x*uSpacing+PILLAR,H,cell.y*uSpacing+PILLAR);
-  vec3 d=1.0/rd;
-  vec3 a=(mn-ro)*d,b=(mx-ro)*d;
-  vec3 tn=min(a,b),tf=max(a,b);
-  float nearT=max(tn.x,max(tn.y,tn.z));
-  float farT=min(tf.x,min(tf.y,tf.z));
-  float nextT=min(tEdge.x,tEdge.y);
-  if(farT>=max(nearT,.001)&&nearT>.001&&nearT<hit.t&&nearT<=nextT+.003&&nearT>=tCell-.003){
-   hit.t=nearT;hit.type=3;
-   if(tn.x>=tn.y&&tn.x>=tn.z)hit.n=vec3(-sign(rd.x),0,0);
-   else if(tn.y>=tn.z)hit.n=vec3(0,-sign(rd.y),0);
-   else hit.n=vec3(0,0,-sign(rd.z));
-   break;
+ // Intersect the infinite periodic X and Z pillar bands, skipping empty cells.
+ // An axis-aligned corridor ray outside either band cannot hit any column.
+ const float EPS=0.0000001;
+ bool stillX=abs(rd.x)<EPS,stillZ=abs(rd.z)<EPS;
+ bool noX=stillX&&abs(mod(ro.x+uSpacing*.5,uSpacing)-uSpacing*.5)>PILLAR;
+ bool noZ=stillZ&&abs(mod(ro.z+uSpacing*.5,uSpacing)-uSpacing*.5)>PILLAR;
+ if(!noX&&!noZ){
+  float ix=0.,iz=0.;
+  vec2 sx=vec2(-VERY_FAR,VERY_FAR),sz=vec2(-VERY_FAR,VERY_FAR);
+  if(!stillX){ix=rd.x>0.?ceil((ro.x-PILLAR)/uSpacing):floor((ro.x+PILLAR)/uSpacing);sx=slabInterval(ro.x,rd.x,ix);}
+  if(!stillZ){iz=rd.z>0.?ceil((ro.z-PILLAR)/uSpacing):floor((ro.z+PILLAR)/uSpacing);sz=slabInterval(ro.z,rd.z,iz);}
+  for(int i=0;i<96;i++){
+   float nearT=max(sx.x,sz.x),farT=min(sx.y,sz.y);
+   if(farT>=max(nearT,.001)&&nearT<hit.t&&farT>.001){
+    hit.t=max(nearT,.001);hit.type=3;
+    hit.n=sx.x>sz.x?vec3(-sign(rd.x),0,0):vec3(0,0,-sign(rd.z));
+    break;
+   }
+   if(sx.y<sz.y){
+    if(stillX)break;
+    ix+=sign(rd.x);sx=slabInterval(ro.x,rd.x,ix);
+   }else{
+    if(stillZ)break;
+    iz+=sign(rd.z);sz=slabInterval(ro.z,rd.z,iz);
+   }
+   if(max(sx.x,sz.x)>hit.t)break;
   }
-  tCell=nextT;
-  if(tEdge.x<tEdge.y){cell.x+=stepDir.x;tEdge.x+=tDelta.x;}
-  else{cell.y+=stepDir.y;tEdge.y+=tDelta.y;}
  }
  if(hit.type==2&&lightAt(ro.xz+rd.xz*hit.t))hit.type=4;
  return hit;
@@ -267,7 +271,7 @@ function resize(){
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   gl.texImage2D(gl.TEXTURE_2D,0,extFloat?gl.RGBA16F:gl.RGBA8,w,h,0,gl.RGBA,extFloat?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
   const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
-  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)fatal('Unable to create accumulation buffer.');
+  const status=gl.checkFramebufferStatus(gl.FRAMEBUFFER);if(status!==gl.FRAMEBUFFER_COMPLETE)fatal(gl.isContextLost()?'WebGL context lost after GPU reset. Restart the browser and reopen this page.':`Accumulation framebuffer incomplete: 0x${status.toString(16)}`);
   gl.viewport(0,0,w,h);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
   targets.push({tex,fbo});
  }
@@ -340,8 +344,9 @@ canvas.addEventListener('pointerup',endPointer);canvas.addEventListener('pointer
 document.addEventListener('keydown',e=>{if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)&&!e.target.closest('input')){e.preventDefault();keys.add(e.code);}if(e.code==='Escape'){settings.classList.remove('open');document.getElementById('toggle-settings').setAttribute('aria-expanded','false');}});
 document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();joy.x=0;joy.y=0;});
 document.getElementById('toggle-settings').addEventListener('click',()=>{const open=settings.classList.toggle('open');document.getElementById('toggle-settings').setAttribute('aria-expanded',String(open));});
-function bindRange(id,convert,format,updateRes){const el=document.getElementById(id),out=document.getElementById(id+'-value');el.addEventListener('input',()=>{const v=convert(+el.value);if(id==='resolution')params.resolution=v;else if(id==='bounces')params.bounces=v;else if(id==='brightness')params.intensity=v;else if(id==='haze')params.haze=v;else if(id==='spacing')params.spacing=v;else if(id==='exposure')params.exposure=v;out.textContent=format(v);if(updateRes)resize();else reset();});}
+function bindRange(id,convert,format,updateRes){const el=document.getElementById(id),out=document.getElementById(id+'-value');el.addEventListener('input',()=>{const v=convert(+el.value);if(id==='resolution')params.resolution=v;else if(id==='bounces')params.bounces=v;else if(id==='brightness')params.intensity=v;else if(id==='haze')params.haze=v;else if(id==='spacing')params.spacing=v;else if(id==='exposure')params.exposure=v;out.textContent=format(v);if(!updateRes)reset();});}
 bindRange('resolution',x=>x/100,x=>`${Math.round(x*100)}%`,true);
+document.getElementById('resolution').addEventListener('change',resize);
 bindRange('bounces',x=>x,x=>`${x}`);
 bindRange('brightness',x=>x,x=>x.toFixed(1));
 bindRange('haze',x=>x/1000,x=>x.toFixed(3));
