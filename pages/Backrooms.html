@@ -86,8 +86,6 @@ uniform float uSpacing;
 uniform float uIntensity;
 uniform float uHaze;
 uniform int uBounces;
-uniform int uTile;
-uniform float uStorageScale;
 const float PI=3.14159265359;
 const float H=3.22;
 const float PILLAR=.56;
@@ -210,9 +208,6 @@ vec3 path(vec3 ro,vec3 rd){
  return light;
 }
 void main(){
- // Distributed 4x4 macrotiles keep each GPU dispatch bounded.
- ivec2 block=ivec2(gl_FragCoord.xy)/64;
- if((block.x%4)+(block.y%4)*4!=uTile){outColor=texture(uPrevious,vUv);return;}
  seed=uint(gl_FragCoord.x)*1973u+uint(gl_FragCoord.y)*9277u+uint(uFrame+1.)*26699u+911u;
  seed^=seed*747796405u+2891336453u;
  vec2 xy=(gl_FragCoord.xy+vec2(rand()-.5,rand()-.5)-.5*uResolution)/uResolution.y;
@@ -222,9 +217,9 @@ void main(){
  vec3 up=normalize(cross(right,f));
  vec3 dir=normalize(f+right*xy.x*1.32+up*xy.y*1.32);
  vec3 sampleColor=clamp(path(uCamera,dir),vec3(0),vec3(24));
- vec3 old=texture(uPrevious,vUv).rgb*uStorageScale;
+ vec3 old=texture(uPrevious,vUv).rgb;
  float k=1./min(uFrame+1.,1024.);
- outColor=vec4(mix(old,sampleColor,k)/uStorageScale,1.);
+ outColor=vec4(mix(old,sampleColor,k),1.);
 }`;
 const displaySource=`#version 300 es
 precision highp float;
@@ -234,18 +229,17 @@ uniform sampler2D uImage;
 uniform vec2 uResolution;
 uniform float uExposure;
 uniform float uTime;
-uniform float uStorageScale;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 vec3 tonemap(vec3 x){x*=uExposure;return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
 void main(){
  vec2 uv=gl_FragCoord.xy/uResolution;
- vec3 hdr=texture(uImage,uv).rgb*uStorageScale;
+ vec3 hdr=texture(uImage,uv).rgb;
  vec2 off=3.8/uResolution;
  vec3 bloom=vec3(0);
- bloom+=max(texture(uImage,uv+vec2(off.x,0)).rgb*uStorageScale-vec3(1.35),0.);
- bloom+=max(texture(uImage,uv-vec2(off.x,0)).rgb*uStorageScale-vec3(1.35),0.);
- bloom+=max(texture(uImage,uv+vec2(0,off.y)).rgb*uStorageScale-vec3(1.35),0.);
- bloom+=max(texture(uImage,uv-vec2(0,off.y)).rgb*uStorageScale-vec3(1.35),0.);
+ bloom+=max(texture(uImage,uv+vec2(off.x,0)).rgb-vec3(1.35),0.);
+ bloom+=max(texture(uImage,uv-vec2(off.x,0)).rgb-vec3(1.35),0.);
+ bloom+=max(texture(uImage,uv+vec2(0,off.y)).rgb-vec3(1.35),0.);
+ bloom+=max(texture(uImage,uv-vec2(0,off.y)).rgb-vec3(1.35),0.);
  vec3 color=tonemap(hdr+bloom*.048);
  color=pow(color,vec3(.88));
  float vig=1.-.16*pow(length((uv-.5)*vec2(1.,.79)),1.8);
@@ -259,9 +253,9 @@ function program(fragment) { const p=gl.createProgram();gl.attachShader(p,shader
 loadingStatus.textContent='Compiling ray traversal and lighting…';
 const tracer=program(traceSource),display=program(displaySource);
 const vao=gl.createVertexArray();gl.bindVertexArray(vao);
-const tu={};for(const n of ['uPrevious','uResolution','uCamera','uAngles','uFrame','uSpacing','uIntensity','uHaze','uBounces','uTile','uStorageScale'])tu[n]=gl.getUniformLocation(tracer,n);
-const du={};for(const n of ['uImage','uResolution','uExposure','uTime','uStorageScale'])du[n]=gl.getUniformLocation(display,n);
-let targets=[],tilePhase=0,storageScale=1;
+const tu={};for(const n of ['uPrevious','uResolution','uCamera','uAngles','uFrame','uSpacing','uIntensity','uHaze','uBounces'])tu[n]=gl.getUniformLocation(tracer,n);
+const du={};for(const n of ['uImage','uResolution','uExposure','uTime'])du[n]=gl.getUniformLocation(display,n);
+let targets=[];
 function resize(){
  const cssW=window.innerWidth,cssH=window.innerHeight;
  const pixelScale=Math.min(window.devicePixelRatio||1,1.75)*params.resolution;
@@ -269,30 +263,21 @@ function resize(){
  const w=Math.max(2,Math.floor(cssW*pixelScale*limit/2)*2);
  const h=Math.max(2,Math.floor(cssH*pixelScale*limit/2)*2);
  if(w===surfaceW&&h===surfaceH)return;
- for(const old of targets){gl.deleteFramebuffer(old.fbo);gl.deleteTexture(old.tex);}targets=[];
  surfaceW=w;surfaceH=h;canvas.width=w;canvas.height=h;
- let useFloat=!!extFloat,status=0;
- for(let attempt=0;attempt<2;attempt++){
-  for(let i=0;i<2;i++){
-   const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
-   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-   gl.texImage2D(gl.TEXTURE_2D,0,useFloat?gl.RGBA16F:gl.RGBA8,w,h,0,gl.RGBA,useFloat?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
-   const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
-   status=gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-   targets.push({tex,fbo});
-   if(status!==gl.FRAMEBUFFER_COMPLETE)break;
-   gl.viewport(0,0,w,h);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
-  }
-  if(status===gl.FRAMEBUFFER_COMPLETE&&targets.length===2){storageScale=useFloat?1:16;break;}
-  for(const old of targets){gl.deleteFramebuffer(old.fbo);gl.deleteTexture(old.tex);}targets=[];
-  if(gl.isContextLost())fatal('GPU context lost while allocating the accumulation buffer.');
-  if(!useFloat)fatal('Framebuffer is unsupported (0x'+status.toString(16)+') at '+w+'×'+h);
-  useFloat=false;
+ for(const old of targets){gl.deleteFramebuffer(old.fbo);gl.deleteTexture(old.tex);}targets=[];
+ for(let i=0;i<2;i++){
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D,0,extFloat?gl.RGBA16F:gl.RGBA8,w,h,0,gl.RGBA,extFloat?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
+  const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  const status=gl.checkFramebufferStatus(gl.FRAMEBUFFER);if(status!==gl.FRAMEBUFFER_COMPLETE)fatal(gl.isContextLost()?'WebGL context lost after GPU reset. Restart the browser and reopen this page.':`Accumulation framebuffer incomplete: 0x${status.toString(16)}`);
+  gl.viewport(0,0,w,h);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+  targets.push({tex,fbo});
  }
- gl.bindFramebuffer(gl.FRAMEBUFFER,null);active=0;frame=0;tilePhase=0;
+ gl.bindFramebuffer(gl.FRAMEBUFFER,null);active=0;frame=0;
 }
-function reset(){frame=0;tilePhase=0;}
+function reset(){frame=0;}
 function draw(time){
  gl.viewport(0,0,surfaceW,surfaceH);
  gl.useProgram(tracer);
@@ -302,13 +287,12 @@ function draw(time){
  gl.uniform3f(tu.uCamera,camera[0],camera[1],camera[2]);gl.uniform2f(tu.uAngles,yaw,pitch);
  gl.uniform1f(tu.uFrame,frame);gl.uniform1f(tu.uSpacing,params.spacing);gl.uniform1f(tu.uIntensity,params.intensity);
  gl.uniform1f(tu.uHaze,params.haze);gl.uniform1i(tu.uBounces,params.bounces);
- gl.uniform1i(tu.uTile,tilePhase);gl.uniform1f(tu.uStorageScale,storageScale);
  gl.drawArrays(gl.TRIANGLES,0,3);
- active=1-active;tilePhase=(tilePhase+1)%16;if(tilePhase===0)frame++;
+ active=1-active;frame++;
  gl.useProgram(display);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,targets[active].tex);
  gl.uniform1i(du.uImage,0);gl.uniform2f(du.uResolution,surfaceW,surfaceH);
- gl.uniform1f(du.uExposure,params.exposure);gl.uniform1f(du.uTime,time*.001);gl.uniform1f(du.uStorageScale,storageScale);
+ gl.uniform1f(du.uExposure,params.exposure);gl.uniform1f(du.uTime,time*.001);
  gl.drawArrays(gl.TRIANGLES,0,3);
 }
 function collide(x,z){const s=params.spacing;const dx=Math.abs(x-Math.round(x/s)*s),dz=Math.abs(z-Math.round(z/s)*s);return dx<.78&&dz<.78;}
@@ -335,7 +319,7 @@ function tick(now){
  navigate(dt);
  if(surfaceW&&surfaceH&&running)draw(now);
  if(!shown&&frame>=1){shown=true;loading.classList.add('hidden');}
- if(now-lastStats>150){stats.textContent=`${surfaceW} × ${surfaceH} · ${frame} SPP · ${tilePhase+1}/16`;lastStats=now;}
+ if(now-lastStats>150){stats.textContent=`${surfaceW} × ${surfaceH} · ${String(frame).padStart(3,'0')} SPP`;lastStats=now;}
  requestAnimationFrame(tick);
 }
 function look(dx,dy){yaw+=dx*.0027;pitch=Math.max(-1.3,Math.min(1.3,pitch-dy*.0027));reset();}
