@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Infinite Lanterns — Realtime Path Tracer</title>
+<meta name="description" content="無限の3D格子ランタンを、解像度に応じたサブピクセル積分とWebGL2パストレーシングでリアルタイム描画する。">
+<meta name="page:icon" content="fas fa-lightbulb">
+<meta name="page:color" content="#D99D54">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+:root{color-scheme:dark;--canvas:#151517;--panel:rgba(35,35,36,.85);--surface:#353638;--stroke:rgba(255,255,255,.13);--fg:#f9fafb;--muted:#adb2b8;--accent:#e9b778;--ease:cubic-bezier(.23,1,.32,1)}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#15100e;color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans",Arial,sans-serif;font-size:14px}button,select,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #7aafff;outline-offset:3px}
+#scene{display:block;width:100vw;height:100vh;touch-action:none;cursor:grab}#scene:active{cursor:grabbing}
+#unsupported{position:fixed;inset:0;z-index:15;display:none;align-items:center;justify-content:center;padding:24px;background:#151517}#unsupported.visible{display:flex}.error-card{max-width:460px;background:#232324;padding:26px;border-radius:20px;box-shadow:0 0 0 .5px var(--stroke)}.error-card strong{font-size:17px}.error-card p{line-height:1.8;color:var(--muted);word-break:break-word}
+.ui{position:fixed;z-index:5;transition:opacity 160ms var(--ease)}body.ui-hidden .ui{opacity:0;pointer-events:none}.brand{top:20px;left:22px;pointer-events:none;display:flex;align-items:center;gap:10px;text-shadow:0 1px 10px #0b0807}.brand-symbol{width:30px;height:30px;display:grid;place-items:center;border-radius:12px;color:#f6cd96;background:rgba(23,20,18,.53);box-shadow:0 0 0 .5px rgba(255,255,255,.2);backdrop-filter:blur(15px)}.brand-title{font-size:11px;letter-spacing:.14em;font-weight:700}.brand-sub{font-size:10px;letter-spacing:.035em;color:rgba(245,225,202,.66);margin-top:3px}
+.toolbar{top:18px;right:20px;display:flex;gap:8px}.tool{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:12px;corner-shape:superellipse(1.5);background:rgba(30,28,27,.72);color:#f8f0e7;backdrop-filter:blur(18px);box-shadow:0 0 0 .5px rgba(255,255,255,.15),0 3px 8px rgba(0,0,0,.03),0 0 16px rgba(0,0,0,.02);transition:background-color 160ms ease,transform 120ms var(--ease)}.tool:active,.action:active{transform:scale(.97)}
+.panel{top:64px;right:20px;width:min(330px,calc(100vw - 28px));max-height:calc(100vh - 86px);overflow-y:auto;background:var(--panel);border-radius:16px;corner-shape:superellipse(1.5);box-shadow:0 0 0 .5px rgba(255,255,255,.16),0 3px 8px rgba(0,0,0,.04),0 0 20px rgba(0,0,0,.08);backdrop-filter:blur(40px) saturate(150%);padding:16px;transform-origin:top right;transform:translateY(-8px) scale(.97);opacity:0;visibility:hidden;pointer-events:none;transition:transform 200ms var(--ease),opacity 200ms var(--ease),visibility 200ms}.panel.open{opacity:1;transform:translateY(0) scale(1);visibility:visible;pointer-events:auto}.panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.panel-header strong{font-size:13px;font-weight:650}.panel-header small{font-size:10px;color:var(--muted)}.section-title{font-size:10px;color:#b2b3b8;letter-spacing:.09em;margin:15px 0 10px}.control{display:grid;gap:7px;margin:0 0 14px}.control-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.control-head label{font-size:12px;color:#e4e4e6}.control-head output{font-size:11px;font-variant-numeric:tabular-nums;color:#e5bb8b;font-family:"SF Mono",Consolas,monospace}input[type=range]{appearance:none;width:100%;height:3px;margin:5px 0;background:linear-gradient(90deg,#e0b179 var(--fill,50%),rgba(255,255,255,.17) var(--fill,50%));border:0;border-radius:99px}input[type=range]::-webkit-slider-thumb{appearance:none;width:13px;height:13px;border-radius:50%;background:#f9fafb;box-shadow:0 0 0 2px #806549}input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:#f9fafb;border:2px solid #806549}.separator{height:.5px;background:rgba(255,255,255,.11);margin:8px 0 14px}.toggle-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px}.toggle{border:0;position:relative;width:36px;height:22px;border-radius:99px;background:#545557;transition:background-color 180ms ease}.toggle::before{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;background:#f9fafb;border-radius:50%;transition:transform 180ms var(--ease)}.toggle[aria-checked=true]{background:#987649}.toggle[aria-checked=true]::before{transform:translateX(14px)}.actions{display:flex;gap:8px;margin-top:16px}.action{min-height:36px;flex:1;min-width:0;border:0;border-radius:12px;color:#f9fafb;background:#353638;font-size:12px;transition:transform 120ms var(--ease),background-color 160ms ease}.action.primary{color:#151517;background:#f9fafb}
+.hud{bottom:18px;left:22px;display:flex;align-items:center;gap:11px;color:rgba(255,241,224,.77);font-size:10px;text-shadow:0 1px 8px #17110f;pointer-events:none}.hud kbd{padding:2px 5px;border-radius:4px;background:rgba(23,20,18,.5);box-shadow:0 0 0 .5px rgba(255,255,255,.23);font-size:10px;font-family:inherit}.hud .sep{width:1px;height:12px;background:rgba(255,255,255,.22);margin:0}.stats{right:20px;bottom:18px;display:flex;align-items:center;gap:8px;color:rgba(255,235,216,.8);font-family:"SF Mono",Consolas,monospace;font-size:10px;letter-spacing:.035em;pointer-events:none}.live-dot{width:5px;height:5px;background:#d8af76;border-radius:50%;box-shadow:0 0 8px rgba(255,191,105,.6)}.stats-text{font-variant-numeric:tabular-nums}
+@media(hover:hover) and (pointer:fine){.tool:hover{background:rgba(64,54,46,.9)}.action:hover{background:#454547}.action.primary:hover{background:#ebedf0}}@media(max-width:650px){.brand{top:14px;left:14px}.toolbar{top:14px;right:14px}.panel{top:58px;right:14px;max-height:calc(100vh - 72px)}.hud{left:14px;bottom:12px}.hud .desktop{display:none}.stats{right:14px;bottom:12px}}@media(prefers-reduced-motion:reduce){.ui,.panel,.tool,.toggle,.toggle::before{transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="無限の三次元格子にあるランタンをパストレーシングで描画した3D空間。ドラッグで視点変更、WASDで移動"></canvas>
+<div class="brand ui" aria-hidden="true"><div class="brand-symbol"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="7" width="11" height="13" rx="1"/><path d="M9 7V5a3 3 0 0 1 6 0v2M5 10h1.5M17.5 10H19M9 20h6M8.5 16.5h7M9 10.5v6"/></svg></div><div><div class="brand-title">INFINITE LANTERNS</div><div class="brand-sub">Realtime stochastic path tracing · WebGL2</div></div></div>
+<div class="toolbar ui">
+<button id="resetButton" class="tool" title="視点リセット (R)" aria-label="視点リセット"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11a9 9 0 1 1 2.6 6.4M3 4v7h7"/></svg></button>
+<button id="captureButton" class="tool" title="PNG保存" aria-label="PNG保存"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg></button>
+<button id="settingsButton" class="tool" title="描画設定" aria-controls="settingsPanel" aria-expanded="false" aria-label="描画設定"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="#282524"/><circle cx="16" cy="12" r="2" fill="#282524"/><circle cx="8" cy="18" r="2" fill="#282524"/></svg></button>
+</div>
+<aside id="settingsPanel" class="panel ui" aria-label="レンダリング設定">
+<div class="panel-header"><strong>レンダリング設定</strong><small>GPU PATH TRACER</small></div>
+<div class="section-title">RENDERING</div>
+<div class="control"><div class="control-head"><label for="quality">内部解像度</label><output id="qualityOut"></output></div><input id="quality" type="range" min="35" max="100" step="5" value="60"></div>
+<div class="control"><div class="control-head"><label for="lod">遠景の統合しきい値</label><output id="lodOut"></output></div><input id="lod" type="range" min="5" max="30" step="1" value="12"></div>
+<div class="control"><div class="control-head"><label for="bounces">光の反射回数</label><output id="bouncesOut"></output></div><input id="bounces" type="range" min="1" max="3" step="1" value="2"></div>
+<div class="control"><div class="control-head"><label for="samples">静止時の最大SPP</label><output id="samplesOut"></output></div><input id="samples" type="range" min="32" max="1024" step="32" value="256"></div>
+<div class="control"><div class="control-head"><label for="denoise">静止時のデノイズ</label><output id="denoiseOut"></output></div><input id="denoise" type="range" min="0" max="100" step="5" value="80"></div>
+<div class="section-title">SCENE</div>
+<div class="control"><div class="control-head"><label for="spacing">格子間隔</label><output id="spacingOut"></output></div><input id="spacing" type="range" min="30" max="70" step="1" value="40"></div>
+<div class="control"><div class="control-head"><label for="size">ランタン倍率</label><output id="sizeOut"></output></div><input id="size" type="range" min="65" max="135" step="5" value="100"></div>
+<div class="control"><div class="control-head"><label for="fov">画角</label><output id="fovOut"></output></div><input id="fov" type="range" min="45" max="110" step="1" value="86"></div>
+<div class="section-title">LIGHT &amp; ATMOSPHERE</div>
+<div class="control"><div class="control-head"><label for="exposure">露光</label><output id="exposureOut"></output></div><input id="exposure" type="range" min="10" max="180" step="5" value="25"></div>
+<div class="control"><div class="control-head"><label for="bloom">ブルーム</label><output id="bloomOut"></output></div><input id="bloom" type="range" min="0" max="200" step="5" value="55"></div>
+<div class="control"><div class="control-head"><label for="fog">大気散乱</label><output id="fogOut"></output></div><input id="fog" type="range" min="0" max="200" step="5" value="70"></div>
+<div class="separator"></div>
+<div class="toggle-row"><span>徐々に視点を回転</span><button id="driftButton" role="switch" class="toggle" aria-label="自動回転" aria-checked="false"></button></div>
+<div class="actions"><button id="resetPanelButton" class="action">視点をリセット</button><button id="capturePanelButton" class="action primary">PNG保存</button></div>
+</aside>
+<div class="hud ui"><span><kbd>ドラッグ</kbd> 視点</span><span class="sep desktop"></span><span class="desktop"><kbd>W A S D</kbd> 移動</span><span class="desktop"><kbd>Q E</kbd> 上下</span><span class="desktop"><kbd>Shift</kbd> 加速</span><span><kbd>H</kbd> UI</span></div>
+<div class="stats ui"><span class="live-dot"></span><span id="statsText" class="stats-text">INITIALIZING</span></div>
+<div id="unsupported"><div class="error-card"><strong>WebGL2の描画を開始できませんでした</strong><p id="errorMessage"></p></div></div>
+<script>
+// Infinite integer lattice, ray-traced analytically via 3D DDA. No meshes, impostors, or finite scene population.
+(()=>{
+'use strict';
+const canvas=document.getElementById('scene');
+const stats=document.getElementById('statsText');
+const panel=document.getElementById('settingsPanel');
+const settingsButton=document.getElementById('settingsButton');
+const errorMessage=document.getElementById('errorMessage');
+const settings={quality:.60,lod:1.2,bounces:2,samples:256,denoise:.8,spacing:4,size:1,fov:86,exposure:.25,bloom:.55,fog:.7,drift:false};
+const home={pos:[1.05,.35,2.0],yaw:-.18,pitch:.36};
+let position=home.pos.slice(),yaw=home.yaw,pitch=home.pitch;
+let gl,programTrace,programDisplay,targets=[],targetIndex=0,frame=0,dirty=true,pixelWidth=1,pixelHeight=1,locTrace={},locDisplay={};
+let lastTime=0,moving=false,dragging=false,lastPointer=[0,0],fps=0,framesForFps=0,fpsTime=0,canRender=true;
+const keys=new Set();
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const get=id=>document.getElementById(id);
+function fail(message){canRender=false;errorMessage.textContent=message;get('unsupported').classList.add('visible');stats.textContent='WEBGL2 UNAVAILABLE';}
+gl=canvas.getContext('webgl2',{alpha:false,depth:false,stencil:false,antialias:false,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+if(!gl){fail('このページにはWebGL2対応ブラウザとGPUアクセラレーションが必要です。');return;}
+const colorFloat=!!gl.getExtension('EXT_color_buffer_float');
+const vertexSource=`#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));vUv=p;gl_Position=vec4(p*2.-1.,0.,1.);}`;
+const traceSource=`#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uHistory;
+uniform vec2 uResolution;
+uniform mat3 uBasis;
+uniform vec3 uEye;
+uniform int uFrame;
+uniform float uPixelLod;
+uniform int uBounces;
+uniform float uSpacing;
+uniform float uSize;
+uniform float uTanHalfFov;
+uniform float uFog;
+uniform bool uPacked;
+const float FAR=1.e8;
+const float PI=3.141592653589793;
+uint state;
+float rand(){state^=state<<13;state^=state>>17;state^=state<<5;return float(state)*2.3283064365386963e-10;}
+float hashCell(vec3 c){return fract(sin(dot(c,vec3(127.1,311.7,74.7)))*43758.5453);}
+struct Hit{float t;vec3 n;vec3 local;vec3 cell;int mat;};
+Hit emptyHit(){Hit h;h.t=FAR;h.n=vec3(0.,1.,0.);h.local=vec3(0.);h.cell=vec3(0.);h.mat=0;return h;}
+vec3 safeInv(vec3 d){return 1./vec3(abs(d.x)<1.e-7?1.e-7:d.x,abs(d.y)<1.e-7?1.e-7:d.y,abs(d.z)<1.e-7?1.e-7:d.z);}
+bool intervalBox(vec3 o,vec3 invD,vec3 center,vec3 halfSize,out float entry,out float exitT){
+  vec3 a=(center-halfSize-o)*invD;
+  vec3 b=(center+halfSize-o)*invD;
+  vec3 lo=min(a,b),hi=max(a,b);
+  entry=max(max(lo.x,lo.y),lo.z);
+  exitT=min(min(hi.x,hi.y),hi.z);
+  return exitT>=max(entry,0.)&&exitT>0.;
+}
+void addBox(vec3 o,vec3 d,vec3 invD,vec3 center,vec3 halfSize,int material,inout Hit hit){
+  float nearT,farT;
+  if(!intervalBox(o,invD,center,halfSize,nearT,farT))return;
+  float t=nearT>.0006?nearT:farT;
+  if(t>=hit.t||t<=.0006)return;
+  vec3 p=o+d*t-center;
+  vec3 f=abs(p/max(halfSize,vec3(.0001)));
+  vec3 n;
+  if(f.x>f.y&&f.x>f.z)n=vec3(sign(p.x),0.,0.);
+  else if(f.y>f.z)n=vec3(0.,sign(p.y),0.);
+  else n=vec3(0.,0.,sign(p.z));
+  hit.t=t;hit.n=n;hit.local=o+d*t;hit.mat=material;
+}
+void lantern(vec3 o,vec3 d,vec3 invD,inout Hit h){
+  // Four illuminated glass faces and metal cap/floor. The two lit windows on each face
+  // are physically separated by thin dark bars; the object is not a camera-facing quad.
+  addBox(o,d,invD,vec3(0.,-.065,0.),vec3(.365,.305,.365),2,h);
+  addBox(o,d,invD,vec3(0., .296,0.),vec3(.475,.070,.478),1,h);
+  addBox(o,d,invD,vec3(0.,-.427,0.),vec3(.455,.090,.462),1,h);
+  // Bronze corner uprights.
+  for(int a=0;a<2;a++)for(int b=0;b<2;b++){
+    float x=a==0?-.411:.411;
+    float z=b==0?-.411:.411;
+    addBox(o,d,invD,vec3(x,-.059,z),vec3(.059,.314,.060),1,h);
+  }
+  // Window mullions: real narrow solid bars, not a screen-space texture.
+  for(int s=0;s<2;s++){
+    float q=s==0?-.38:.38;
+    addBox(o,d,invD,vec3(0.,-.055,q),vec3(.023,.300,.023),1,h);
+    addBox(o,d,invD,vec3(0.,-.065,q),vec3(.367,.022,.023),1,h);
+    addBox(o,d,invD,vec3(q,-.055,0.),vec3(.023,.300,.023),1,h);
+    addBox(o,d,invD,vec3(q,-.065,0.),vec3(.023,.022,.367),1,h);
+  }
+  // Lid, top pedestal, looped metal hanging handle (three-dimensional).
+  addBox(o,d,invD,vec3(0.,.390,0.),vec3(.206,.036,.205),1,h);
+  addBox(o,d,invD,vec3(0.,.489,0.),vec3(.066,.078,.067),1,h);
+  addBox(o,d,invD,vec3(0.,.589,0.),vec3(.225,.048,.055),1,h);
+  for(int a=0;a<2;a++){
+    float x=a==0?-.205:.205;
+    addBox(o,d,invD,vec3(x,.780,0.),vec3(.040,.173,.052),1,h);
+  }
+  addBox(o,d,invD,vec3(0.,.967,0.),vec3(.254,.046,.057),1,h);
+  addBox(o,d,invD,vec3(0.,1.037,0.),vec3(.068,.045,.071),1,h);
+}
+// Only resolvable lanterns are intersected individually. When its projected
+// 3D bounding diameter falls below uPixelLod pixels, the infinite remainder
+// is handled by analytic radiative transfer rather than a finite scene edge.
+Hit traceScene(vec3 ro,vec3 rd,int budget){
+  Hit result=emptyHit();
+  vec3 cell=floor(ro/uSpacing+.5);
+  vec3 stepDir=sign(rd);
+  vec3 invD=safeInv(rd);
+  vec3 span=abs(uSpacing*invD);
+  vec3 boundary=(cell+.5*stepDir)*uSpacing;
+  vec3 edge=(boundary-ro)*invD;
+  if(abs(rd.x)<1.e-6){edge.x=FAR;span.x=FAR;}
+  if(abs(rd.y)<1.e-6){edge.y=FAR;span.y=FAR;}
+  if(abs(rd.z)<1.e-6){edge.z=FAR;span.z=FAR;}
+  // Pixel-cone termination: LOD changes with *actual render resolution*, FOV and object scale.
+  float focalPx=uResolution.y/(2.*uTanHalfFov);
+  float pixelDistance=(uSize*2.16)*focalPx/max(uPixelLod,.1);
+  float lastEnd=0.;
+  for(int k=0;k<1024;k++){
+    float endT=min(edge.x,min(edge.y,edge.z));
+    // No finite outer lattice boundary: unresolved rays return an infinite-medium state.
+    if(endT>=pixelDistance || k>=budget){result.t=min(endT,pixelDistance);result.mat=3;return result;}
+    vec3 localO=(ro-cell*uSpacing)/uSize;
+    vec3 localD=rd/uSize;
+    vec3 invLocal=safeInv(localD);
+    float ta,tb;
+    if(intervalBox(localO,invLocal,vec3(0.,.28,0.),vec3(.55,.81,.55),ta,tb)&&ta<endT+.001){
+      Hit h=emptyHit();h.t=endT+.003;
+      lantern(localO,localD,invLocal,h);
+      if(h.mat!=0&&h.t<=endT+.003){h.cell=cell;return h;}
+    }
+    lastEnd=endT;
+    if(edge.x<=edge.y&&edge.x<=edge.z){cell.x+=stepDir.x;edge.x+=span.x;}
+    else if(edge.y<=edge.z){cell.y+=stepDir.y;edge.y+=span.y;}
+    else{cell.z+=stepDir.z;edge.z+=span.z;}
+  }
+  result.t=lastEnd;result.mat=3;return result;
+}
+vec3 sampleCosine(vec3 n){
+  float a=6.28318530718*rand(),r=sqrt(rand());
+  vec3 t=normalize(cross(abs(n.y)<.95?vec3(0.,1.,0.):vec3(1.,0.,0.),n));
+  vec3 b=cross(n,t);
+  return normalize(t*(r*cos(a))+b*(r*sin(a))+n*sqrt(max(0.,1.-r*r)));
+}
+vec3 fogColor(vec3 d){
+  float nearPlane=exp(-abs(d.y)*6.0);
+  float above=smoothstep(-.2,.6,d.y);
+  return mix(vec3(.12,.067,.028),vec3(.47,.26,.098),nearPlane)*mix(.85,1.08,above);
+}
+vec3 emitted(Hit h){
+  // A faceted warm-white flame through amber quadrants; frame geometry occludes it.
+  vec3 a=abs(h.local);
+  float edge=max(abs(h.local.x),abs(h.local.z));
+  float centerGlow=1.-smoothstep(.025,.36,length(h.local.xz)*.7+abs(h.local.y+.06)*.45);
+  float seed=hashCell(h.cell);
+  return vec3(15.8,8.3,2.75)*(1.+centerGlow*.65)*mix(.85,1.16,seed);
+}
+vec3 sky(vec3 d){float level=exp(-abs(d.y)*7.);return mix(vec3(.026,.015,.012),vec3(.25,.14,.047),level*.82);}
+// For the unresolved infinite tail, integrate the mean luminous cross-section
+// of one 3D lantern per uSpacing^3. The result converges for infinite depth;
+// it does not substitute a finite-distance sky or a black far clipping plane.
+vec3 infiniteTail(vec3 d){
+  float sigmaLamp=1.15*uSize*uSize/max(.001,uSpacing*uSpacing*uSpacing);
+  float sigmaFog=uFog*.006;
+  vec3 meanSurface=vec3(7.9,4.35,1.58);
+  return (sigmaLamp*meanSurface+sigmaFog*fogColor(d)*.8)/(sigmaLamp+sigmaFog+1.e-6);
+}
+vec3 integrate(vec3 o,vec3 d,out float feature){
+  vec3 radiance=vec3(0.),throughput=vec3(1.);
+  feature=.98;
+  for(int bounce=0;bounce<3;bounce++){
+    if(bounce>=uBounces)break;
+    // The secondary rays can merge earlier because the rough metal reflection
+    // is already a broad angular filter; neither branch clips the infinite space.
+    int budget=bounce==0?1024:320;
+    Hit h=traceScene(o,d,budget);
+    if(bounce==0)feature=h.mat==3?.98:(h.mat==2?.12:.52)+.16*clamp(log2(1.+h.t)/12.,0.,1.);
+    float transmittance=exp(-h.t*uFog*.006);
+    radiance+=throughput*(1.-transmittance)*fogColor(d)*.8;
+    throughput*=transmittance;
+    if(h.mat==3){radiance+=throughput*infiniteTail(d);break;}
+    vec3 p=o+d*h.t;
+    if(h.mat==2){radiance+=throughput*emitted(h);break;}
+    vec3 normal=h.n;
+    vec3 albedo=vec3(.51,.313,.152);
+    float roughness=.70;
+    vec3 reflected=reflect(d,normal);
+    vec3 diffused=sampleCosine(normal);
+    radiance+=throughput*vec3(.085,.042,.013)*(.65+.35*max(normal.y,0.));
+    throughput*=albedo;
+    d=normalize(mix(reflected,diffused,roughness));
+    o=p+normal*.008;
+    if(bounce==uBounces-1)radiance+=throughput*infiniteTail(d)*.25;
+  }
+  return min(radiance,vec3(90.));
+}
+vec3 unpackValue(vec3 c){return uPacked?(-log(max(vec3(.0001),vec3(1.)-c))/.22):c;}
+vec3 packValue(vec3 c){return uPacked?(vec3(1.)-exp(-c*.22)):c;}
+void main(){
+  ivec2 pix=ivec2(gl_FragCoord.xy);
+  state=uint(pix.x)*1973u+uint(pix.y)*9277u+uint(uFrame+1)*26699u+911u;
+  // Per-pixel scrambled low-discrepancy sequence distributes samples evenly.
+  vec2 cell=vec2(pix);
+  vec2 shift=fract(sin(vec2(dot(cell,vec2(127.1,311.7)),dot(cell,vec2(269.5,183.3))))*43758.5453);
+  vec2 jitter=fract(vec2(float(uFrame)*.7548776662466927,float(uFrame)*.5698402909980532)+shift)-.5;
+  vec2 ndc=((gl_FragCoord.xy+jitter)/uResolution)*2.-1.;
+  ndc.x*=uResolution.x/uResolution.y;
+  vec3 dir=normalize(uBasis*vec3(ndc.x*uTanHalfFov,ndc.y*uTanHalfFov,1.));
+  float feature;
+  vec3 sampleColor=integrate(uEye,dir,feature);
+  vec4 history=uFrame>0?texelFetch(uHistory,pix,0):vec4(0.);
+  vec3 previous=uFrame>0?unpackValue(history.rgb):vec3(0.);
+  float samples=float(uFrame);
+  vec3 average=(previous*samples+sampleColor)/(samples+1.);
+  float averageFeature=(history.a*samples+feature)/(samples+1.);
+  outColor=vec4(packValue(average),averageFeature);
+}`;
+const displaySource=`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uImage;
+uniform vec2 uTexel;
+uniform float uExposure;
+uniform float uBloom;
+uniform int uSamples;
+uniform float uDenoise;
+uniform bool uPacked;
+vec3 sampleHdr(vec2 uv){vec3 c=texture(uImage,clamp(uv,vec2(0.),vec2(1.))).rgb;return uPacked?-log(max(vec3(.0001),vec3(1.)-c))/.22:c;}
+vec3 filmic(vec3 c){return clamp((c*(2.51*c+.03))/(c*(2.43*c+.59)+.14),0.,1.);}
+void main(){
+  float band=exp(-pow((vUv.y-.30)/.34,2.));
+  float atmosphericGrade=mix(.25,1.0,band);
+  vec4 centerData=texture(uImage,vUv);
+  vec3 center=sampleHdr(vUv);
+  vec3 raw=center;
+  if(uDenoise>.001){
+    // Cross-bilateral: depth/material guide from primary ray is in history alpha.
+    // Preserve small emissive panels while smoothing diffuse bounce variance.
+    float guide=centerData.a;
+    float centerLum=dot(center,vec3(.2126,.7152,.0722));
+    vec3 total=vec3(0.);
+    float sum=0.;
+    for(int y=-2;y<=2;y++)for(int x=-2;x<=2;x++){
+      vec2 uv=clamp(vUv+vec2(float(x),float(y))*uTexel,vec2(0.),vec2(1.));
+      vec4 data=texture(uImage,uv);
+      vec3 rgb=uPacked?-log(max(vec3(.0001),vec3(1.)-data.rgb))/.22:data.rgb;
+      float lum=dot(rgb,vec3(.2126,.7152,.0722));
+      float spatial=exp(-float(x*x+y*y)*.15);
+      float geometry=exp(-abs(guide-data.a)*22.);
+      // A loose color guide prevents filtering across lantern silhouettes.
+      float chroma=.26+.74*exp(-abs(log(1.+centerLum)-log(1.+lum))*2.0);
+      float w=spatial*geometry*chroma;
+      total+=rgb*w;
+      sum+=w;
+    }
+    raw=mix(center,total/max(sum,.0001),uDenoise);
+  }
+  vec3 original=raw*uExposure*atmosphericGrade;
+  vec3 bloomInput=vec3(0.);
+  vec2 o=uTexel*3.;
+  vec3 v;
+  v=sampleHdr(vUv+vec2(o.x,0.));bloomInput+=v*.16;
+  v=sampleHdr(vUv-vec2(o.x,0.));bloomInput+=v*.16;
+  v=sampleHdr(vUv+vec2(0.,o.y));bloomInput+=v*.16;
+  v=sampleHdr(vUv-vec2(0.,o.y));bloomInput+=v*.16;
+  o=uTexel*10.;
+  v=sampleHdr(vUv+vec2(o.x,o.y));bloomInput+=v*.09;
+  v=sampleHdr(vUv+vec2(-o.x,o.y));bloomInput+=v*.09;
+  v=sampleHdr(vUv+vec2(o.x,-o.y));bloomInput+=v*.09;
+  v=sampleHdr(vUv+vec2(-o.x,-o.y));bloomInput+=v*.09;
+  // Threshold after neighbor integration; isolated stochastic bright pixels no longer create separate halo spikes.
+  vec3 bloom=max(bloomInput-vec3(1.2),vec3(0.));
+  vec3 color=filmic(original+bloom*uExposure*uBloom*.70*atmosphericGrade);
+  color=pow(color,vec3(1./2.2));
+  float vignette=1.-.18*pow(length((vUv-.5)*vec2(1.35,1.0)),2.);
+  outColor=vec4(color*vignette,1.);
+}`;
+function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+function program(vs,fs){const p=gl.createProgram();gl.attachShader(p,shader(gl.VERTEX_SHADER,vs));gl.attachShader(p,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;}
+try{programTrace=program(vertexSource,traceSource);programDisplay=program(vertexSource,displaySource);}catch(e){fail('シェーダーのコンパイルに失敗しました: '+e.message);return;}
+const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+const queryUniforms=(p,names)=>Object.fromEntries(names.map(n=>[n,gl.getUniformLocation(p,n)]));
+locTrace=queryUniforms(programTrace,['uHistory','uResolution','uBasis','uEye','uFrame','uPixelLod','uBounces','uSpacing','uSize','uTanHalfFov','uFog','uPacked']);
+locDisplay=queryUniforms(programDisplay,['uImage','uTexel','uExposure','uBloom','uSamples','uDenoise','uPacked']);
+function makeTarget(){const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texImage2D(gl.TEXTURE_2D,0,colorFloat?gl.RGBA32F:gl.RGBA8,pixelWidth,pixelHeight,0,gl.RGBA,colorFloat?gl.FLOAT:gl.UNSIGNED_BYTE,null);const framebuffer=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('描画バッファを作成できません');return{tex,framebuffer};}
+function resize(){const displayRatio=window.devicePixelRatio||1;canvas.width=Math.max(1,Math.floor(innerWidth*displayRatio));canvas.height=Math.max(1,Math.floor(innerHeight*displayRatio));pixelWidth=Math.max(1,Math.floor(canvas.width*settings.quality));pixelHeight=Math.max(1,Math.floor(canvas.height*settings.quality));for(const t of targets){gl.deleteFramebuffer(t.framebuffer);gl.deleteTexture(t.tex);}targets=[];try{targets=[makeTarget(),makeTarget()];}catch(e){fail(e.message);return;}targetIndex=0;frame=0;dirty=true;}
+function basis(){const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);const right=[cy,0,sy],up=[-sy*sp,cp,cy*sp],forward=[sy*cp,sp,-cy*cp];return{right,up,forward,flat:[sy,0,-cy]};}
+function render(){if(!canRender||targets.length!==2)return;const b=basis();const next=1-targetIndex;
+  gl.disable(gl.BLEND);gl.disable(gl.DEPTH_TEST);gl.useProgram(programTrace);gl.viewport(0,0,pixelWidth,pixelHeight);gl.bindFramebuffer(gl.FRAMEBUFFER,targets[next].framebuffer);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,targets[targetIndex].tex);
+  gl.uniform1i(locTrace.uHistory,0);gl.uniform2f(locTrace.uResolution,pixelWidth,pixelHeight);gl.uniformMatrix3fv(locTrace.uBasis,false,new Float32Array([...b.right,...b.up,...b.forward]));gl.uniform3fv(locTrace.uEye,new Float32Array(position));gl.uniform1i(locTrace.uFrame,frame);gl.uniform1f(locTrace.uPixelLod,settings.lod);gl.uniform1i(locTrace.uBounces,settings.bounces);gl.uniform1f(locTrace.uSpacing,settings.spacing);gl.uniform1f(locTrace.uSize,settings.size);gl.uniform1f(locTrace.uTanHalfFov,Math.tan(settings.fov*Math.PI/360));gl.uniform1f(locTrace.uFog,settings.fog);gl.uniform1i(locTrace.uPacked,colorFloat?0:1);gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,canvas.width,canvas.height);gl.useProgram(programDisplay);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,targets[next].tex);gl.uniform1i(locDisplay.uImage,0);gl.uniform2f(locDisplay.uTexel,1/pixelWidth,1/pixelHeight);gl.uniform1f(locDisplay.uExposure,settings.exposure);gl.uniform1f(locDisplay.uBloom,settings.bloom);gl.uniform1i(locDisplay.uSamples,frame+1);gl.uniform1f(locDisplay.uDenoise,settings.denoise);gl.uniform1i(locDisplay.uPacked,colorFloat?0:1);gl.drawArrays(gl.TRIANGLES,0,3);
+  targetIndex=next;frame++;dirty=false;
+  stats.textContent=`${frame.toString().padStart(3,'0')} SPP · ${pixelWidth}×${pixelHeight} · ${fps.toFixed(0)} FPS`;
+}
+function invalidate(){frame=0;dirty=true;}
+function move(dt){const b=basis(),speed=(keys.has('shift')?11:3.8)*dt;let dx=0,dy=0,dz=0;const down=k=>keys.has(k);
+  if(down('w')||down('arrowup')){dx+=b.flat[0]*speed;dz+=b.flat[2]*speed;}
+  if(down('s')||down('arrowdown')){dx-=b.flat[0]*speed;dz-=b.flat[2]*speed;}
+  if(down('a')||down('arrowleft')){dx-=b.right[0]*speed;dz-=b.right[2]*speed;}
+  if(down('d')||down('arrowright')){dx+=b.right[0]*speed;dz+=b.right[2]*speed;}
+  if(down('e')||down(' '))dy+=speed;if(down('q'))dy-=speed;
+  if(dx||dy||dz){position[0]+=dx;position[1]+=dy;position[2]+=dz;invalidate();return true;}
+  return false;
+}
+function loop(now){requestAnimationFrame(loop);if(!canRender)return;const dt=lastTime?Math.min((now-lastTime)/1000,.05):0;lastTime=now;const didMove=move(dt);if(settings.drift&&!dragging&&!keys.size){yaw+=dt*.035;invalidate();}
+  if(frame<settings.samples||dirty||didMove)render();framesForFps++;if(now-fpsTime>950){fps=framesForFps*1000/Math.max(1,now-fpsTime);framesForFps=0;fpsTime=now;}
+}
+function rotate(dx,dy){yaw-=dx*.0027;pitch=clamp(pitch-dy*.0027,-1.51,1.51);invalidate();}
+canvas.addEventListener('pointerdown',e=>{if(e.button!==0||document.pointerLockElement===canvas)return;dragging=true;lastPointer=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointermove',e=>{if(document.pointerLockElement===canvas){rotate(e.movementX,e.movementY);return;}if(!dragging)return;rotate(e.clientX-lastPointer[0],e.clientY-lastPointer[1]);lastPointer=[e.clientX,e.clientY];});
+function stopDrag(){dragging=false;}canvas.addEventListener('pointerup',stopDrag);canvas.addEventListener('pointercancel',stopDrag);
+canvas.addEventListener('dblclick',()=>{if(document.pointerLockElement===canvas)document.exitPointerLock();else canvas.requestPointerLock?.();});
+canvas.addEventListener('wheel',e=>{e.preventDefault();settings.fov=clamp(settings.fov+Math.sign(e.deltaY)*2,45,110);sync();invalidate();},{passive:false});
+window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLButtonElement)return;const k=e.key.toLowerCase();if(k==='h'){document.body.classList.toggle('ui-hidden');return;}if(k==='r'){resetCamera();return;}if(k==='escape'){panel.classList.remove('open');settingsButton.setAttribute('aria-expanded','false');return;}if('wasdqe'.includes(k)||k.startsWith('arrow')||k==='shift'||k===' '){keys.add(k);e.preventDefault();}});
+window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));window.addEventListener('blur',()=>keys.clear());
+function resetCamera(){position=home.pos.slice();yaw=home.yaw;pitch=home.pitch;invalidate();}
+function capture(){render();const a=document.createElement('a');a.href=canvas.toDataURL('image/png');a.download='infinite-lanterns.png';a.click();}
+get('resetButton').addEventListener('click',resetCamera);get('resetPanelButton').addEventListener('click',resetCamera);get('captureButton').addEventListener('click',capture);get('capturePanelButton').addEventListener('click',capture);
+settingsButton.addEventListener('click',()=>{const open=!panel.classList.contains('open');panel.classList.toggle('open',open);settingsButton.setAttribute('aria-expanded',String(open));});
+get('driftButton').addEventListener('click',()=>{settings.drift=!settings.drift;sync();invalidate();});
+const ranges={quality:[100,'%'],lod:[10,' px'],bounces:[1,''],samples:[1,''],denoise:[100,'%'],spacing:[10,''],size:[100,'%'],fov:[1,'°'],exposure:[100,'%'],bloom:[100,'%'],fog:[100,'%']};
+function sync(){for(const [name,[factor,suffix]] of Object.entries(ranges)){const value=Math.round(settings[name]*factor);get(name).value=value;get(name+'Out').textContent=name==='lod'?(value/10).toFixed(1)+' px':value+suffix;const slider=get(name);const fill=(value-Number(slider.min))/(Number(slider.max)-Number(slider.min))*100;slider.style.setProperty('--fill',fill+'%');}get('driftButton').setAttribute('aria-checked',String(settings.drift));}
+for(const [name,[factor]] of Object.entries(ranges))get(name).addEventListener('input',e=>{settings[name]=Number(e.target.value)/factor;if(name==='quality')resize();else if(name!=='denoise')invalidate();else {dirty=true;}sync();});
+window.addEventListener('resize',resize);sync();resize();stats.textContent='PATH TRACING';requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
