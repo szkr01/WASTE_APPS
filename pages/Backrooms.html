@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<title>Backrooms — Infinite Lobby Path Tracer</title>
+<meta name="description" content="A wall-less infinite periodic Backrooms lobby with resolution-dependent ray integration and progressive WebGL2 path tracing.">
+<meta name="page:icon" content="fas fa-cubes">
+<meta name="page:color" content="#777c48">
+<meta name="theme-color" content="#15170f">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<style>
+:root{color-scheme:dark;--ui:rgba(22,25,19,.70);--border:rgba(237,238,203,.14);--ink:#e7e7d7;--muted:#b9bba6;--accent:#c4d396;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN",sans-serif}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#16190f}button,input{font:inherit}button{cursor:pointer;-webkit-tap-highlight-color:transparent}button:active{transform:scale(.97)}button:focus-visible,input:focus-visible{outline:2px solid #c4d396;outline-offset:3px}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}#scene:active{cursor:grabbing}#scene.locked{cursor:none}
+.film{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 53%,rgba(17,17,6,.21) 100%);mix-blend-mode:multiply}
+.hud{position:fixed;z-index:2;pointer-events:none}.hud>*{pointer-events:auto}.glass{background:var(--ui);border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.17);backdrop-filter:blur(18px) saturate(105%);-webkit-backdrop-filter:blur(18px) saturate(105%)}
+.top{top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:max(18px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) 0 max(18px,env(safe-area-inset-left));gap:14px}.brand{display:flex;align-items:center;gap:11px;min-width:0}.brand-mark{display:grid;place-items:center;width:35px;height:35px;border:1px solid rgba(225,227,173,.32);border-radius:12px;background:rgba(230,237,171,.11);color:#d5deb1;font-size:14px;font-weight:700;letter-spacing:-2px}.brand-head{font-size:11px;font-weight:700;letter-spacing:.17em;color:var(--ink);white-space:nowrap}.brand-sub{font-size:10px;color:var(--muted);letter-spacing:.07em;margin-top:3px}.head-controls{display:flex;gap:8px}.hudbtn{height:35px;min-width:35px;padding:0 11px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:12px;color:var(--ink);font-size:11px;font-weight:600;transition:transform 130ms cubic-bezier(.23,1,.32,1),background 150ms ease;background:var(--ui);border:1px solid var(--border);backdrop-filter:blur(18px)}.hudbtn svg{width:15px;height:15px}.hudbtn:hover{background:rgba(48,53,39,.85)}
+.bottom{bottom:max(18px,env(safe-area-inset-bottom));left:max(18px,env(safe-area-inset-left));right:max(18px,env(safe-area-inset-right));display:flex;align-items:end;justify-content:space-between;gap:12px}.hint{font-size:10px;line-height:1.7;color:#e0dfbf;text-shadow:0 1px 8px rgba(0,0,0,.6)}.hint b{font-weight:600;color:#fffde2}.readout{padding:9px 12px;border-radius:12px;font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:.04em;color:#e0e3c1;display:flex;align-items:center;gap:8px}.led{width:6px;height:6px;flex:none;border-radius:50%;background:#c6dca3;box-shadow:0 0 12px #d3ed83}.led.off{background:#e5a87b;box-shadow:0 0 10px #e5a87b}
+.settings{position:fixed;z-index:5;right:18px;top:65px;width:min(326px,calc(100vw - 36px));max-height:calc(100dvh - 85px);overflow:auto;overscroll-behavior:contain;padding:18px;border-radius:20px;color:var(--ink);opacity:0;visibility:hidden;transform:translateY(-7px) scale(.98);transform-origin:top right;transition:opacity 170ms ease-out,transform 200ms cubic-bezier(.23,1,.32,1),visibility 0s 200ms}.settings.open{opacity:1;visibility:visible;transform:none;transition:opacity 170ms ease-out,transform 200ms cubic-bezier(.23,1,.32,1),visibility 0s}.settings h2{font-size:13px;font-weight:700;letter-spacing:.03em;margin:0}.settings .desc{font-size:11px;color:var(--muted);margin:4px 0 14px;line-height:1.5}.field{padding:10px 0 12px;border-top:1px solid rgba(255,255,255,.075)}.fieldline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.fieldline label{color:#dcdecc;font-size:11px}.fieldline output{font-size:11px;color:#cbd9a6;font-variant-numeric:tabular-nums}.field input[type=range]{width:100%;height:3px;display:block;margin:0;accent-color:#c8d7a7;cursor:pointer}.buttonrow{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}.action{border-radius:12px;background:rgba(210,219,168,.1);border:1px solid rgba(220,230,186,.16);color:#e7eaca;padding:10px 8px;font-size:11px;transition:transform 130ms ease-out,background 150ms ease}.action:hover{background:rgba(210,219,168,.18)}.action.primary{background:#cbd6a7;color:#1e2317;font-weight:700}
+.loading{position:fixed;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;background:#25291b;color:#dfe3c3;transition:opacity .45s ease,visibility 0s .45s;pointer-events:none}.loading.hidden{opacity:0;visibility:hidden}.loading-inner{text-align:center}.loading-name{font-size:11px;letter-spacing:.24em;font-weight:600}.loading-sub{font-size:11px;color:#a6b08a;margin-top:10px}.loading-line{height:2px;width:130px;margin:17px auto 0;background:rgba(220,229,182,.12);overflow:hidden;border-radius:4px}.loading-line::after{content:"";display:block;width:46%;height:100%;background:#bacb90;animation:sweep 1.5s linear infinite}@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+.joystick{display:none;position:fixed;z-index:3;bottom:max(80px,calc(env(safe-area-inset-bottom) + 75px));left:max(24px,env(safe-area-inset-left));width:102px;height:102px;border:1px solid rgba(238,241,200,.16);border-radius:50%;background:rgba(24,26,17,.15);pointer-events:none;touch-action:none}.joyknob{position:absolute;top:50%;left:50%;width:43px;height:43px;border-radius:50%;background:rgba(218,222,185,.24);border:1px solid rgba(238,242,197,.28);transform:translate(-50%,-50%);box-shadow:0 0 20px rgba(19,20,9,.12)}
+#error{display:none;position:fixed;inset:0;z-index:9;background:#181b13;color:#e7e7d7;padding:24px;align-items:center;justify-content:center;text-align:center;font-size:13px;line-height:1.8}
+@media(hover:none) and (pointer:coarse){.joystick{display:block}.hint{display:none}.bottom{justify-content:flex-end}.settings{top:60px}.top{padding-top:max(12px,env(safe-area-inset-top))}.head-controls .hidetext{display:none}}
+@media(max-width:580px){.brand-sub{font-size:9px}.head-controls{gap:5px}.top{gap:8px}.brand-mark{width:31px;height:31px}.hudbtn{height:31px;min-width:31px;padding:0 8px}.settings{right:12px;width:min(310px,calc(100vw - 24px))}.bottom{bottom:12px}.readout{font-size:9px}}
+@media(prefers-reduced-motion:reduce){.settings,.loading,.hudbtn{transition:none}.loading-line::after{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="無限に続く Backrooms ロビー。ドラッグで見回し、WASD で移動"></canvas>
+<div class="film"></div>
+<div class="hud top">
+  <div class="brand"><div class="brand-mark">▦</div><div><div class="brand-head">THE BACKROOMS <span style="color:#a4b181">/ 00</span></div><div class="brand-sub">INFINITE LOBBY · PATH TRACED</div></div></div>
+  <div class="head-controls"><button class="hudbtn" id="screenshot" aria-label="PNG撮影" title="PNG撮影"><i data-lucide="camera">▣</i><span class="hidetext">Capture</span></button><button class="hudbtn" id="toggle-settings" aria-controls="settings" aria-expanded="false" title="描画設定"><i data-lucide="sliders-horizontal">☷</i><span class="hidetext">Render</span></button></div>
+</div>
+<aside id="settings" class="settings glass" aria-label="描画設定">
+  <h2>Rendering settings</h2><p class="desc">Procedural infinite geometry / progressive path tracing</p>
+  <div class="field"><div class="fieldline"><label for="resolution">Render resolution</label><output id="resolution-value">70%</output></div><input id="resolution" type="range" min="40" max="120" step="10" value="70"></div>
+  <div class="field"><div class="fieldline"><label for="bounces">Path bounces</label><output id="bounces-value">2</output></div><input id="bounces" type="range" min="1" max="4" step="1" value="2"></div>
+  <div class="field"><div class="fieldline"><label for="brightness">Fluorescent intensity</label><output id="brightness-value">9.0</output></div><input id="brightness" type="range" min="4" max="18" step="0.5" value="9"></div>
+  <div class="field"><div class="fieldline"><label for="haze">Atmospheric haze</label><output id="haze-value">0.006</output></div><input id="haze" type="range" min="0" max="20" step="1" value="6"></div>
+  <div class="field"><div class="fieldline"><label for="spacing">Column spacing</label><output id="spacing-value">6.4 m</output></div><input id="spacing" type="range" min="52" max="100" step="2" value="64"></div>
+  <div class="field"><div class="fieldline"><label for="exposure">Exposure</label><output id="exposure-value">1.00</output></div><input id="exposure" type="range" min="40" max="180" step="5" value="100"></div>
+  <div class="buttonrow"><button class="action" id="reset-view">Reset view</button><button class="action primary" id="save-panel">Capture PNG</button></div>
+</aside>
+<div id="mobile-joystick" class="joystick" aria-hidden="true"><div class="joyknob" id="joyknob"></div></div>
+<div class="hud bottom"><div class="hint"><b>W A S D</b> Move &nbsp;·&nbsp; <b>Mouse drag</b> Look around<br><b>Shift</b> Sprint &nbsp;·&nbsp; <b>Esc</b> Release cursor</div><div class="readout glass"><span id="indicator" class="led"></span><span id="stats">INITIALIZING · 0 SPP</span></div></div>
+<div id="loading" class="loading"><div class="loading-inner"><div class="loading-name">INFINITE LOBBY</div><div class="loading-sub" id="loading-status">Initializing path tracer…</div><div class="loading-line"></div></div></div>
+<div id="error"></div>
+<script>
+(() => {
+'use strict';
+const canvas = document.getElementById('scene');
+const settings = document.getElementById('settings');
+const stats = document.getElementById('stats');
+const loading = document.getElementById('loading');
+const loadingStatus = document.getElementById('loading-status');
+const indicator = document.getElementById('indicator');
+const gl = canvas.getContext('webgl2', { alpha:false, antialias:false, depth:false, stencil:false, preserveDrawingBuffer:true, powerPreference:'high-performance' });
+function fatal(message) { document.getElementById('error').style.display='flex'; document.getElementById('error').textContent=message; loading.classList.add('hidden'); throw new Error(message); }
+if (!gl) fatal('このブラウザでは WebGL2 を利用できないのだ。WebGL2 に対応したブラウザで開いてください。');
+const extFloat = gl.getExtension('EXT_color_buffer_float');
+const params = { resolution:.7, bounces:2, intensity:9, haze:.006, spacing:6.4, exposure:1 };
+let camera = [params.spacing/2,1.63,params.spacing/2];
+let yaw=0, pitch=.018, frame=0, surfaceW=0, surfaceH=0, active=0, running=true;
+const keys = new Set();
+const pointers = new Map();
+const joy = {id:null,x:0,y:0};
+const vertexSource = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);vUv=p;gl_Position=vec4(p*2.0-1.0,0,1);}`;
+const traceSource = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2D;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uPrevious;
+uniform vec2 uResolution;
+uniform vec3 uCamera;
+uniform vec2 uAngles;
+uniform float uFrame;
+uniform float uSpacing;
+uniform float uIntensity;
+uniform float uHaze;
+uniform int uBounces;
+const float PI=3.14159265359;
+const float H=3.22;
+const float PILLAR=.56;
+// Periodic geometry is defined for every integer cell. There is no world boundary.
+// Only the ray's screen-space integration limit depends on the framebuffer pixel footprint.
+const float FOV_SCALE=1.32;
+const float VERY_FAR=1.0e20;
+uint seed;
+float rand(){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return float(seed)*2.3283064365386963e-10;}
+float hash21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}
+float noise2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);}
+vec2 inCell(vec2 p){return mod(p,uSpacing)-vec2(.5*uSpacing);}
+bool lightAt(vec2 xz){vec2 q=inCell(xz);return abs(q.y)<1.08&&abs(abs(q.x)-1.57)<.69;}
+struct Hit{float t;vec3 n;int type;};
+Hit trace(vec3 ro,vec3 rd,float limit){
+ Hit hit;hit.t=limit;hit.n=vec3(0);hit.type=0;
+ if(rd.y<-.00001){float t=-ro.y/rd.y;if(t>.002&&t<hit.t){hit.t=t;hit.n=vec3(0,1,0);hit.type=1;}}
+ if(rd.y>.00001){float t=(H-ro.y)/rd.y;if(t>.002&&t<hit.t){hit.t=t;hit.n=vec3(0,-1,0);hit.type=2;}}
+ vec2 cell=floor(ro.xz/uSpacing+.5);
+ vec2 stepDir=sign(rd.xz);
+ vec2 boundary=(cell+stepDir*.5)*uSpacing;
+ vec2 inv=1.0/max(abs(rd.xz),vec2(.0000001));
+ vec2 tEdge=(boundary-ro.xz)*sign(rd.xz)*inv;
+ if(abs(rd.x)<.0000001)tEdge.x=VERY_FAR;
+ if(abs(rd.z)<.0000001)tEdge.y=VERY_FAR;
+ vec2 tDelta=uSpacing*inv;
+ float tCell=0.;
+ for(int i=0;i<2048;i++){
+  if(tCell>hit.t)break;
+  vec3 mn=vec3(cell.x*uSpacing-PILLAR,0.,cell.y*uSpacing-PILLAR);
+  vec3 mx=vec3(cell.x*uSpacing+PILLAR,H,cell.y*uSpacing+PILLAR);
+  vec3 d=1.0/rd;
+  vec3 a=(mn-ro)*d,b=(mx-ro)*d;
+  vec3 tn=min(a,b),tf=max(a,b);
+  float nearT=max(tn.x,max(tn.y,tn.z));
+  float farT=min(tf.x,min(tf.y,tf.z));
+  float nextT=min(tEdge.x,tEdge.y);
+  if(farT>=max(nearT,.001)&&nearT>.001&&nearT<hit.t&&nearT<=nextT+.003&&nearT>=tCell-.003){
+   hit.t=nearT;hit.type=3;
+   if(tn.x>=tn.y&&tn.x>=tn.z)hit.n=vec3(-sign(rd.x),0,0);
+   else if(tn.y>=tn.z)hit.n=vec3(0,-sign(rd.y),0);
+   else hit.n=vec3(0,0,-sign(rd.z));
+   break;
+  }
+  tCell=nextT;
+  if(tEdge.x<tEdge.y){cell.x+=stepDir.x;tEdge.x+=tDelta.x;}
+  else{cell.y+=stepDir.y;tEdge.y+=tDelta.y;}
+ }
+ if(hit.type==2&&lightAt(ro.xz+rd.xz*hit.t))hit.type=4;
+ return hit;
+}
+vec3 material(vec3 p,vec3 n,int kind){
+ if(kind==1){
+  float coarse=noise2(p.xz*1.15),fine=hash21(floor(p.xz*39.0));
+  float threads=sin(p.x*135.)*sin(p.z*120.);
+  float v=.85+.19*coarse+.14*(fine-.5)+.04*threads;
+  return vec3(.38,.355,.204)*v;
+ }
+ if(kind==2){
+  vec2 tile=fract(p.xz/.805);
+  float edge=min(min(tile.x,1.-tile.x),min(tile.y,1.-tile.y));
+  float seam=smoothstep(.008,.027,edge);
+  float stains=noise2(p.xz*.62)*.16+noise2(p.xz*2.8)*.058;
+  return mix(vec3(.17,.18,.108),vec3(.57,.55,.337)*(1.-stains),seam);
+ }
+ float irregular=noise2(p.xz*1.7+p.y*.37);
+ float streak=noise2(vec2(p.x+p.z,p.y*.15)*4.0);
+ float grime=(1.-smoothstep(0.,.75,p.y))*.17;
+ float speck=hash21(floor(vec2(p.x+p.z,p.y)*27.0))*.06;
+ return vec3(.67,.678,.438)*(.84+.23*irregular+.08*streak-grime-speck);
+}
+vec3 cosineDirection(vec3 n){float r1=2.*PI*rand(),r2=rand();float sr=sqrt(r2);vec3 a=normalize(cross(abs(n.y)<.95?vec3(0,1,0):vec3(1,0,0),n));vec3 b=cross(n,a);return normalize(a*cos(r1)*sr+b*sin(r1)*sr+n*sqrt(1.-r2));}
+vec3 directLight(vec3 p,vec3 n,vec3 albedo){
+ if(n.y<-.95)return vec3(0);
+ vec2 c=floor(p.xz/uSpacing+.5)*uSpacing;
+ float which=rand()<.5?-1.:1.;
+ vec3 lightPos=vec3(c.x+which*1.57+(rand()-.5)*1.38,H-.007,c.y+(rand()-.5)*2.16);
+ vec3 toLight=lightPos-p;
+ float r2=dot(toLight,toLight);
+ vec3 l=toLight*inversesqrt(max(r2,.001));
+ float cosSurface=max(dot(n,l),0.);
+ float cosEmitter=max(l.y,0.);
+ if(cosSurface<=0.||cosEmitter<=0.)return vec3(0);
+ Hit shadow=trace(p+n*.013,l,sqrt(r2)-.032);
+ if(shadow.type!=0)return vec3(0);
+ float area=1.38*2.16*2.;
+ return albedo*(uIntensity/PI)*area*cosSurface*cosEmitter/max(r2,.1)*vec3(1.0,1.013,.82);
+}
+vec3 path(vec3 ro,vec3 rd){
+ vec3 light=vec3(0),weight=vec3(1);
+ // At this distance one full grid period spans one pixel. At greater distances,
+ // individual periods cannot be distinguished by the finite pixel integral.
+ float subpixelDistance=uSpacing*uResolution.y/FOV_SCALE;
+ vec3 farRadiance=vec3(.245,.260,.139)*(.4+.6*uIntensity/9.);
+ for(int bounce=0;bounce<4;bounce++){
+  if(bounce>=uBounces)break;
+  // A finite pixel integral over an infinite repeating lattice: trace each
+  // resolvable cell, then use a homogenized infinite-period far-field response.
+  Hit h=trace(ro,rd,subpixelDistance);
+  float t=h.t;
+  float trans=exp(-uHaze*t);
+  light+=weight*(1.-trans)*vec3(.28,.285,.15);
+  weight*=trans;
+  if(h.type==0){light+=weight*farRadiance;break;}
+  vec3 p=ro+rd*t;
+  if(h.type==4){light+=weight*uIntensity*vec3(1.0,1.035,.85);break;}
+  vec3 alb=material(p,h.n,h.type);
+  light+=weight*directLight(p,h.n,alb);
+  // Low-level bounced fill approximates distant panels outside the sampled cell.
+  light+=weight*alb*vec3(.075,.08,.034);
+  weight*=alb;
+  rd=cosineDirection(h.n);
+  ro=p+h.n*.014;
+  if(bounce>1){float survive=clamp(max(weight.r,max(weight.g,weight.b)),.12,.94);if(rand()>survive)break;weight/=survive;}
+ }
+ return light;
+}
+void main(){
+ seed=uint(gl_FragCoord.x)*1973u+uint(gl_FragCoord.y)*9277u+uint(uFrame+1.)*26699u+911u;
+ seed^=seed*747796405u+2891336453u;
+ vec2 xy=(gl_FragCoord.xy+vec2(rand()-.5,rand()-.5)-.5*uResolution)/uResolution.y;
+ float yaw=uAngles.x,pitch=uAngles.y;
+ vec3 f=normalize(vec3(sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch)));
+ vec3 right=vec3(cos(yaw),0.,sin(yaw));
+ vec3 up=normalize(cross(right,f));
+ vec3 dir=normalize(f+right*xy.x*1.32+up*xy.y*1.32);
+ vec3 sampleColor=clamp(path(uCamera,dir),vec3(0),vec3(24));
+ vec3 old=texture(uPrevious,vUv).rgb;
+ float k=1./min(uFrame+1.,1024.);
+ outColor=vec4(mix(old,sampleColor,k),1.);
+}`;
+const displaySource=`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uImage;
+uniform vec2 uResolution;
+uniform float uExposure;
+uniform float uTime;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+vec3 tonemap(vec3 x){x*=uExposure;return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
+void main(){
+ vec2 uv=gl_FragCoord.xy/uResolution;
+ vec3 hdr=texture(uImage,uv).rgb;
+ vec2 off=3.8/uResolution;
+ vec3 bloom=vec3(0);
+ bloom+=max(texture(uImage,uv+vec2(off.x,0)).rgb-vec3(1.35),0.);
+ bloom+=max(texture(uImage,uv-vec2(off.x,0)).rgb-vec3(1.35),0.);
+ bloom+=max(texture(uImage,uv+vec2(0,off.y)).rgb-vec3(1.35),0.);
+ bloom+=max(texture(uImage,uv-vec2(0,off.y)).rgb-vec3(1.35),0.);
+ vec3 color=tonemap(hdr+bloom*.048);
+ color=pow(color,vec3(.88));
+ float vig=1.-.16*pow(length((uv-.5)*vec2(1.,.79)),1.8);
+ color*=vig;
+ float grain=(hash(floor(gl_FragCoord.xy)+vec2(uTime*17.0))-0.5)*.018;
+ color=clamp(color+grain,0.,1.);
+ outColor=vec4(color,1.);
+}`;
+function shader(type,source) { const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))fatal('Shader error: '+gl.getShaderInfoLog(s));return s; }
+function program(fragment) { const p=gl.createProgram();gl.attachShader(p,shader(gl.VERTEX_SHADER,vertexSource));gl.attachShader(p,shader(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))fatal('Program error: '+gl.getProgramInfoLog(p));return p; }
+loadingStatus.textContent='Compiling ray traversal and lighting…';
+const tracer=program(traceSource),display=program(displaySource);
+const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+const tu={};for(const n of ['uPrevious','uResolution','uCamera','uAngles','uFrame','uSpacing','uIntensity','uHaze','uBounces'])tu[n]=gl.getUniformLocation(tracer,n);
+const du={};for(const n of ['uImage','uResolution','uExposure','uTime'])du[n]=gl.getUniformLocation(display,n);
+let targets=[];
+function resize(){
+ const cssW=window.innerWidth,cssH=window.innerHeight;
+ const pixelScale=Math.min(window.devicePixelRatio||1,1.75)*params.resolution;
+ const limit=Math.min(1,1650/Math.max(cssW*pixelScale,cssH*pixelScale));
+ const w=Math.max(2,Math.floor(cssW*pixelScale*limit/2)*2);
+ const h=Math.max(2,Math.floor(cssH*pixelScale*limit/2)*2);
+ if(w===surfaceW&&h===surfaceH)return;
+ surfaceW=w;surfaceH=h;canvas.width=w;canvas.height=h;
+ for(const old of targets){gl.deleteFramebuffer(old.fbo);gl.deleteTexture(old.tex);}targets=[];
+ for(let i=0;i<2;i++){
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D,0,extFloat?gl.RGBA16F:gl.RGBA8,w,h,0,gl.RGBA,extFloat?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
+  const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)fatal('Unable to create accumulation buffer.');
+  gl.viewport(0,0,w,h);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+  targets.push({tex,fbo});
+ }
+ gl.bindFramebuffer(gl.FRAMEBUFFER,null);active=0;frame=0;
+}
+function reset(){frame=0;}
+function draw(time){
+ gl.viewport(0,0,surfaceW,surfaceH);
+ gl.useProgram(tracer);
+ gl.bindFramebuffer(gl.FRAMEBUFFER,targets[1-active].fbo);
+ gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,targets[active].tex);
+ gl.uniform1i(tu.uPrevious,0);gl.uniform2f(tu.uResolution,surfaceW,surfaceH);
+ gl.uniform3f(tu.uCamera,camera[0],camera[1],camera[2]);gl.uniform2f(tu.uAngles,yaw,pitch);
+ gl.uniform1f(tu.uFrame,frame);gl.uniform1f(tu.uSpacing,params.spacing);gl.uniform1f(tu.uIntensity,params.intensity);
+ gl.uniform1f(tu.uHaze,params.haze);gl.uniform1i(tu.uBounces,params.bounces);
+ gl.drawArrays(gl.TRIANGLES,0,3);
+ active=1-active;frame++;
+ gl.useProgram(display);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+ gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,targets[active].tex);
+ gl.uniform1i(du.uImage,0);gl.uniform2f(du.uResolution,surfaceW,surfaceH);
+ gl.uniform1f(du.uExposure,params.exposure);gl.uniform1f(du.uTime,time*.001);
+ gl.drawArrays(gl.TRIANGLES,0,3);
+}
+function collide(x,z){const s=params.spacing;const dx=Math.abs(x-Math.round(x/s)*s),dz=Math.abs(z-Math.round(z/s)*s);return dx<.78&&dz<.78;}
+function navigate(dt){
+ let forward=(keys.has('KeyW')||keys.has('ArrowUp')?1:0)-(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-joy.y;
+ let side=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+joy.x;
+ const len=Math.hypot(forward,side);if(len<.05)return;
+ forward/=Math.max(len,1);side/=Math.max(len,1);
+ const move=Math.min(dt,.05)*(keys.has('ShiftLeft')||keys.has('ShiftRight')?7:3.3);
+ const dx=(Math.sin(yaw)*forward+Math.cos(yaw)*side)*move;
+ const dz=(-Math.cos(yaw)*forward+Math.sin(yaw)*side)*move;
+ if(!collide(camera[0]+dx,camera[2]))camera[0]+=dx;
+ if(!collide(camera[0],camera[2]+dz))camera[2]+=dz;
+ // Position on the covering-space quotient: modulo changes only the
+ // representation, not any visible part of this infinite periodic world.
+ const s=params.spacing;
+ camera[0]=((camera[0]+s*.5)%s+s)%s-s*.5;
+ camera[2]=((camera[2]+s*.5)%s+s)%s-s*.5;
+ reset();
+}
+let prevTime=0,shown=false,lastStats=0;
+function tick(now){
+ const dt=prevTime?(now-prevTime)*.001:0;prevTime=now;
+ navigate(dt);
+ if(surfaceW&&surfaceH&&running)draw(now);
+ if(!shown&&frame>=1){shown=true;loading.classList.add('hidden');}
+ if(now-lastStats>150){stats.textContent=`${surfaceW} × ${surfaceH} · ${String(frame).padStart(3,'0')} SPP`;lastStats=now;}
+ requestAnimationFrame(tick);
+}
+function look(dx,dy){yaw+=dx*.0027;pitch=Math.max(-1.3,Math.min(1.3,pitch-dy*.0027));reset();}
+canvas.addEventListener('pointerdown',e=>{
+ if(e.button!==0&&e.pointerType==='mouse')return;
+ canvas.setPointerCapture(e.pointerId);
+ const rect=canvas.getBoundingClientRect();
+ const isJoy=e.pointerType!=='mouse'&&e.clientX<rect.width*.32&&e.clientY>rect.height*.46;
+ pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,mode:isJoy?'joy':'look',centerX:e.clientX,centerY:e.clientY});
+ if(isJoy){joy.id=e.pointerId;document.getElementById('mobile-joystick').style.left=`${Math.max(12,e.clientX-51)}px`;document.getElementById('mobile-joystick').style.bottom=`${Math.max(12,innerHeight-e.clientY-51)}px`;}
+});
+canvas.addEventListener('pointermove',e=>{
+ const p=pointers.get(e.pointerId);if(!p)return;
+ if(p.mode==='joy'){
+  let x=(e.clientX-p.centerX)/43,y=(e.clientY-p.centerY)/43;const d=Math.hypot(x,y);if(d>1){x/=d;y/=d;}
+  joy.x=x;joy.y=y;document.getElementById('joyknob').style.transform=`translate(calc(-50% + ${x*37}px),calc(-50% + ${y*37}px))`;
+ }else look(e.clientX-p.x,e.clientY-p.y);
+ p.x=e.clientX;p.y=e.clientY;
+});
+function endPointer(e){const p=pointers.get(e.pointerId);if(!p)return;if(p.mode==='joy'&&joy.id===e.pointerId){joy.x=0;joy.y=0;joy.id=null;document.getElementById('joyknob').style.transform='translate(-50%,-50%)';}pointers.delete(e.pointerId);}
+canvas.addEventListener('pointerup',endPointer);canvas.addEventListener('pointercancel',endPointer);
+document.addEventListener('keydown',e=>{if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)&&!e.target.closest('input')){e.preventDefault();keys.add(e.code);}if(e.code==='Escape'){settings.classList.remove('open');document.getElementById('toggle-settings').setAttribute('aria-expanded','false');}});
+document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();joy.x=0;joy.y=0;});
+document.getElementById('toggle-settings').addEventListener('click',()=>{const open=settings.classList.toggle('open');document.getElementById('toggle-settings').setAttribute('aria-expanded',String(open));});
+function bindRange(id,convert,format,updateRes){const el=document.getElementById(id),out=document.getElementById(id+'-value');el.addEventListener('input',()=>{const v=convert(+el.value);if(id==='resolution')params.resolution=v;else if(id==='bounces')params.bounces=v;else if(id==='brightness')params.intensity=v;else if(id==='haze')params.haze=v;else if(id==='spacing')params.spacing=v;else if(id==='exposure')params.exposure=v;out.textContent=format(v);if(updateRes)resize();else reset();});}
+bindRange('resolution',x=>x/100,x=>`${Math.round(x*100)}%`,true);
+bindRange('bounces',x=>x,x=>`${x}`);
+bindRange('brightness',x=>x,x=>x.toFixed(1));
+bindRange('haze',x=>x/1000,x=>x.toFixed(3));
+bindRange('spacing',x=>x/10,x=>x.toFixed(1)+' m');
+bindRange('exposure',x=>x/100,x=>x.toFixed(2));
+document.getElementById('reset-view').addEventListener('click',()=>{camera=[params.spacing/2,1.63,params.spacing/2];yaw=0;pitch=.018;reset();settings.classList.remove('open');document.getElementById('toggle-settings').setAttribute('aria-expanded','false');});
+function capture(){draw(performance.now());const a=document.createElement('a');a.href=canvas.toDataURL('image/png');a.download='backrooms-infinite-lobby.png';a.click();}
+document.getElementById('screenshot').addEventListener('click',capture);
+document.getElementById('save-panel').addEventListener('click',capture);
+window.addEventListener('resize',resize);
+window.addEventListener('visibilitychange',()=>{running=!document.hidden;indicator.classList.toggle('off',!running);if(running)reset();});
+if(typeof lucide!=='undefined')lucide.createIcons();else window.addEventListener('load',()=>{if(window.lucide)lucide.createIcons();});
+resize();requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
