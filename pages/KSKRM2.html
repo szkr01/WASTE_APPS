@@ -1453,6 +1453,21 @@ const FRAGMENT_EFFECTS = {
             rangeParam('softKnee', 'Soft Knee', 0, 0.5, 0.01, 0.12, { group: 'Bloom' })
         ]
     }),
+    lensFlare: effectDefinition({
+        label: 'Lens Flare', category: 'light', icon: 'fa-sun', program: 'lensFlare', cost: 'medium',
+        description: 'Highlight-driven lens ghosts and a circular halo along the optical axis.', tags: ['lens','flare','ghost','halo'],
+        params: [rangeParam('threshold','Threshold',0,1,0.01,0.78), rangeParam('intensity','Intensity',0,3,0.01,0.9), rangeParam('spacing','Ghost Spacing',0.2,1.5,0.01,0.8), rangeParam('radius','Ghost Blur',1,48,0.5,10,{suffix:' px'}), rangeParam('halo','Halo Radius',0,0.4,0.005,0.12), colorParam('tint','Tint','#ffffff')]
+    }),
+    anamorphicFlare: effectDefinition({
+        label: 'Anamorphic Flare', category: 'light', icon: 'fa-grip-lines', program: 'anamorphicFlare', cost: 'heavy', previewScale: 0.5, settleDuringInteraction: true,
+        description: 'Directional highlight streaks with adjustable length, width, angle and tint.', tags: ['flare','streak','anamorphic','horizontal'],
+        params: [rangeParam('threshold','Threshold',0,1,0.01,0.78), rangeParam('intensity','Intensity',0,3,0.01,0.8), rangeParam('length','Length',1,300,1,140,{suffix:' px'}), rangeParam('width','Width',0.5,24,0.5,3,{suffix:' px'}), rangeParam('angle','Angle',-180,180,1,0,{suffix:'°'}), colorParam('tint','Tint','#74baff')]
+    }),
+    starburst: effectDefinition({
+        label: 'Starburst', category: 'light', icon: 'fa-star', program: 'starburst', cost: 'heavy', previewScale: 0.5, settleDuringInteraction: true,
+        description: 'Diffraction-style rays extending from bright pixels in multiple directions.', tags: ['glare','starburst','diffraction','rays'],
+        params: [rangeParam('threshold','Threshold',0,1,0.01,0.8), rangeParam('intensity','Intensity',0,3,0.01,0.75), rangeParam('length','Length',1,160,1,80,{suffix:' px'}), rangeParam('width','Width',0.5,12,0.5,1.5,{suffix:' px'}), selectParam('rays','Rays',[{label:'4',value:4},{label:'6',value:6},{label:'8',value:8}],4), rangeParam('angle','Angle',-180,180,1,45,{suffix:'°'}), colorParam('tint','Tint','#ffffff')]
+    }),
     pixelate: effectDefinition({
         label: 'Pixelation', category: 'pixel', icon: 'fa-border-all', program: 'pixelate', description: 'Quantizes sampling into square cells in logical board pixels.', tags: ['pixel', 'mosaic'],
         params: [rangeParam('size', 'Pixel Size', 1, 128, 1, 12, { decimals: 0, suffix: ' px', group: 'Grid' })]
@@ -2426,6 +2441,104 @@ const FX_PROGRAM_BODIES = {
             outP.a = clamp(max(baseP.a, glow.a), 0.0, 1.0);
             outP.rgb = clamp(outP.rgb, 0.0, outP.a);
             return outP;
+        }
+    `,
+    lensFlare: `
+        vec4 bright(vec2 uv) {
+            vec4 s = sampleScene(uv);
+            float l = dot(unpremul(s), vec3(.299,.587,.114));
+            return s * smoothstep(p_threshold-.06, p_threshold+.06, l);
+        }
+        vec4 combineGlow(vec4 base, vec4 glow) {
+            glow *= p_intensity;
+            float a = clamp(max(base.a, glow.a), 0.0, 1.0);
+            return vec4(clamp(base.rgb + glow.rgb * p_tint, 0.0, a), a);
+        }
+        vec4 ghostSample(vec2 uv, vec2 offset) {
+            return (bright(uv)*2.0 + bright(uv+vec2(offset.x,0)) + bright(uv-vec2(offset.x,0)) + bright(uv+vec2(0,offset.y)) + bright(uv-vec2(0,offset.y)))/6.0;
+        }
+        vec4 runEffect(vec2 uv) {
+            vec4 base = sampleScene(uv);
+            if (p_intensity <= 0.0) return base;
+            vec2 center = uv-.5;
+            vec2 offset = vec2(p_radius)/uBoardSize;
+            vec4 glow = vec4(0.0);
+            for (int i=0; i<4; i++) {
+                float k = float(i);
+                float scale = (i==2 ? 1.0 : -1.0) * (.65 + k*.65)/p_spacing;
+                vec4 g = ghostSample(.5+center*scale, offset);
+                g.rgb *= mix(vec3(.55,.8,1.0),vec3(1.0,.65,.45),k/3.0);
+                glow += g * (.38/(1.0+k*.35));
+            }
+            vec4 halo = vec4(0.0);
+            if (p_halo>0.0) {
+                for(int i=0;i<12;i++) {
+                    float a = float(i)*6.2831853/12.0;
+                    halo += ghostSample(1.0-uv+vec2(cos(a),sin(a))*p_halo,offset);
+                }
+                glow += halo*(.45/12.0);
+            }
+            return combineGlow(base,glow);
+        }
+    `,
+    anamorphicFlare: `
+        vec4 bright(vec2 uv) {
+            vec4 s = sampleScene(uv);
+            float l = dot(unpremul(s), vec3(.299,.587,.114));
+            return s * smoothstep(p_threshold-.06, p_threshold+.06, l);
+        }
+        vec4 combineGlow(vec4 base, vec4 glow) {
+            glow *= p_intensity;
+            float a = clamp(max(base.a, glow.a), 0.0, 1.0);
+            return vec4(clamp(base.rgb + glow.rgb * p_tint, 0.0, a), a);
+        }
+        vec4 runEffect(vec2 uv) {
+            vec4 base = sampleScene(uv);
+            if (p_intensity <= 0.0) return base;
+            float a = radians(p_angle);
+            vec2 axis = vec2(cos(a),sin(a))/uBoardSize;
+            vec2 side = vec2(-sin(a),cos(a))*p_width/uBoardSize;
+            vec4 glow = vec4(0.0);
+            for(int i=-48;i<=48;i++) {
+                float t = float(i)/48.0;
+                vec2 q = uv+axis*(t*p_length);
+                vec4 g = max(bright(q), max(bright(q+side),bright(q-side))*.45);
+                glow = max(glow,g*pow(1.0-abs(t),2.0));
+            }
+            return combineGlow(base,glow);
+        }
+    `,
+    starburst: `
+        vec4 bright(vec2 uv) {
+            vec4 s = sampleScene(uv);
+            float l = dot(unpremul(s), vec3(.299,.587,.114));
+            return s * smoothstep(p_threshold-.06, p_threshold+.06, l);
+        }
+        vec4 combineGlow(vec4 base, vec4 glow) {
+            glow *= p_intensity;
+            float a = clamp(max(base.a, glow.a), 0.0, 1.0);
+            return vec4(clamp(base.rgb + glow.rgb * p_tint, 0.0, a), a);
+        }
+        vec4 runEffect(vec2 uv) {
+            vec4 base = sampleScene(uv);
+            if (p_intensity <= 0.0) return base;
+            vec4 glow = vec4(0.0);
+            int axes = int(p_rays*.5+.5);
+            for(int j=0;j<4;j++) {
+                if(j>=axes) break;
+                float a = radians(p_angle)+float(j)*3.14159265/float(axes);
+                vec2 axis = vec2(cos(a),sin(a))/uBoardSize;
+                vec2 side = vec2(-sin(a),cos(a))*p_width/uBoardSize;
+                vec4 ray = vec4(0.0);
+                for(int i=-24;i<=24;i++) {
+                    float t = float(i)/24.0;
+                    vec2 q = uv+axis*(t*p_length);
+                    vec4 g = max(bright(q),max(bright(q+side),bright(q-side))*.35);
+                    ray = max(ray,g*pow(1.0-abs(t),2.5));
+                }
+                glow = max(glow,ray);
+            }
+            return combineGlow(base,glow);
         }
     `,
     pixelate: `
